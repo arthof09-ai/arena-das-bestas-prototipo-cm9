@@ -1,5 +1,21 @@
 # ARENA DAS BESTAS — Protótipo CM-000009 (EXP-MUSE-003 · v2 = EXP-MUSE-004 · v3 = EXP-MUSE-005)
 
+## Repositório (Git local)
+
+Este projeto é um repositório Git local cuja história guarda a evolução do
+protótipo em commits, um por versão: **v1** (EXP-MUSE-003, arte por código)
+→ **v2** (EXP-MUSE-004, sprites gerados) → **v3** (EXP-MUSE-005, animação
+fluida estilo Hades). Entram no histórico: código, cenas, sprites
+processados (`assets/`) e as ferramentas de processamento (`tools/`).
+Ficam fora (ver `.gitignore`): exports (`export-web/`, `export-windows/`),
+folhas-fonte brutas (`assets-src/`), capturas e zips — os executáveis
+jogáveis moram na pasta do RPG no PC do Mestre
+(`Desktop\RPG Assimilação\ArenaDasBestas-v1/v2/v3.exe`).
+Publicação futura prevista: repositório **privado e separado** no GitHub,
+só deste protótipo (nunca na bancada oficial do projeto), quando o Mestre
+configurar o login do GitHub. Autoria dos commits: Comestre Muse 1
+(CM-000009), identidade local do repositório.
+
 **PROTÓTIPO DE TESTE — NÃO é o jogo oficial do RPG Assimilação.**
 Arena de combate 2.5D em Godot 4.7.2, criada pelo Comestre Muse 1 (CM-000009)
 em 30/10/2026 por ordem do Mestre. Usa apenas sistemas genéricos inspirados
