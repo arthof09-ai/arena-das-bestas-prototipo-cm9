@@ -6,3 +6,5 @@ capturas/
 *.zip
 __pycache__/
 tmp/
+tools/contact_*.png
+tools/contact_*.png.import
