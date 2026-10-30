@@ -56,7 +56,7 @@ func _ready() -> void:
 	view = ShadowView.new()
 	view.kind = kind
 	add_child(view)
-	z_index = 8
+	z_index = 0  # v2: quem ordena é o y-sort do nó `entities` (Main)
 	wobble = randf() * 10.0
 
 func _telegraph_time() -> float:
@@ -166,6 +166,7 @@ func _clamp_to_arena() -> void:
 		global_position = c + rel.normalized() * 0.97 * r
 
 func _sync_view() -> void:
+	view.state_name = state  # v2: a view de sprites lê a FSM real
 	view.face_angle = face_angle
 	view.wobble = wobble
 	view.hurt_flash = hurt_flash

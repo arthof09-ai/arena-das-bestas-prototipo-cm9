@@ -1,0 +1,99 @@
+{
+  "knight": {
+    "canvas": [
+      145,
+      210
+    ],
+    "feet": [
+      72,
+      179
+    ],
+    "anims": {
+      "idle": [
+        "knight_idle_0.png",
+        "knight_idle_1.png",
+        "knight_idle_2.png",
+        "knight_idle_3.png"
+      ],
+      "run": [
+        "knight_run_0.png",
+        "knight_run_1.png",
+        "knight_run_2.png",
+        "knight_run_3.png",
+        "knight_run_4.png"
+      ],
+      "attack": [
+        "knight_attack_0.png",
+        "knight_attack_1.png",
+        "knight_attack_2.png",
+        "knight_attack_3.png",
+        "knight_attack_4.png",
+        "knight_attack_5.png",
+        "knight_attack_6.png"
+      ],
+      "misc": [
+        "knight_dash_0.png",
+        "knight_dash_1.png",
+        "knight_hurt_0.png",
+        "knight_death_0.png",
+        "knight_death_1.png"
+      ]
+    }
+  },
+  "rapida": {
+    "canvas": [
+      114,
+      156
+    ],
+    "feet": [
+      57,
+      125
+    ],
+    "anims": {
+      "all": [
+        "rapida_walk_0.png",
+        "rapida_walk_1.png",
+        "rapida_walk_2.png",
+        "rapida_walk_3.png",
+        "rapida_attack_0.png",
+        "rapida_attack_1.png"
+      ]
+    }
+  },
+  "bruta": {
+    "canvas": [
+      204,
+      310
+    ],
+    "feet": [
+      102,
+      280
+    ],
+    "anims": {
+      "all": [
+        "bruta_walk_0.png",
+        "bruta_walk_1.png",
+        "bruta_walk_2.png",
+        "bruta_walk_3.png",
+        "bruta_attack_0.png",
+        "bruta_attack_1.png"
+      ]
+    }
+  },
+  "arena": {
+    "ring_bbox_src": [
+      161.0,
+      123.0,
+      1708.0,
+      1104.0
+    ],
+    "scale": [
+      0.7317388493859082,
+      0.6238532110091743
+    ],
+    "paste": [
+      -44,
+      -11
+    ]
+  }
+}

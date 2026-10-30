@@ -1,7 +1,9 @@
 extends Node2D
-## ARENA DAS BESTAS — Protótipo CM-000009 (EXP-MUSE-003)
+## ARENA DAS BESTAS — Protótipo CM-000009 (EXP-MUSE-003; v2 = EXP-MUSE-004)
 ## PROTÓTIPO DE TESTE — não é o jogo oficial do RPG Assimilação.
 ## Gerente do jogo: estados, ondas, rank/estrelas, placar, efeitos.
+## v2: camada visual refeita com sprites pintados gerados por IA
+## (knight_view/shadow_view/arena_bg); sistemas e FSMs idênticos à v1.
 
 const ARENA_CENTER := Vector2(640, 372)
 const ARENA_RADII := Vector2(566, 306)
@@ -57,6 +59,7 @@ func _ready() -> void:
 	add_child(camera)
 	camera.make_current()
 	entities = Node2D.new()
+	entities.y_sort_enabled = true  # v2: sprites se ordenam pelo pé (eixo Y)
 	add_child(entities)
 	fx_layer = Node2D.new()
 	fx_layer.z_index = 50
@@ -282,6 +285,14 @@ func on_enemy_hit(e: Shadow, dmg: float, heavy: bool) -> void:
 	_burst(e.global_position + Vector2(0, -30), Color(0.65, 0.55, 0.95), 8, 170.0)
 
 func on_enemy_killed(e: Shadow) -> void:
+	# v2: fantasma de morte — a Sombra se libera na hora (queue_free),
+	# então a dissolução animada vive numa ShadowView autônoma.
+	var dv := ShadowView.new()
+	dv.kind = e.kind
+	dv.ghost_death = true
+	dv.face_angle = e.face_angle
+	dv.global_position = e.global_position
+	fx_layer.add_child(dv)
 	score += e.score_value
 	player.pa = minf(player.pa_max, player.pa + 6.0)
 	if player.heal_on_kill > 0.0:

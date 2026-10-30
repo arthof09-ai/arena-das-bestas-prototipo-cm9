@@ -1,6 +1,7 @@
-; ARENA DAS BESTAS — Protótipo CM-000009 (EXP-MUSE-003)
+; ARENA DAS BESTAS — Protótipo CM-000009 (EXP-MUSE-003; v2 = EXP-MUSE-004)
 ; PROTÓTIPO DE TESTE — não é o jogo oficial do RPG Assimilação.
-; Projeto Godot 4.7.2 — tudo desenhado por código, sem assets externos.
+; Projeto Godot 4.7.2 — v2: sprites pintados gerados por IA (assets/),
+; processados por tools/process_sprites.py; sistemas idênticos à v1.
 
 config_version=5
 

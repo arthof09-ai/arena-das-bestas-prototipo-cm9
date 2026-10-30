@@ -1,126 +1,180 @@
 class_name KnightView
 extends Node2D
-## Desenho procedural do cavaleiro cultivador (sem sprites/assets).
-## Corpo sempre "em pé" (2.5D); direção aparece na capa, na viseira
-## e principalmente no braço da espada. Origem nos pés, espada em ângulo absoluto.
+## v2 (EXP-MUSE-004) — Cavaleiro com SPRITES PINTADOS gerados por IA.
+## AnimatedSprite2D + SpriteFrames montados em código a partir de
+## assets/knight_*.png (folhas geradas por IA, processadas por
+## tools/process_sprites.py: chroma-key, fatiamento, pés alinhados).
+##
+## A interface pública é a MESMA da v1 (o Player escreve nestas vars todo
+## physics frame): sword_angle/smear_* viraram legado — a espada e o arco
+## do golpe vivem na arte. Os campos novos (atk_anim, atk_phase,
+## is_dashing, speed_now) são escritos por Player._sync_view para casar
+## os quadros com a FSM real do golpe (fases 25% / 62% das durações de
+## Player.SWINGS). Origem do nó = ponto dos pés.
 
 var face_angle: float = 0.0        # direção do olhar/mira
-var walk_phase: float = 0.0
+var walk_phase: float = 0.0        # legado v1 (a corrida usa speed_now)
 var moving: bool = false
-var sword_angle: float = -0.5      # ângulo absoluto da espada
-var smear_from: float = 0.0
-var smear_to: float = 0.0
-var smear_alpha: float = 0.0
+var sword_angle: float = -0.5      # legado v1 (não usado no desenho)
+var smear_from: float = 0.0        # legado v1
+var smear_to: float = 0.0          # legado v1
+var smear_alpha: float = 0.0       # legado v1
 var hurt_flash: float = 0.0
 var invuln_blink: bool = false
 var core_color: Color = Color(0.65, 0.9, 1.0)
 var dead: bool = false
+# --- sincronização nova (Player._sync_view) ---
+var atk_anim: String = ""          # "", "attack1", "attack2", "attack3"
+var atk_phase: float = 0.0         # 0..1 dentro do golpe
+var is_dashing: bool = false
+var speed_now: float = 0.0
 
-const STEEL := Color(0.52, 0.60, 0.70)
-const STEEL_D := Color(0.33, 0.39, 0.48)
-const STEEL_L := Color(0.78, 0.84, 0.92)
-const CLOTH := Color(0.45, 0.13, 0.16)
-const CLOTH_D := Color(0.30, 0.08, 0.11)
-const GOLD := Color(0.85, 0.65, 0.30)
+const DISPLAY_SCALE := 0.62
+const CANVAS := Vector2(145, 210)  # = assets/manifest.json (knight)
+const FEET := Vector2(72, 179)
+
+var _spr: AnimatedSprite2D
+var _glow: Sprite2D
+var _dust: CPUParticles2D
+var _cur_anim := ""
+
+static var _radial: Texture2D = null
+
+static func radial_texture() -> Texture2D:
+	if _radial != null:
+		return _radial
+	var img := Image.create(128, 128, false, Image.FORMAT_RGBA8)
+	for y in range(128):
+		for x in range(128):
+			var d := Vector2(x - 64, y - 64).length() / 64.0
+			var a := clampf(1.0 - d, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1, 1, 1, a * a))
+	_radial = ImageTexture.create_from_image(img)
+	return _radial
+
+func _ready() -> void:
+	# sombra suave elíptica no chão (não vira com o flip)
+	var shadow := Sprite2D.new()
+	shadow.texture = radial_texture()
+	shadow.modulate = Color(0, 0, 0, 0.38)
+	shadow.scale = Vector2(0.46, 0.125)
+	shadow.position = Vector2(0, 2)
+	add_child(shadow)
+	# sprite animado, origem nos pés
+	_spr = AnimatedSprite2D.new()
+	_spr.sprite_frames = _build_frames()
+	_spr.offset = Vector2(CANVAS.x * 0.5 - FEET.x, CANVAS.y * 0.5 - FEET.y)
+	_spr.scale = Vector2.ONE * DISPLAY_SCALE
+	_spr.play("idle")
+	add_child(_spr)
+	_cur_anim = "idle"
+	# núcleo de PA brilhando no peito (leitura do recurso, como na v1)
+	_glow = Sprite2D.new()
+	_glow.texture = radial_texture()
+	var gm := CanvasItemMaterial.new()
+	gm.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	_glow.material = gm
+	_glow.scale = Vector2(0.17, 0.17)
+	add_child(_glow)
+	# poeira dos pés ao correr (mundo, não segue o cavaleiro)
+	_dust = CPUParticles2D.new()
+	_dust.amount = 12
+	_dust.lifetime = 0.5
+	_dust.local_coords = false
+	_dust.emission_shape = CPUParticles2D.EMISSION_SHAPE_SPHERE
+	_dust.emission_sphere_radius = 7.0
+	_dust.direction = Vector2(0, -1)
+	_dust.spread = 70.0
+	_dust.gravity = Vector2(0, -26)
+	_dust.initial_velocity_min = 18.0
+	_dust.initial_velocity_max = 46.0
+	_dust.scale_amount_min = 2.2
+	_dust.scale_amount_max = 4.2
+	_dust.color = Color(0.52, 0.43, 0.30, 0.30)
+	_dust.emitting = false
+	add_child(_dust)
+
+func _tex(file: String) -> Texture2D:
+	return load("res://assets/" + file) as Texture2D
+
+func _add(sf: SpriteFrames, anim: String, files: Array, fps: float, loop: bool) -> void:
+	sf.add_animation(anim)
+	sf.set_animation_speed(anim, fps)
+	sf.set_animation_loop(anim, loop)
+	for f in files:
+		sf.add_frame(anim, _tex(f))
+
+func _build_frames() -> SpriteFrames:
+	var sf := SpriteFrames.new()
+	sf.remove_animation("default")
+	_add(sf, "idle", ["knight_idle_0.png", "knight_idle_1.png",
+		"knight_idle_2.png", "knight_idle_3.png"], 5.0, true)
+	_add(sf, "run", ["knight_run_0.png", "knight_run_1.png", "knight_run_2.png",
+		"knight_run_3.png", "knight_run_4.png"], 11.0, true)
+	# combo: quadros da folha de ataque (poses 0..6) mapeados por fase —
+	# golpe 1: prepara(0) / corta(1) / recupera(4)
+	# golpe 2: prepara(2) / corta(3) / recupera(4)
+	# golpe 3: prepara(2) / corta(5) / recupera(6)
+	_add(sf, "attack1", ["knight_attack_0.png", "knight_attack_1.png",
+		"knight_attack_4.png"], 10.0, false)
+	_add(sf, "attack2", ["knight_attack_2.png", "knight_attack_3.png",
+		"knight_attack_4.png"], 10.0, false)
+	_add(sf, "attack3", ["knight_attack_2.png", "knight_attack_5.png",
+		"knight_attack_6.png"], 7.2, false)
+	_add(sf, "dash", ["knight_dash_0.png", "knight_dash_1.png"], 12.0, false)
+	_add(sf, "hurt", ["knight_hurt_0.png"], 1.0, false)
+	_add(sf, "death", ["knight_death_0.png", "knight_death_1.png"], 2.2, false)
+	return sf
 
 func _process(_delta: float) -> void:
-	queue_redraw()
-
-func _rot(points: PackedVector2Array, anchor: Vector2, ang: float) -> PackedVector2Array:
-	var out := PackedVector2Array()
-	for p in points:
-		out.append(anchor + (p - anchor).rotated(ang))
-	return out
-
-func _draw() -> void:
-	if dead:
-		var pts := PackedVector2Array()
-		for i in range(20):
-			var a := TAU * float(i) / 20.0
-			pts.append(Vector2(cos(a) * 30.0, sin(a) * 10.0))
-		draw_colored_polygon(pts, Color(0.2, 0.2, 0.25, 0.8))
-		draw_line(Vector2(14, -2), Vector2(52, 8), Color(0.8, 0.85, 0.9, 0.8), 3.5)
+	if _spr == null:
 		return
-	var alpha := 1.0
+	var flip := cos(face_angle) < 0.0
+	_spr.flip_h = flip
+	# prioridade: morte > dash > ataque > ferido > corrida > idle
+	var want := "idle"
+	var drive := -1
+	if dead:
+		want = "death"
+	elif is_dashing:
+		want = "dash"
+	elif atk_anim != "":
+		want = atk_anim
+		drive = 0 if atk_phase < 0.25 else (1 if atk_phase < 0.62 else 2)
+	elif hurt_flash > 0.5:
+		want = "hurt"
+	elif moving:
+		want = "run"
+	if want != _cur_anim:
+		_cur_anim = want
+		_spr.play(want)
+	if drive >= 0:
+		_spr.pause()
+		_spr.frame = drive
+	elif want == "run":
+		_spr.speed_scale = clampf(speed_now / 265.0, 0.6, 1.5)
+		if not _spr.is_playing():
+			_spr.play(want)
+	elif want != "death":
+		_spr.speed_scale = 1.0
+		if not _spr.is_playing():
+			_spr.play(want)
+	# squash & stretch: dash alonga; o corte "assenta" o corpo
+	var ts := Vector2.ONE * DISPLAY_SCALE
+	if is_dashing:
+		ts = Vector2(DISPLAY_SCALE * 1.10, DISPLAY_SCALE * 0.93)
+	elif drive == 1:
+		ts = Vector2(DISPLAY_SCALE * 1.05, DISPLAY_SCALE * 0.96)
+	_spr.scale = ts
+	# flash de dano (vermelho quente) + piscar de invulnerabilidade
+	var a := 1.0
 	if invuln_blink and int(Time.get_ticks_msec() / 70) % 2 == 0:
-		alpha = 0.45
-	var bob := 0.0
-	var leg_a := 0.0
-	var leg_b := 0.0
-	if moving:
-		bob = absf(sin(walk_phase)) * 2.2
-		leg_a = sin(walk_phase) * 7.0
-		leg_b = sin(walk_phase + PI) * 7.0
-	var body_col := STEEL.lerp(Color(1, 0.3, 0.25), hurt_flash * 0.7)
-	var dark_col := STEEL_D.lerp(Color(0.7, 0.15, 0.12), hurt_flash * 0.7)
-
-	# sombra no chão
-	var sh := PackedVector2Array()
-	for i in range(20):
-		var a2 := TAU * float(i) / 20.0
-		sh.append(Vector2(cos(a2) * 22.0, 3 + sin(a2) * 7.0))
-	draw_colored_polygon(sh, Color(0, 0, 0, 0.35))
-
-	# capa: flui na direção OPOSTA ao olhar (polígono base p/ -X, girado)
-	var wave := sin(walk_phase * 0.9 + 1.2) * (3.0 if moving else 1.2)
-	var anchor := Vector2(0, -38 + bob)
-	var cloak_base := PackedVector2Array([
-		Vector2(-2, -56 + bob), Vector2(-26, -44 + bob + wave),
-		Vector2(-30, -16 + wave * 1.6), Vector2(-14, -4 + wave),
-		Vector2(-4, -18 + bob)])
-	draw_colored_polygon(_rot(cloak_base, anchor, face_angle), Color(CLOTH_D, alpha))
-	var cloak2_base := PackedVector2Array([
-		Vector2(-2, -54 + bob), Vector2(-20, -42 + bob + wave),
-		Vector2(-22, -20 + wave), Vector2(-8, -10 + wave * 0.6), Vector2(-3, -24 + bob)])
-	draw_colored_polygon(_rot(cloak2_base, anchor, face_angle), Color(CLOTH, alpha))
-
-	# pernas/botas
-	draw_rect(Rect2(-9 + leg_a, -18, 7, 17), Color(dark_col, alpha))
-	draw_rect(Rect2(3 + leg_b, -18, 7, 17), Color(dark_col, alpha))
-	draw_rect(Rect2(-10 + leg_a, -3, 9, 4), Color(0.16, 0.13, 0.11, alpha))
-	draw_rect(Rect2(2 + leg_b, -3, 9, 4), Color(0.16, 0.13, 0.11, alpha))
-
-	# tronco (armadura)
-	var torso := PackedVector2Array([
-		Vector2(-11, -58 + bob), Vector2(11, -58 + bob), Vector2(13, -30 + bob),
-		Vector2(8, -18 + bob), Vector2(-8, -18 + bob), Vector2(-13, -30 + bob)])
-	draw_colored_polygon(torso, Color(body_col, alpha))
-	draw_rect(Rect2(-11, -50 + bob, 22, 4), Color(STEEL_L, alpha * 0.9))
-	draw_rect(Rect2(-9, -30 + bob, 18, 3), Color(GOLD, alpha))
-	draw_circle(Vector2(0, -42 + bob), 3.5, Color(core_color, alpha))
-
-	# braço do escudo
-	draw_line(Vector2(-8, -52 + bob), Vector2(-16, -36 + bob), Color(dark_col, alpha), 5.0)
-	var shield := PackedVector2Array([
-		Vector2(-22, -48 + bob), Vector2(-12, -48 + bob), Vector2(-12, -28 + bob),
-		Vector2(-17, -22 + bob), Vector2(-22, -28 + bob)])
-	draw_colored_polygon(shield, Color(STEEL_D, alpha))
-	draw_polyline(PackedVector2Array(shield + PackedVector2Array([shield[0]])), Color(GOLD, alpha), 1.6)
-
-	# cabeça: elmo + pluma + viseira deslocada p/ o olhar
-	var look_x := cos(face_angle) * 3.0
-	draw_circle(Vector2(1, -64 + bob), 9.5, Color(body_col, alpha))
-	draw_rect(Rect2(-6 + look_x, -66 + bob, 13, 3.4), Color(0.10, 0.10, 0.13, alpha))
-	var plume := PackedVector2Array([
-		Vector2(-2, -72 + bob), Vector2(-14 - cos(face_angle) * 3.0, -78 + bob),
-		Vector2(-18 - cos(face_angle) * 3.0, -70 + bob), Vector2(-8, -66 + bob)])
-	draw_colored_polygon(plume, Color(CLOTH.lightened(0.15), alpha))
-
-	# braço da espada + espada (ângulo absoluto)
-	var shoulder := Vector2(9, -52 + bob)
-	var hand := shoulder + Vector2.from_angle(sword_angle) * 13.0
-	draw_line(shoulder, hand, Color(body_col, alpha), 5.5)
-	if smear_alpha > 0.01:
-		var pts := PackedVector2Array()
-		var steps := 10
-		for i in range(steps + 1):
-			var a3 := lerpf(smear_from, smear_to, float(i) / steps)
-			pts.append(hand + Vector2.from_angle(a3) * 47.0)
-		pts.append(hand)
-		draw_colored_polygon(pts, Color(0.85, 0.93, 1.0, smear_alpha * 0.35 * alpha))
-	var tip := hand + Vector2.from_angle(sword_angle) * 47.0
-	draw_line(hand, tip, Color(0.92, 0.95, 0.99, alpha), 4.0)
-	draw_line(hand, hand + Vector2.from_angle(sword_angle) * 10.0, Color(0.65, 0.75, 0.85, alpha), 5.0)
-	var guard_dir := Vector2.from_angle(sword_angle + PI * 0.5)
-	draw_line(hand + guard_dir * 6.0, hand - guard_dir * 6.0, Color(GOLD, alpha), 3.0)
-	draw_line(hand, hand - Vector2.from_angle(sword_angle) * 6.0, Color(0.25, 0.18, 0.12, alpha), 4.0)
+		a = 0.45
+	var hf := 0.0 if dead else hurt_flash
+	_spr.modulate = Color(1.0 + 1.5 * hf, 1.0 - 0.5 * hf, 1.0 - 0.5 * hf, a)
+	# núcleo de PA: posição no peito, lado conforme a mira
+	_glow.position = Vector2(-10.0 if flip else 10.0, -56.0)
+	var pulse := 0.42 + 0.20 * sin(Time.get_ticks_msec() * 0.006)
+	_glow.modulate = Color(core_color, 0.0 if dead else pulse)
+	# poeira ao correr
+	_dust.emitting = moving and not dead and not is_dashing

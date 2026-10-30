@@ -63,7 +63,7 @@ func _ready() -> void:
 	add_child(shape)
 	view = KnightView.new()
 	add_child(view)
-	z_index = 10
+	z_index = 0  # v2: quem ordena é o y-sort do nó `entities` (Main)
 
 func reset() -> void:
 	hp = hp_max
@@ -326,3 +326,9 @@ func _sync_view(delta: float) -> void:
 	else:
 		view.sword_angle = face_angle - 0.5 + sin(Time.get_ticks_msec() * 0.0016) * 0.06
 		view.smear_alpha = 0.0
+	# v2 (sprites): a view nova dirige os quadros do golpe pela FSM real —
+	# nome da animação + fase normalizada (corta nas faixas 25%/62%).
+	view.atk_anim = ("attack%d" % (combo_index + 1)) if attacking else ""
+	view.atk_phase = clampf(atk_t / float(SWINGS[combo_index]["dur"]), 0.0, 1.0) if attacking else 0.0
+	view.is_dashing = dashing > 0.0
+	view.speed_now = velocity.length()
