@@ -2,11 +2,11 @@
   "knight": {
     "canvas": [
       145,
-      210
+      200
     ],
     "feet": [
       72,
-      179
+      170
     ],
     "anims": {
       "idle": [
@@ -15,68 +15,106 @@
         "knight_idle_2.png",
         "knight_idle_3.png"
       ],
-      "run": [
-        "knight_run_0.png",
-        "knight_run_1.png",
-        "knight_run_2.png",
-        "knight_run_3.png",
-        "knight_run_4.png"
-      ],
-      "attack": [
-        "knight_attack_0.png",
-        "knight_attack_1.png",
-        "knight_attack_2.png",
-        "knight_attack_3.png",
-        "knight_attack_4.png",
-        "knight_attack_5.png",
-        "knight_attack_6.png"
-      ],
       "misc": [
         "knight_dash_0.png",
         "knight_dash_1.png",
         "knight_hurt_0.png",
         "knight_death_0.png",
         "knight_death_1.png"
+      ],
+      "run": [
+        "knight_run_0.png",
+        "knight_run_1.png",
+        "knight_run_2.png",
+        "knight_run_3.png",
+        "knight_run_4.png",
+        "knight_run_5.png"
+      ],
+      "combo": [
+        "knight_combo_0.png",
+        "knight_combo_1.png",
+        "knight_combo_2.png",
+        "knight_combo_3.png",
+        "knight_combo_4.png",
+        "knight_combo_5.png",
+        "knight_combo_6.png",
+        "knight_combo_7.png"
       ]
     }
   },
   "rapida": {
     "canvas": [
-      114,
-      156
+      157,
+      206
     ],
     "feet": [
-      57,
-      125
+      78,
+      176
     ],
     "anims": {
-      "all": [
-        "rapida_walk_0.png",
-        "rapida_walk_1.png",
-        "rapida_walk_2.png",
-        "rapida_walk_3.png",
+      "run": [
+        "rapida_run_0.png",
+        "rapida_run_1.png",
+        "rapida_run_2.png",
+        "rapida_run_3.png",
+        "rapida_run_4.png",
+        "rapida_run_5.png"
+      ],
+      "attack": [
         "rapida_attack_0.png",
-        "rapida_attack_1.png"
+        "rapida_attack_1.png",
+        "rapida_attack_2.png",
+        "rapida_attack_3.png",
+        "rapida_attack_4.png",
+        "rapida_attack_5.png"
+      ],
+      "rise": [
+        "rapida_rise_0.png",
+        "rapida_rise_1.png",
+        "rapida_rise_2.png",
+        "rapida_rise_3.png"
       ]
     }
   },
   "bruta": {
     "canvas": [
-      204,
-      310
+      287,
+      365
     ],
     "feet": [
-      102,
-      280
+      143,
+      335
     ],
     "anims": {
-      "all": [
+      "walk": [
         "bruta_walk_0.png",
         "bruta_walk_1.png",
         "bruta_walk_2.png",
         "bruta_walk_3.png",
+        "bruta_walk_4.png",
+        "bruta_walk_5.png"
+      ],
+      "attack": [
         "bruta_attack_0.png",
-        "bruta_attack_1.png"
+        "bruta_attack_1.png",
+        "bruta_attack_2.png",
+        "bruta_attack_3.png",
+        "bruta_attack_4.png",
+        "bruta_attack_5.png"
+      ],
+      "rise": [
+        "bruta_rise_0.png",
+        "bruta_rise_1.png",
+        "bruta_rise_2.png",
+        "bruta_rise_3.png"
+      ],
+      "misc": [
+        "bruta_hurt_0.png",
+        "bruta_hurt_1.png",
+        "bruta_dissolve_0.png",
+        "bruta_dissolve_1.png",
+        "bruta_dissolve_2.png",
+        "bruta_dissolve_3.png"
       ]
     }
   },

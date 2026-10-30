@@ -165,12 +165,27 @@ func _clamp_to_arena() -> void:
 	if rel.length() > 0.97:
 		global_position = c + rel.normalized() * 0.97 * r
 
+func _state_duration() -> float:
+	match state:
+		"spawn":
+			return 0.5
+		"telegraph":
+			return _telegraph_time()
+		"attack":
+			return 0.22
+		"recover":
+			return 0.85 if kind == "bruta" else 0.65
+	return 1.0
+
 func _sync_view() -> void:
-	view.state_name = state  # v2: a view de sprites lê a FSM real
+	view.state_name = state  # v2/v3: a view de sprites lê a FSM real
 	view.face_angle = face_angle
 	view.wobble = wobble
 	view.hurt_flash = hurt_flash
 	view.spawn_alpha = clampf(state_t / 0.5, 0.0, 1.0) if state == "spawn" else 1.0
 	view.telegraph = clampf(state_t / _telegraph_time(), 0.0, 1.0) if state == "telegraph" else 0.0
-	var sc := clampf(state_t / 0.5, 0.2, 1.0) if state == "spawn" else 1.0
-	view.scale = Vector2.ONE * sc
+	# v3: progresso dentro do estado (dirige rise/ataque/dissolução) e
+	# velocidade real (dirige o ritmo do ciclo de locomoção e a inclinação)
+	view.state_progress = clampf(state_t / _state_duration(), 0.0, 1.0)
+	view.speed_now = velocity.length()
+	view.scale = Vector2.ONE  # v3: quem emerge é a arte do rise, sem encolher

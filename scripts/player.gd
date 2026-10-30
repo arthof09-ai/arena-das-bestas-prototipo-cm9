@@ -247,7 +247,7 @@ func _physics_process(delta: float) -> void:
 		velocity = dash_dir * 920.0
 		ghost_t -= delta
 		if ghost_t <= 0.0:
-			ghost_t = 0.032
+			ghost_t = 0.025  # v3: pós-imagens mais densas (a cada ~0,02 s)
 			if game and game.has_method("spawn_ghost"):
 				game.spawn_ghost(self)
 	elif attacking:
@@ -268,8 +268,11 @@ func _physics_process(delta: float) -> void:
 			if atk_buffered:
 				_start_attack((combo_index + 1) % 3)
 	else:
+		# v3: aceleração/desaceleração por interpolação exponencial —
+		# o corpo "desliza" para a velocidade alvo em vez de ligar/desligar
 		var target_vel := iv * move_speed
-		velocity = velocity.move_toward(target_vel, 2600.0 * delta)
+		var rate := 13.0 if iv != Vector2.ZERO else 16.0
+		velocity = velocity.lerp(target_vel, clampf(delta * rate, 0.0, 1.0))
 
 	moving = velocity.length() > 30.0 and dashing <= 0.0
 	if moving:

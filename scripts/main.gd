@@ -1,9 +1,13 @@
 extends Node2D
-## ARENA DAS BESTAS — Protótipo CM-000009 (EXP-MUSE-003; v2 = EXP-MUSE-004)
+## ARENA DAS BESTAS — Protótipo CM-000009 (EXP-MUSE-003; v2 = EXP-MUSE-004;
+## v3 = EXP-MUSE-005)
 ## PROTÓTIPO DE TESTE — não é o jogo oficial do RPG Assimilação.
 ## Gerente do jogo: estados, ondas, rank/estrelas, placar, efeitos.
 ## v2: camada visual refeita com sprites pintados gerados por IA
 ## (knight_view/shadow_view/arena_bg); sistemas e FSMs idênticos à v1.
+## v3: animação fluida estilo Hades — ciclos completos dos monstros
+## (rise/corrida/ataque em sequência/dissolução), anel de telegrafia,
+## pós-imagem do dash; sistemas, números e mapa idênticos à v2.
 
 const ARENA_CENTER := Vector2(640, 372)
 const ARENA_RADII := Vector2(566, 306)
@@ -328,17 +332,16 @@ func perform_special(p: Player) -> void:
 			e.call("take_damage", dmg, dir, true)
 
 func spawn_ghost(p: Player) -> void:
-	var g := KnightView.new()
-	g.face_angle = p.view.face_angle
-	g.sword_angle = p.view.sword_angle
-	g.walk_phase = p.view.walk_phase
-	g.global_position = p.global_position
-	g.z_index = 9
-	g.modulate = Color(0.6, 0.85, 1.0, 0.40)
-	fx_layer.add_child(g)
+	# v3: pós-imagem enxuta — Sprite2D com o quadro atual do dash
+	# (a v2 instanciava uma KnightView inteira por fantasma)
+	var img := p.view.make_afterimage()
+	if img == null:
+		return
+	img.z_index = 9
+	fx_layer.add_child(img)
 	var tw := create_tween()
-	tw.tween_property(g, "modulate:a", 0.0, 0.30)
-	tw.tween_callback(g.queue_free)
+	tw.tween_property(img, "modulate:a", 0.0, 0.25)
+	tw.tween_callback(img.queue_free)
 
 # ---------------- efeitos ----------------
 

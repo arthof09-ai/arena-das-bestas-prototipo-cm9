@@ -30,8 +30,8 @@ var is_dashing: bool = false
 var speed_now: float = 0.0
 
 const DISPLAY_SCALE := 0.62
-const CANVAS := Vector2(145, 210)  # = assets/manifest.json (knight)
-const FEET := Vector2(72, 179)
+const CANVAS := Vector2(145, 200)  # = assets/manifest.json v3 (knight)
+const FEET := Vector2(72, 170)
 
 var _spr: AnimatedSprite2D
 var _glow: Sprite2D
@@ -109,18 +109,22 @@ func _build_frames() -> SpriteFrames:
 	sf.remove_animation("default")
 	_add(sf, "idle", ["knight_idle_0.png", "knight_idle_1.png",
 		"knight_idle_2.png", "knight_idle_3.png"], 5.0, true)
+	# v3: corrida nova de 6 quadros (folha knight-run8; a geração
+	# entregou 6 poses aproveitáveis das 8 pedidas)
 	_add(sf, "run", ["knight_run_0.png", "knight_run_1.png", "knight_run_2.png",
-		"knight_run_3.png", "knight_run_4.png"], 11.0, true)
-	# combo: quadros da folha de ataque (poses 0..6) mapeados por fase —
-	# golpe 1: prepara(0) / corta(1) / recupera(4)
-	# golpe 2: prepara(2) / corta(3) / recupera(4)
-	# golpe 3: prepara(2) / corta(5) / recupera(6)
-	_add(sf, "attack1", ["knight_attack_0.png", "knight_attack_1.png",
-		"knight_attack_4.png"], 10.0, false)
-	_add(sf, "attack2", ["knight_attack_2.png", "knight_attack_3.png",
-		"knight_attack_4.png"], 10.0, false)
-	_add(sf, "attack3", ["knight_attack_2.png", "knight_attack_5.png",
-		"knight_attack_6.png"], 7.2, false)
+		"knight_run_3.png", "knight_run_4.png", "knight_run_5.png"], 13.0, true)
+	# v3: combo expandido — folha nova de 8 poses (0..7) mapeadas em
+	# 4 quadros por golpe: antecipação / corte / rastro / recuperação
+	# (o quadro é escolhido pela FASE do golpe em _process).
+	# poses: 0 preparo, 1 corte c/ rastro fino, 2 guarda pronta,
+	#        3 lâminas cruzadas, 4 corpo assentado c/ arco residual,
+	#        5 corte reverso c/ arco azul, 6 finalizador aéreo, 7 postura final
+	_add(sf, "attack1", ["knight_combo_0.png", "knight_combo_1.png",
+		"knight_combo_1.png", "knight_combo_4.png"], 10.0, false)
+	_add(sf, "attack2", ["knight_combo_3.png", "knight_combo_5.png",
+		"knight_combo_5.png", "knight_combo_2.png"], 10.0, false)
+	_add(sf, "attack3", ["knight_combo_2.png", "knight_combo_6.png",
+		"knight_combo_6.png", "knight_combo_7.png"], 7.2, false)
 	_add(sf, "dash", ["knight_dash_0.png", "knight_dash_1.png"], 12.0, false)
 	_add(sf, "hurt", ["knight_hurt_0.png"], 1.0, false)
 	_add(sf, "death", ["knight_death_0.png", "knight_death_1.png"], 2.2, false)
@@ -140,7 +144,8 @@ func _process(_delta: float) -> void:
 		want = "dash"
 	elif atk_anim != "":
 		want = atk_anim
-		drive = 0 if atk_phase < 0.25 else (1 if atk_phase < 0.62 else 2)
+		# v3: 4 quadros por golpe — antecipação / corte / rastro / recuperação
+		drive = 0 if atk_phase < 0.25 else (1 if atk_phase < 0.45 else (2 if atk_phase < 0.62 else 3))
 	elif hurt_flash > 0.5:
 		want = "hurt"
 	elif moving:
@@ -178,3 +183,21 @@ func _process(_delta: float) -> void:
 	_glow.modulate = Color(core_color, 0.0 if dead else pulse)
 	# poeira ao correr
 	_dust.emitting = moving and not dead and not is_dashing
+
+## v3 — pós-imagem do dash (assinatura estilo Hades): um Sprite2D leve
+## com o quadro ATUAL do cavaleiro (pose do dash, não a view inteira),
+## tingido de ciano; o Main desvanece e libera.
+func make_afterimage() -> Sprite2D:
+	if _spr == null or _spr.sprite_frames == null:
+		return null
+	var tex := _spr.sprite_frames.get_frame_texture(_spr.animation, _spr.frame)
+	if tex == null:
+		return null
+	var img := Sprite2D.new()
+	img.texture = tex
+	img.offset = _spr.offset
+	img.scale = _spr.scale
+	img.flip_h = _spr.flip_h
+	img.position = global_position
+	img.modulate = Color(0.55, 0.85, 1.0, 0.45)
+	return img

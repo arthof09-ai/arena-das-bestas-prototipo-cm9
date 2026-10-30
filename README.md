@@ -1,10 +1,45 @@
-# ARENA DAS BESTAS — Protótipo CM-000009 (EXP-MUSE-003 · v2 = EXP-MUSE-004)
+# ARENA DAS BESTAS — Protótipo CM-000009 (EXP-MUSE-003 · v2 = EXP-MUSE-004 · v3 = EXP-MUSE-005)
 
 **PROTÓTIPO DE TESTE — NÃO é o jogo oficial do RPG Assimilação.**
 Arena de combate 2.5D em Godot 4.7.2, criada pelo Comestre Muse 1 (CM-000009)
 em 30/10/2026 por ordem do Mestre. Usa apenas sistemas genéricos inspirados
 no Assimilação (PA, ranks, ondas) — nenhum personagem da Party, nenhum dado
 confidencial.
+
+## v3 — animação fluida estilo Hades (EXP-MUSE-005)
+
+Feedback do Mestre sobre a v2: "o mapa tá incrível" (arena INTOCADA na v3),
+mas os monstros precisavam de "animações melhores, mais fluidas, de ataques
+e movimentação, estilo Hades 1". A v3 mantém sistemas/regras/balanceamento
+da v2 EXATOS (auto-teste com os mesmos números) e refaz a animação:
+
+- **Folhas novas** (`assets-src/`, mesmo estilo/design da v2, referência =
+  folha v2 do personagem): rápida corrida (6), ataque em sequência (6),
+  surgir do chão (4); bruta andar pesado (6), esmagamento em sequência (6),
+  surgir (4), ferido+dissolução (6 = 2+4); cavaleiro corrida (6), combo
+  expandido (8 poses). Os pedidos eram 8/8/12 quadros — a geração entregou
+  6/6/8 e os ciclos foram fechados assim. A folha de ferido/dissolução da
+  rápida foi recusada pelo gerador: a rápida usa poses de recuo da folha de
+  ataque como "ferido" e dissolução procedural (rise reverso + fade).
+- **Processamento:** `tools/process_sprites_v3.py` — despill reforçado
+  (fumaça esverdeada das folhas novas), fatiador "por vales" de alfa para
+  folhas com poses que se cruzam (combo/ataque), escalas ancoradas nas
+  efetivas da v2 (mesmos tamanhos em jogo).
+- **Fluidez no código:** ciclos com `speed_scale` amarrado à velocidade
+  real do corpo; movimento do cavaleiro com aceleração/desaceleração por
+  interpolação exponencial; **telegrafia estilo Hades** — anel no chão que
+  se fecha sobre o alvo conforme o golpe se aproxima (+ marcador de
+  direção); **pós-imagens do dash** (fantasma do sprite a cada ~0,025 s,
+  some em ~0,25 s); morte das Sombras com poses de dissolução (bruta) ou
+  rise reverso (rápida) + partículas; ataque das Sombras dirigido pela FSM
+  por bandas de fase (telegrafia 0–1, golpe 2–3, recuperação 3–5 dos 6
+  quadros); combo do cavaleiro com 4 quadros por golpe.
+- **Exports:** Web (`export-web/`, pck ≈ 3,0 MB) e Windows
+  (`export-windows/ArenaDasBestas-v3.exe`, arquivo único ≈ 112 MB).
+- **Capturas:** `capturas/` — sessões Chromium (título/gameplay/toque) +
+  estúdio determinístico (rise, andar/corrida em 2 quadros, anel de
+  telegrafia, impacto do esmagamento, investida, dash com pós-imagem,
+  combo, dissoluções).
 
 ## v2 — arte e animação refeitas (EXP-MUSE-004)
 
