@@ -1,0 +1,27 @@
+; ARENA DAS BESTAS — Protótipo CM-000009 (EXP-MUSE-003)
+; PROTÓTIPO DE TESTE — não é o jogo oficial do RPG Assimilação.
+; Projeto Godot 4.7.2 — tudo desenhado por código, sem assets externos.
+
+config_version=5
+
+[application]
+
+config/name="Arena das Bestas — Protótipo CM-000009"
+config/description="Protótipo de teste de arena de combate 2.5D inspirado nos sistemas do Assimilação (PA, ranks, ondas). NÃO é o jogo oficial."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
+window/handheld/orientation="landscape"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.03, 0.025, 0.05, 1)

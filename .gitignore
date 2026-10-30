@@ -1,0 +1,8 @@
+.godot/
+export-web/
+export-windows/
+assets-src/
+capturas/
+*.zip
+__pycache__/
+tmp/
