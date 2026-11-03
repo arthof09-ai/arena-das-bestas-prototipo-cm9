@@ -32,8 +32,8 @@
   const AREA = { cols: 10, rows: 7, origin: { x: 0, y: 0 } };
   const ELENCO = [
     { id: 'orc',     nome: 'Orc',             modelo: 'modelos/orc-t1.glb', x: 3, y: 3, alturaMetros: 2.4,  vivo: true },
-    { id: 'ong',     nome: 'Ong',             modelo: 'marcador',          x: 6, y: 2, alturaMetros: 1.75, vivo: true },
-    { id: 'capanga', nome: 'Capanga 1',       modelo: 'marcador',          x: 7, y: 4, alturaMetros: 1.8,  vivo: true },
+    { id: 'ong',     nome: 'Ong',             modelo: 'modelos/ong-rogue.glb',     x: 6, y: 2, alturaMetros: 1.75, vivo: true, animacoes: { idle: 'Idle_A', andar: 'Walking_A' } },
+    { id: 'capanga', nome: 'Capanga 1',       modelo: 'modelos/capanga-knight.glb', x: 7, y: 4, alturaMetros: 1.8,  vivo: true, animacoes: { idle: 'Idle_A', andar: 'Walking_A' } },
     { id: 'lobo',    nome: 'Lobo da Caverna', modelo: 'marcador-lobo',     x: 2, y: 5, alturaMetros: 0.9,  vivo: true }
   ];
   /* Reservas internas de movimento dos MONSTROS, em casas (T1.3):
