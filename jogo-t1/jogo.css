@@ -1,0 +1,186 @@
+/* Campo de Batalha — HUD do jogo (tranche T0).
+   Linguagem visual dos mockups aprovados (DESENHO-RECONSTRUCAO.md):
+   pergaminho e dourado sobre painéis escuros, UMA linguagem só. */
+:root{
+  color-scheme:dark;
+  --ouro:#c9a227; --ouro-claro:#ffe9a8; --ouro-vivo:#ffd94d;
+  --pergaminho:#f3e9d2; --pergaminho-fraco:#cbbd93; --pergaminho-mudo:#9d8f6d;
+  --painel:rgba(16,12,8,.55); --painel-denso:linear-gradient(160deg, rgba(26,20,12,.95), rgba(14,11,7,.97));
+  --linha:rgba(201,162,39,.85); --linha-fraca:rgba(201,162,39,.3);
+  --alma:#8a76c9;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{overflow:hidden;background:#0a0f0a;color:var(--pergaminho);
+  font-family:'Segoe UI',system-ui,-apple-system,sans-serif}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;touch-action:manipulation}
+button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
+
+/* ---------- mundo ---------- */
+#mapa{position:fixed;inset:0}
+#mapa canvas{display:block;width:100%;height:100%;touch-action:none}
+/* Camada de etiquetas criada pela cena da rodada 2 dentro de #mapa:
+   tem de cobrir a montagem inteira (contrato do README da entrega). */
+#mapa .etiquetas{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.nome{position:absolute;top:0;left:0;padding:3px 8px;border:1px solid rgba(201,162,39,.35);
+  border-bottom:2px solid var(--cor,#c9a227);border-radius:5px;background:rgba(10,8,5,.82);
+  color:#fff8e5;font-size:12px;line-height:16px;font-weight:600;white-space:nowrap;will-change:transform;
+  max-width:min(240px,calc(100vw - 24px));overflow:hidden;text-overflow:ellipsis}
+.nome[hidden]{display:none}
+.nome.ativa{background:#eee5ca;color:#25332b}
+
+/* ---------- cantos: coluna do canto superior esquerdo ---------- */
+#cantos{position:fixed;left:max(10px,env(safe-area-inset-left));top:max(10px,env(safe-area-inset-top));
+  z-index:26;display:flex;flex-direction:column;gap:8px}
+.cornerbtn{width:44px;height:44px;border-radius:50%;background:rgba(16,12,8,.62);
+  border:1px solid var(--linha);color:var(--ouro-claro);font-size:19px;font-weight:800;
+  display:flex;align-items:center;justify-content:center}
+.cornerbtn.quadrado{border-radius:12px}
+.cornerbtn.on{background:var(--ouro);color:#1c1508;box-shadow:0 0 14px rgba(255,217,77,.45)}
+#btn-alerta{font-size:17px}
+
+/* ---------- pop-up de configurações rápidas (sob a engrenagem) ---------- */
+/* Altura máxima: o fundo nunca passa da faixa (topo 170 + altura ≤ ecrã-242);
+   o que não couber rola DENTRO do pop-up — estatísticas incluídas. */
+#cfgpop{position:fixed;left:max(10px,env(safe-area-inset-left));top:170px;z-index:27;width:252px;
+  max-width:calc(100vw - 20px);max-height:calc(100vh - 242px);overflow-y:auto;
+  background:var(--painel-denso);border:1px solid var(--linha);
+  border-radius:12px;padding:9px 12px}
+#cfgpop[hidden]{display:none}
+#cfgpop h3{font-family:Georgia,'DejaVu Serif',serif;font-size:10px;letter-spacing:.18em;
+  color:var(--ouro);text-transform:uppercase;margin-bottom:5px}
+.cfgrow{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:5px 0;border-top:1px dashed rgba(201,162,39,.25)}
+.cfgrow:first-of-type{border-top:0}
+.cfgrow .cl{font-size:11px;color:var(--pergaminho)}
+.cfgrow .cl small{display:block;font-size:10px;color:var(--pergaminho-mudo)}
+.seg{display:flex;border:1px solid rgba(201,162,39,.8);border-radius:8px;overflow:hidden;height:46px}
+.seg button{background:rgba(28,21,12,.75);color:var(--pergaminho-fraco);font-size:11px;font-weight:700;
+  padding:0 10px;display:flex;align-items:center}
+.seg button.on{background:var(--ouro);color:#1c1508}
+.zoomctl{display:flex;align-items:center;gap:6px}
+.zoomctl .zb{width:44px;height:44px;border-radius:8px;border:1px solid rgba(201,162,39,.8);
+  background:rgba(28,21,12,.85);color:var(--ouro-claro);font-size:15px;
+  display:flex;align-items:center;justify-content:center}
+.zoomctl .zv{font-size:11px;font-weight:700;color:#fff3d0;min-width:36px;text-align:center}
+.tog{min-width:74px;height:44px;display:inline-flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:700;padding:0 8px;border-radius:8px;
+  border:1px solid rgba(201,162,39,.8);background:rgba(28,21,12,.85);color:var(--pergaminho-fraco)}
+.tog.on{background:var(--ouro);color:#1c1508}
+#cfgpop .stats{margin-top:6px;font-size:10px;color:var(--pergaminho-mudo);font-variant-numeric:tabular-nums}
+
+/* ---------- ficha fechada: chip flutuante (só a própria) ---------- */
+#fichachip{position:fixed;left:12px;bottom:68px;width:182px;z-index:20;text-align:left;
+  background:var(--painel);border:1px solid var(--linha);border-radius:11px;padding:8px 10px 9px}
+#fichachip[hidden]{display:none}
+#fichachip .fh{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+#fichachip .fname{font-family:Georgia,'DejaVu Serif',serif;font-weight:700;font-size:14px;color:var(--ouro-claro);letter-spacing:.04em}
+#fichachip .fopen{font-size:10px;color:var(--pergaminho-fraco);font-weight:700;letter-spacing:.06em}
+#fichachip .bl{display:flex;justify-content:space-between;font-size:10px;color:var(--pergaminho-fraco);letter-spacing:.08em;margin-top:5px}
+.bar{height:8px;border-radius:4px;background:rgba(255,255,255,.16);overflow:hidden;display:block}
+.bar i{display:block;height:100%;border-radius:4px}
+.bar.vida i{background:linear-gradient(90deg,#a83226,#d05545)}
+.bar.alma i{background:linear-gradient(90deg,#5b4a9e,#8a76c9)}
+#fichachip .bar{margin-top:4px}
+
+/* ---------- ficha aberta: coluna lateral de 25% ---------- */
+#ficha{position:fixed;top:0;right:0;bottom:56px;width:25%;min-width:200px;max-width:320px;z-index:25;
+  overflow-y:auto;background:var(--painel-denso);border-left:2px solid var(--ouro);padding:9px 12px}
+#ficha[hidden]{display:none}
+#ficha header{display:flex;align-items:flex-start;gap:6px}
+#ficha h1{font-family:Georgia,'DejaVu Serif',serif;font-size:19px;color:var(--ouro-claro);letter-spacing:.05em;line-height:1}
+#ficha .sub{font-size:10px;color:var(--pergaminho-fraco);margin-top:3px;letter-spacing:.03em}
+.testchip{display:inline-block;background:#7a1f1f;color:#ffd9d0;font-size:10px;font-weight:800;
+  letter-spacing:.1em;padding:2px 6px;border-radius:4px;margin-top:5px}
+.fx{margin-left:auto;flex:none;width:44px;height:44px;border-radius:8px;border:1px solid rgba(201,162,39,.7);
+  background:rgba(28,21,12,.9);color:var(--ouro-claro);font-size:15px;
+  display:flex;align-items:center;justify-content:center}
+#ficha h2{font-family:Georgia,'DejaVu Serif',serif;font-size:10px;letter-spacing:.18em;
+  color:var(--ouro);text-transform:uppercase;margin:9px 0 3px}
+.rec{margin-top:7px}
+.rec .rt{display:flex;justify-content:space-between;align-items:baseline}
+.rec .rt span{font-size:10px;letter-spacing:.1em;color:var(--pergaminho-fraco)}
+.rec .rt b{font-size:13px;color:#fff3d0}
+.rec small{display:block;font-size:10px;color:var(--pergaminho-mudo);margin-top:1px}
+.rec .bar{margin-top:2px;height:7px}
+.attrs{display:flex;gap:4px}
+.attrs div{flex:1;text-align:center;background:rgba(255,255,255,.05);border:1px solid rgba(201,162,39,.45);border-radius:6px;padding:3px 0 2px}
+.attrs b{display:block;font-size:12.5px;color:#fff3d0;line-height:1}
+.attrs span{font-size:10px;letter-spacing:.1em;color:var(--pergaminho-fraco)}
+.resumo{display:flex;gap:8px;align-items:stretch}
+.ca{width:52px;flex:none;text-align:center;background:rgba(201,162,39,.13);border:1px solid rgba(201,162,39,.65);border-radius:8px;padding:4px 0 3px}
+.ca b{display:block;font-family:Georgia,serif;font-size:17px;color:var(--ouro-claro);line-height:1}
+.ca span{display:block;font-size:10px;letter-spacing:.14em;color:var(--pergaminho-fraco)}
+.rgrid{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.rgrid div{background:rgba(255,255,255,.05);border:1px solid var(--linha-fraca);border-radius:6px;padding:2px 6px}
+.rgrid span{display:block;font-size:10px;letter-spacing:.03em;white-space:nowrap;color:var(--pergaminho-mudo)}
+.rgrid b{font-size:12px;color:#fff3d0}
+.tec{display:flex;justify-content:space-between;align-items:center;padding:2px 0;
+  border-bottom:1px dashed rgba(201,162,39,.25);font-size:11px}
+.tec em{font-style:normal;background:rgba(91,74,158,.35);border:1px solid rgba(138,118,201,.7);
+  color:#d9ccff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px}
+#ficha .nota{font-size:10px;color:var(--pergaminho-mudo);line-height:1.45;margin-top:8px}
+#ficha footer{margin-top:9px;font-size:10px;color:#8a7c58;letter-spacing:.02em;line-height:1.35}
+
+/* ---------- faixa de baixo: UMA, fixa, 56 px ---------- */
+#faixa{position:fixed;left:0;right:0;bottom:0;height:56px;z-index:30;
+  background:var(--painel);border-top:1px solid var(--linha);
+  display:flex;align-items:center;gap:6px;padding:6px}
+.turn{display:flex;align-items:center;gap:5px;padding:0 6px 0 2px;height:44px;flex:none;
+  border-right:1px solid rgba(201,162,39,.35);white-space:nowrap}
+.turn .tl{font-size:10px;letter-spacing:.12em;color:var(--pergaminho-fraco)}
+.turn .tn{font-family:Georgia,'DejaVu Serif',serif;font-size:16px;font-weight:700;color:var(--ouro-claro);line-height:1}
+.turn .rd{background:var(--ouro);color:#1c1508;font-size:10px;font-weight:800;border-radius:5px;padding:2px 5px}
+/* A mensagem NUNCA encolhe a zero: quebra em até 3 linhas dentro dos 44 px
+   da faixa (a faixa não cresce — o texto reparte-se, as acções encolhem). */
+#mensagem{flex:1;min-width:0;height:44px;display:flex;align-items:center;overflow:hidden;
+  font-size:11.5px;line-height:1.3;color:var(--pergaminho-fraco)}
+#mensagem-txt{display:block;white-space:normal}
+#mensagem b{color:#fff3d0}
+.actions{display:flex;gap:6px;align-items:center;flex:none}
+.btn{height:44px;padding:0 12px;display:flex;align-items:center;gap:6px;
+  background:rgba(28,21,12,.92);border:1px solid rgba(201,162,39,.8);border-radius:9px;
+  color:var(--pergaminho);font-size:12.5px;font-weight:600;white-space:nowrap}
+.btn .gi{font-size:14px;line-height:1}
+.btn.primary{background:linear-gradient(#8a6a1c,#6d5313);border-color:var(--ouro-vivo);color:#fff3d0}
+.btn.ghost{background:rgba(28,21,12,.55)}
+.btn .pa{font-size:10px;font-weight:800;background:rgba(91,74,158,.4);border:1px solid rgba(138,118,201,.7);
+  color:#d9ccff;padding:1px 6px;border-radius:6px}
+
+/* ---------- retrato: a mesma lei, apertada (não é modo degradado) ---------- */
+@media (max-width:560px){
+  #faixa{gap:4px;padding:6px 4px}
+  /* A vez vira coluna estreita (nome sobre a rodada), com tecto de largura:
+     nem o nome mais comprido ("Lobo da Caverna") rouba o espaço da mensagem. */
+  .turn{flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;
+    padding:0 4px 0 0;max-width:48px}
+  .turn .tl{display:none}
+  .turn .tn{font-size:12px;max-width:44px;overflow:hidden;text-overflow:ellipsis}
+  .turn .rd{padding:1px 4px}
+  #mensagem{font-size:10.5px}
+  .actions{gap:4px}
+  .btn{padding:0 7px;font-size:11px}
+  /* Estado base em retrato: botões compactos (ícone sobre o rótulo),
+     alvos sempre ≥44×44 — é isto que liberta ≥120 px para a mensagem. */
+  .actions.compacta .btn{flex-direction:column;justify-content:center;gap:1px;
+    min-width:44px;padding:2px 4px}
+  .actions.compacta .btn .gi{font-size:14px}
+  .actions.compacta .btn .gl{font-size:10px;line-height:1.15}
+  /* Em Atacar/Rolagem a vez sai da faixa: a mensagem fica com o espaço. */
+  #faixa[data-estado="atacar"] .turn,#faixa[data-estado="rolagem"] .turn{display:none}
+  #fichachip{width:162px;left:10px;bottom:66px}
+  #ficha{width:25%;min-width:0;max-width:none;padding:8px 7px}
+  #ficha h1{font-size:14px}
+  .attrs{flex-direction:column;gap:3px}
+  .attrs div{display:flex;justify-content:space-between;align-items:baseline;padding:2px 6px}
+  .attrs b{font-size:11px}
+  .resumo{flex-direction:column}
+  .ca{width:auto}
+  .rgrid{grid-template-columns:1fr}
+  .tec{flex-direction:column;align-items:flex-start;gap:2px;font-size:10px}
+  .rec .rt{flex-direction:column;align-items:flex-start}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *{transition:none!important;animation:none!important}
+}

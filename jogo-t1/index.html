@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#14100a">
+  <link rel="icon" href="data:,">
+  <title>Campo de Batalha · Assimilação</title>
+  <link rel="stylesheet" href="jogo.css">
+</head>
+<body>
+  <main id="mapa" aria-label="Campo de batalha tridimensional"></main>
+  <!-- A cena (rodada 2) cria a sua própria camada de etiquetas (.etiquetas)
+       dentro de #mapa; a casca só lhe dá o estilo (.nome, em jogo.css). -->
+
+  <!-- Cantos (lei do Mestre, 02/11 23:09): canto superior esquerdo =
+       engrenagem; abaixo dela, tela cheia. O pop-up rápido abre sob a engrenagem. -->
+  <div id="cantos" aria-label="Cantos de apresentação">
+    <button id="btn-config" class="cornerbtn" aria-label="Configurações rápidas" aria-expanded="false" title="Configurações rápidas">⚙</button>
+    <button id="btn-cheia" class="cornerbtn quadrado" aria-label="Tela cheia" title="Tela cheia">⛶</button>
+    <button id="btn-alerta" class="cornerbtn" aria-label="Alertas" title="Alertas">!</button>
+  </div>
+
+  <!-- Pop-up de configurações rápidas: aperta, aparece; escolhe; aperta, some. -->
+  <section id="cfgpop" hidden aria-label="Configurações rápidas">
+    <h3>Apresentação</h3>
+    <div class="cfgrow">
+      <span class="cl">Câmera</span>
+      <div class="seg" role="group" aria-label="Câmera">
+        <button id="cam-fixa" type="button">▦ Fixa</button>
+        <button id="cam-seguir" type="button">◎ Seguir</button>
+        <button id="cam-360" type="button">⟳ 360°</button>
+      </div>
+    </div>
+    <div class="cfgrow">
+      <span class="cl">Zoom</span>
+      <div class="zoomctl">
+        <button id="zoom-menos" class="zb" type="button" aria-label="Afastar câmera">−</button>
+        <span id="zoom-valor" class="zv">1,0×</span>
+        <button id="zoom-mais" class="zb" type="button" aria-label="Aproximar câmera">+</button>
+      </div>
+    </div>
+    <div class="cfgrow">
+      <span class="cl">Ajuda do grid<small>casas acesas ao mover</small></span>
+      <button id="tog-grid" class="tog on" type="button" aria-pressed="true">Ligada</button>
+    </div>
+    <div class="cfgrow">
+      <span class="cl">Qualidade</span>
+      <div class="seg" role="group" aria-label="Qualidade">
+        <button data-qualidade="baixa" type="button">Baixa</button>
+        <button data-qualidade="alta" type="button">Alta</button>
+      </div>
+    </div>
+    <p id="stats" class="stats">— FPS</p>
+  </section>
+
+  <!-- Ficha fechada: pop-up flutuante da própria personagem (só dados dela). -->
+  <button id="fichachip" type="button" aria-label="Abrir a ficha da Ong">
+    <span class="fh"><span class="fname">ONG</span><span class="fopen">FICHA ▸</span></span>
+    <span class="bl"><span>VIDA</span><span>ALMA · PA 7</span></span>
+    <span class="bar vida"><i style="width:75%"></i></span>
+    <span class="bar alma"><i style="width:70%"></i></span>
+  </button>
+
+  <!-- Ficha aberta: coluna lateral de 25% (conteúdo gerado por jogo.js). -->
+  <aside id="ficha" hidden aria-label="Ficha da figura"></aside>
+
+  <!-- Faixa de baixo: UMA só, 56 px fixos, só acções de batalha +
+       a linha de mensagem VISÍVEL. Apertar troca o miolo, nunca o tamanho. -->
+  <nav id="faixa" aria-label="Acções da rodada de batalha">
+    <div class="turn">
+      <span class="tl" id="vez-rotulo">VEZ DE</span>
+      <span class="tn" id="vez-nome">Ong</span>
+      <span class="rd" id="vez-rodada">R2</span>
+    </div>
+    <p id="mensagem" role="status" aria-live="polite"><span id="mensagem-txt"></span></p>
+    <div id="acoes" class="actions"></div>
+  </nav>
+
+  <script src="vendor/three.min.js"></script>
+  <script src="vendor/GLTFLoader.js"></script>
+  <script src="mundo.js"></script>
+  <script src="cena.js"></script>
+  <script src="jogo.js"></script>
+</body>
+</html>
