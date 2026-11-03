@@ -10,6 +10,11 @@
 </head>
 <body>
   <main id="mapa" aria-label="Campo de batalha tridimensional"></main>
+
+  <!-- Camada da casca para os números de dano flutuantes e o efeito de
+       impacto (tranche T1.2): elementos criados por jogo.js, posicionados
+       sobre a figura atacada pela projecção da cena (projectUnit). -->
+  <div id="danos" aria-hidden="true"></div>
   <!-- A cena (rodada 2) cria a sua própria camada de etiquetas (.etiquetas)
        dentro de #mapa; a casca só lhe dá o estilo (.nome, em jogo.css). -->
 
@@ -43,6 +48,10 @@
     <div class="cfgrow">
       <span class="cl">Ajuda do grid<small>casas acesas ao mover</small></span>
       <button id="tog-grid" class="tog on" type="button" aria-pressed="true">Ligada</button>
+    </div>
+    <div class="cfgrow">
+      <span class="cl">Números de dano<small>parcelas ao acertar</small></span>
+      <button id="tog-danos" class="tog on" type="button" aria-pressed="true">Ligados</button>
     </div>
     <div class="cfgrow">
       <span class="cl">Qualidade</span>

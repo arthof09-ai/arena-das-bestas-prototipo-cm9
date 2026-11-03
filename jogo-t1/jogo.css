@@ -148,6 +148,29 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 .btn .pa{font-size:10px;font-weight:800;background:rgba(91,74,158,.4);border:1px solid rgba(138,118,201,.7);
   color:#d9ccff;padding:1px 6px;border-radius:6px}
 
+/* ---------- números de dano flutuantes + impacto (camada da casca, T1.2) ----------
+   Os elementos nascem por JS sobre a figura atacada e são posicionados
+   por transform a cada frame (projectUnit + rAF, em jogo.js); aqui vive
+   só a pele: cada TIPO de parcela com a sua cor, o total maior, e o
+   anel de impacto que expande e some (a expansão é da pele; a posição
+   e o desvanecer são do JS). */
+#danos{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:15}
+.dano{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;
+  will-change:transform,opacity;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,.85)}
+.dano b{font-family:Georgia,'DejaVu Serif',serif;font-size:19px}
+.dano small{font-size:8.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.dano.t-dados{color:#fff3d0}
+.dano.t-forca{color:#ff9a5c}
+.dano.t-bonus{color:var(--ouro-vivo)}
+.dano.t-magia{color:#c3b3ff}
+.dano.t-total{color:var(--ouro-claro)}
+.dano.t-total b{font-size:26px}
+.impacto{position:absolute;left:0;top:0;will-change:transform,opacity}
+.impacto i{display:block;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;
+  border:2px solid rgba(255,233,168,.9);box-shadow:inset 0 0 12px rgba(255,217,77,.5);
+  animation:impactoExpande .48s ease-out forwards}
+@keyframes impactoExpande{from{transform:scale(.35)}to{transform:scale(1.25)}}
+
 /* ---------- retrato: a mesma lei, apertada (não é modo degradado) ---------- */
 @media (max-width:560px){
   #faixa{gap:4px;padding:6px 4px}

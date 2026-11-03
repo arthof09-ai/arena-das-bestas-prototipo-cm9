@@ -7,7 +7,12 @@
  * Sem motor: valores de demonstração marcados TEST; o alcance é a
  * aproximação declarada (BFS da demo) até o motor real mandar as
  * casas — ver NOTAS-T1.md. Silêncio proibido: cada toque e cada botão
- * acabam numa frase na linha de mensagem VISÍVEL. */
+ * acabam numa frase na linha de mensagem VISÍVEL.
+ * Tranche T1.2 (decisões do Mestre, 03/11 07:52): esta vista é a da
+ * jogadora — só a Ong é controlável; as outras figuras são alvo e
+ * cartão de vista. E os acertos da Ong mostram números de dano por
+ * parcela (dados/força/bónus/magia de quem ataca), com interruptor
+ * no pop-up ⚙ — ver NOTAS-T1.md, secção T1.2. */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -31,6 +36,12 @@
   try { qualidade = localStorage.getItem('hudt1-qualidade') || 'alta'; } catch (_) {}
   if (qualidade !== 'alta' && qualidade !== 'baixa') qualidade = 'alta';
 
+  /* Opção "Números de dano" (pop-up ⚙): ligada por omissão, persistida
+     como a qualidade. É uma OPÇÃO — mora nas configurações, nunca na
+     barra. Desligada, nenhum número de dano aparece (ver mostrarDano). */
+  let numerosDano = true;
+  try { numerosDano = localStorage.getItem('hudt1-numeros-dano') !== 'desligado'; } catch (_) {}
+
   let view;
   try {
     view = Campo3D.create(mapaEl, { area: AREA, units: ELENCO, qualidade });
@@ -49,12 +60,31 @@
 
   /* ---------- dados de demonstração (TEST) ---------- */
   const PROPRIA = 'ong';                 // a personagem da jogadora deste aparelho
-  const ORDEM_VEZ = ['ong', 'orc', 'capanga', 'lobo'];
+  /* Vista da jogadora (decisão do Mestre, 03/11 07:52): neste aparelho
+     SÓ a Ong é controlável e a vez é sempre dela. Tocar noutra figura
+     NUNCA a torna a figura activa: abre o cartão de vista dela (T1.1)
+     e marca-a como ALVO. Por isso ATAQUES só tem a entrada da Ong —
+     as técnicas das outras figuras não são alcançáveis por caminho
+     nenhum da interface (as vezes dos inimigos são do Mestre e não
+     se simulam aqui). */
   const ATAQUES = {
-    ong:     { tecnica: 'Lâmina de Maré', curta: 'Lâmina',   custo: 3, bonus: 6, alvoNome: 'o Lobo' },
-    orc:     { tecnica: 'Golpe Brutal',   curta: 'Golpe',    custo: 2, bonus: 7, alvoNome: 'o Lobo' },
-    capanga: { tecnica: 'Estocada',       curta: 'Estocada', custo: 2, bonus: 5, alvoNome: 'a Ong' },
-    lobo:    { tecnica: 'Mordida',        curta: 'Mordida',  custo: 2, bonus: 6, alvoNome: 'a Ong' }
+    ong: { tecnica: 'Lâmina de Maré', curta: 'Lâmina', custo: 3, bonus: 6 }
+  };
+  const ALVO_NOME = { orc: 'o Orc Test', capanga: 'o Capanga 1', lobo: 'o Lobo da Caverna' };
+  /* Alcance de ataque TEST da casca (aproximação declarada): o ataque
+     só resolve com o alvo a até 2 casas da Ong, medido pela grelha.
+     O alcance real é do motor. */
+  const ALCANCE_ATAQUE = 2;
+  /* Rolagem de dano TEST da demonstração (valores inventados, até o
+     motor VLAB/DMG fornecer a decomposição real): as parcelas são
+     TODAS de quem ataca (a Ong) — cada dado rolado na hora com a sua
+     face, a força dela (FOR 12, o atributo da ficha TEST dela: quem
+     tem 12 de força vê sair o 12), um bónus fixo TEST e, só na
+     Lâmina de Maré (técnica de alma/água), um acréscimo de magia
+     fixo TEST. Nenhum dado do alvo entra nestas parcelas. */
+  const DANO_TEST = {
+    tecnica: { dados: 2, lados: 6, forca: 12, bonus: 2, magia: 3 },
+    basico:  { dados: 1, lados: 6, forca: 12, bonus: 2, magia: 0 }
   };
   /* FICHAS só tem a ficha completa da PRÓPRIA (Ong) — é a única ficha
      que pode aparecer neste aparelho. Não há entradas mecânicas de
@@ -89,8 +119,11 @@
   };
 
   /* ---------- estado da casca ---------- */
-  let selecionada = PROPRIA;
+  let selecionada = PROPRIA;   // constante nesta vista: a figura activa é sempre a Ong
   let vez = PROPRIA, rodada = 2;
+  let alvo = null;              // última figura não-própria tocada (ou nenhuma)
+  let moveu = false, atacou = false;   // usos da vez TEST da Ong (mover ×1, atacar ×1)
+  let ataquePendente = null;    // { nome, tipo } entre a rolagem e o Confirmar
   let estado = 'base';        // base | atacar | consumivel | mover | movendo | rolagem | resultado
   let ajudaGrid = true;
   let alcance = new Map();    // chave(x,y) → {x, y, passos, path:[{x,y}]} em coords do motor
@@ -109,7 +142,7 @@
     `<span class="gl">${rotulo}</span></button>`;
   const retrato = () => matchMedia('(max-width:560px)').matches;
   function renderAcoes() {
-    const atk = ATAQUES[selecionada];
+    const atk = ATAQUES[PROPRIA];
     const rp = retrato();
     document.getElementById('faixa').dataset.estado = estado;
     acoesEl.classList.toggle('compacta', estado === 'base' || estado === 'atacar');
@@ -139,8 +172,10 @@
     }
   }
   function atualizarVez() {
-    $('vez-rotulo').textContent = vez === 'lobo' ? 'VEZ DA BESTA' : 'VEZ DE';
-    $('vez-nome').textContent = nomeCena(vez);
+    // A vez nesta vista é sempre da Ong (as dos inimigos são do Mestre
+    // e não se simulam aqui — aproximação TEST declarada nas NOTAS).
+    $('vez-rotulo').textContent = 'VEZ DE';
+    $('vez-nome').textContent = nomeCena(PROPRIA);
     $('vez-rodada').textContent = 'R' + rodada;
   }
 
@@ -178,10 +213,118 @@
   function desenharAlcance() {
     view.showMovement(ajudaGrid ? [...alcance.values()].map(casaVista) : []);
   }
+  /* Distância pela grelha (BFS de 4 vizinhos) da Ong até à casa do
+     alvo, sem contar a cena: as outras figuras bloqueiam a passagem,
+     a casa do próprio alvo conta como destino. Devolve os passos
+     ou Infinity se não houver caminho. */
+  function distanciaAte(alvoId) {
+    const s = view.getState();
+    const eu = s.units.find(v => v.id === PROPRIA);
+    const ele = s.units.find(v => v.id === alvoId);
+    if (!eu || !ele) return Infinity;
+    const bloqueadas = new Set(s.units
+      .filter(v => v.id !== PROPRIA && v.id !== alvoId)
+      .map(v => chave(v.posicao.x, v.posicao.y)));
+    const destino = chave(ele.posicao.x, ele.posicao.y);
+    const vistos = new Map([[chave(eu.posicao.x, eu.posicao.y), 0]]);
+    const fila = [{ x: eu.posicao.x, y: eu.posicao.y, passos: 0 }];
+    for (let i = 0; i < fila.length; i++) {
+      const p = fila[i];
+      if (chave(p.x, p.y) === destino) return p.passos;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const x = p.x + dx, y = p.y + dy, k = chave(x, y);
+        if (x < AREA.origin.x || x >= AREA.origin.x + AREA.cols
+          || y < AREA.origin.y || y >= AREA.origin.y + AREA.rows
+          || vistos.has(k) || bloqueadas.has(k)) continue;
+        vistos.set(k, p.passos + 1);
+        fila.push({ x, y, passos: p.passos + 1 });
+      }
+    }
+    return vistos.has(destino) ? vistos.get(destino) : Infinity;
+  }
+
+  /* ---------- números de dano flutuantes (por parcela) ----------
+   * Ao Confirmar um acerto da Ong, saem da figura atacada números
+   * separados por TIPO de parcela, cada tipo com cor/rótulo próprios:
+   * cada dado rolado aparece com a sua face, a força dela sai como o
+   * seu número, o bónus como outro, o acréscimo de magia como outro,
+   * e um total (a soma das parcelas DELA) fecha a sequência, maior.
+   * São TODOS valores de quem ataca — nenhum dado do alvo entra.
+   * Os números seguem a posição projectada da figura atacada
+   * (projectUnit da cena) enquanto sobem e desvanecem, actualizados
+   * por requestAnimationFrame. O interruptor "Números de dano" vive
+   * no pop-up ⚙ (opção, nunca na barra); desligado, mostrarDano nem
+   * é chamado — o efeito de impacto (anel curto) é outra coisa: é o
+   * estalo visual do acerto, sem números. */
+  const danosEl = $('danos');
+  const flutuantes = [];   // { el, id, dx, atraso, dur, tipo, t0 }
+  let rafDanos = 0;
+  function rolarParcelas(tipo) {
+    const spec = DANO_TEST[tipo];
+    const parcelas = [];
+    for (let i = 0; i < spec.dados; i++)
+      parcelas.push({ classe: 'dados', rotulo: 'dado', valor: 1 + Math.floor(Math.random() * spec.lados) });
+    parcelas.push({ classe: 'forca', rotulo: 'FOR', valor: spec.forca });
+    parcelas.push({ classe: 'bonus', rotulo: 'bónus', valor: spec.bonus });
+    if (spec.magia) parcelas.push({ classe: 'magia', rotulo: 'magia', valor: spec.magia });
+    return parcelas;
+  }
+  function lancarFlutuante(el, id, dx, atraso, dur, tipo) {
+    el.style.opacity = '0';
+    danosEl.appendChild(el);
+    flutuantes.push({ el, id, dx, atraso, dur, tipo, t0: performance.now() });
+    if (!rafDanos) rafDanos = requestAnimationFrame(tickFlutuantes);
+  }
+  function mostrarImpacto(id) {
+    const el = document.createElement('span');
+    el.className = 'impacto';
+    el.innerHTML = '<i></i>';
+    lancarFlutuante(el, id, 0, 0, 480, 'impacto');
+  }
+  function mostrarDano(id, parcelas) {
+    let atraso = 90, total = 0;
+    parcelas.forEach((p, i) => {
+      total += p.valor;
+      const el = document.createElement('span');
+      el.className = 'dano t-' + p.classe;
+      el.innerHTML = `<b>${p.valor}</b><small>${p.rotulo}</small>`;
+      lancarFlutuante(el, id, (i - (parcelas.length - 1) / 2) * 30, atraso, 1500, 'dano');
+      atraso += 150;
+    });
+    const el = document.createElement('span');
+    el.className = 'dano t-total';
+    el.innerHTML = `<b>${total}</b><small>total</small>`;
+    lancarFlutuante(el, id, 0, atraso, 1600, 'dano');
+    return total;
+  }
+  function tickFlutuantes(agora) {
+    rafDanos = 0;
+    for (let i = flutuantes.length - 1; i >= 0; i--) {
+      const f = flutuantes[i];
+      const t = agora - f.t0 - f.atraso;
+      if (t < 0) continue;
+      const prog = t / f.dur;
+      if (prog >= 1) { f.el.remove(); flutuantes.splice(i, 1); continue; }
+      const r = view.projectUnit(f.id);
+      if (!r) { f.el.style.opacity = '0'; continue; }
+      const cx = (r.left + r.right) / 2 + f.dx;
+      if (f.tipo === 'impacto') {
+        const cy = r.top + (r.bottom - r.top) * .55;
+        f.el.style.transform = `translate(${cx}px, ${cy}px)`;
+        f.el.style.opacity = String(1 - prog);
+      } else {
+        const cy = r.top - 6 - prog * 54;
+        f.el.style.transform = `translate(${cx}px, ${cy}px) translate(-50%,-100%)`;
+        f.el.style.opacity = String(prog < .6 ? 1 : 1 - (prog - .6) / .4);
+      }
+    }
+    if (flutuantes.length) rafDanos = requestAnimationFrame(tickFlutuantes);
+  }
   function entrarMover() {
     const u = unidade(selecionada);
     if (!u) return;
     if (estado === 'movendo' || view.getState().moving) { say('Espera — a figura ainda está a andar.'); return; }
+    if (moveu) { say('A <b>Ong</b> já andou nesta vez — prime <b>Atacar</b> ou <b>Encerrar</b>.'); return; }
     alcance = calcularAlcance();
     estado = 'mover';
     desenharAlcance();
@@ -204,7 +347,7 @@
     if (!btn) return;
     const acao = btn.dataset.acao;
     const u = unidade(selecionada);
-    if (acao === 'voltar') { estado = 'base'; renderAcoes(); say(`É a vez de <b>${nomeCena(vez)}</b>.`); return; }
+    if (acao === 'voltar') { estado = 'base'; ataquePendente = null; renderAcoes(); say('É a vez da <b>Ong</b>.'); return; }
     if (acao === 'mover') { entrarMover(); return; }
     if (acao === 'cancelar') { sairMover(); say('Movimento cancelado.'); return; }
     if (acao === 'parar') {
@@ -220,8 +363,14 @@
     }
     if (acao === 'atacar') {
       if (estado === 'movendo' || view.getState().moving) { say('Espera — a figura ainda está a andar.'); return; }
+      if (atacou) { say('A <b>Ong</b> já atacou nesta vez — prime <b>Encerrar</b> para fechar a vez dela.'); return; }
+      if (!alvo) { say('Primeiro <b>toca no inimigo</b> que queres atacar — ele fica marcado como alvo.'); return; }
+      if (distanciaAte(alvo) > ALCANCE_ATAQUE) {
+        say(`<b>${nomeCena(alvo)}</b> está longe demais — aproxima-te com <b>Mover</b> antes de atacar.`);
+        return;
+      }
       estado = 'atacar'; renderAcoes();
-      say(`Atacar com <b>${nomeCena(selecionada)}</b> · escolhe o ataque na faixa.`);
+      say(`Atacar <b>${nomeCena(alvo)}</b> com a <b>Ong</b> · escolhe o ataque na faixa.`);
       return;
     }
     if (acao === 'consumivel') {
@@ -230,29 +379,49 @@
       return;
     }
     if (acao === 'ataque-basico' || acao === 'tecnica') {
-      const atk = ATAQUES[selecionada];
+      const atk = ATAQUES[PROPRIA];
       const nomeAtaque = acao === 'tecnica' ? atk.tecnica : 'Ataque básico';
+      ataquePendente = { nome: nomeAtaque, tipo: acao === 'tecnica' ? 'tecnica' : 'basico' };
       estado = 'rolagem'; renderAcoes();
       // A CA do alvo NÃO aparece: é informação técnica da outra figura
       // ("meta game", decisão do Mestre 03/11 07:35). A frase mostra só
       // a rolagem de quem ataca e deixa o acerto para o Mestre confirmar.
-      say(`${nomeAtaque} de <b>${nomeCena(selecionada)}</b> · <b>1d20+${atk.bonus} → 14 + ${atk.bonus} = ${14 + atk.bonus}</b> · o Mestre confirma se acertou.`);
-      acoesEl.dataset.pendente = nomeAtaque;
+      say(`${nomeAtaque} de <b>Ong</b> contra <b>${nomeCena(alvo)}</b> · <b>1d20+${atk.bonus} → 14 + ${atk.bonus} = ${14 + atk.bonus}</b> · o Mestre confirma se acertou.`);
       return;
     }
     if (acao === 'confirmar') {
-      const atk = ATAQUES[selecionada];
+      const pend = ataquePendente || { nome: 'o ataque', tipo: 'basico' };
+      ataquePendente = null;
+      // O ataque só resolve com o alvo ao alcance TEST (até 2 casas);
+      // fora dele, não há rolagem de dano nem números — volta à base.
+      if (!alvo || distanciaAte(alvo) > ALCANCE_ATAQUE) {
+        estado = 'base'; renderAcoes();
+        say('O alvo está longe demais — aproxima-te com <b>Mover</b> e tenta outra vez.');
+        return;
+      }
+      atacou = true;
       estado = 'resultado'; renderAcoes();
-      say(`<b>Acerto</b> · ${acoesEl.dataset.pendente || 'o ataque'} atinge ${atk.alvoNome}.`);
+      mostrarImpacto(alvo);
+      const total = numerosDano ? mostrarDano(alvo, rolarParcelas(pend.tipo)) : null;
+      say(`<b>Acerto</b> · ${pend.nome} atinge ${ALVO_NOME[alvo] || nomeCena(alvo)}.` +
+        (total != null ? ' As parcelas do dano saem da figura em números.' : ''));
       return;
     }
-    if (acao === 'continuar') { estado = 'base'; renderAcoes(); say(`É a vez de <b>${nomeCena(vez)}</b>.`); return; }
+    if (acao === 'continuar') {
+      estado = 'base'; renderAcoes();
+      say(moveu && atacou
+        ? 'A <b>Ong</b> já andou e já atacou nesta vez — prime <b>Encerrar</b> para fechar a vez dela.'
+        : 'É a vez da <b>Ong</b>.');
+      return;
+    }
     if (acao === 'encerrar') {
-      const i = ORDEM_VEZ.indexOf(vez);
-      vez = ORDEM_VEZ[(i + 1) % ORDEM_VEZ.length];
-      if (vez === ORDEM_VEZ[0]) rodada++;
-      selecionar(vez); atualizarVez();
-      say(`Turno encerrado. É a vez de <b>${nomeCena(vez)}</b>.`);
+      // Fecha a vez TEST da Ong: o Mestre continua a batalha (as vezes
+      // dos inimigos são dele) e abre a vez seguinte dela, com os
+      // usos repostos — aproximação declarada nas NOTAS.
+      rodada++;
+      moveu = false; atacou = false; ataquePendente = null;
+      estado = 'base'; atualizarVez(); renderAcoes();
+      say(`Vez da <b>Ong</b> encerrada. O <b>Mestre</b> continua a batalha — e abre a vez seguinte dela (rodada ${rodada}).`);
       return;
     }
   });
@@ -313,7 +482,7 @@
   chipEl.addEventListener('click', () => {
     if (estado === 'movendo') { say(`Espera — <b>${nomeCena(selecionada)}</b> ainda está a andar.`); return; }
     if (estado === 'mover') limparAjudaMover();
-    estado = 'base'; acoesEl.dataset.pendente = '';
+    estado = 'base'; ataquePendente = null;
     selecionar(PROPRIA); abrirFicha(PROPRIA); renderAcoes();
     say('A tua ficha, <b>Ong</b> — valores TEST de demonstração.');
   });
@@ -331,26 +500,32 @@
     if (hit.unitId) {
       const fig = unidade(hit.unitId);
       const nome = fig ? fig.nome : nomeCena(hit.unitId);
-      if (estado === 'mover') {
-        if (hit.unitId === selecionada) {
-          say(`<b>${nome}</b> já está aqui — toca numa casa acesa para andar.`);
+      if (hit.unitId === PROPRIA) {
+        // A própria: abre a ficha dela. Em Mover, o toque nela só diz
+        // que ela já está aqui (a casa dela não é destino).
+        if (estado === 'mover') {
+          say('<b>Ong</b> já está aqui — toca numa casa acesa para andar.');
           return;
         }
-        selecionar(hit.unitId); sairMover(); abrirFicha(hit.unitId);
-        say(`<b>${nome}</b> seleccionado. Prime <b>Mover</b> para andar com ele.`);
+        if (estado === 'atacar' || estado === 'rolagem' || estado === 'consumivel' || estado === 'resultado') {
+          estado = 'base'; ataquePendente = null; renderAcoes();
+        }
+        abrirFicha(PROPRIA);
+        say('A tua ficha, <b>Ong</b> — a única figura que controlas neste aparelho.');
         return;
       }
-      /* Desync fechado (herdado da T0): em estados transitórios, tocar
-         numa figura NUNCA troca a selecção por baixo de um estado
-         pendente — repõe a base, com frase. */
-      if (estado === 'atacar' || estado === 'rolagem' || estado === 'consumivel') {
-        estado = 'base'; acoesEl.dataset.pendente = '';
-        selecionar(hit.unitId); abrirFicha(hit.unitId); renderAcoes();
-        say(`Troquei para <b>${nome}</b> — a faixa voltou às acções base.`);
-        return;
+      /* Outra figura: NUNCA se torna a figura activa (decisão do
+         Mestre, 03/11 07:52). O toque abre o cartão de vista dela
+         (T1.1, intacto) e marca-a como ALVO da Ong; a figura activa
+         e a vez continuam a ser da Ong. Um estado pendente que esteja
+         aberto repõe-se à base, com a faixa a acompanhar. */
+      alvo = hit.unitId;
+      if (estado === 'mover') sairMover();
+      else if (estado === 'atacar' || estado === 'rolagem' || estado === 'consumivel' || estado === 'resultado') {
+        estado = 'base'; ataquePendente = null; renderAcoes();
       }
-      selecionar(hit.unitId); abrirFicha(hit.unitId);
-      say(`<b>${nome}</b> seleccionado. Prime <b>Mover</b> para andar.`);
+      abrirFicha(hit.unitId);
+      say(`<b>${nome}</b> é o teu alvo. Prime <b>Atacar</b> para a atacar com a Ong, ou <b>Mover</b> para te aproximares.`);
       return;
     }
     if (estado === 'mover') {
@@ -384,6 +559,7 @@
 
   view.on('moveend', u => {
     if (estado !== 'movendo' || !u) return;
+    moveu = true;   // quem anda é sempre a Ong: o uso de mover da vez fica gasto
     estado = 'base'; renderAcoes();
     say(parado ? `<b>${u.nome}</b> parou.` : `<b>${u.nome}</b> chegou ao destino.`);
     parado = false;
@@ -537,6 +713,25 @@
       : `Ajuda do grid <b>desligada</b> — ao mover, nada acende; o toque continua a valer até ${ORCAMENTOS[selecionada] || 4} casas.`);
   });
 
+  /* Números de dano: OPÇÃO da jogadora (configuração/preferência) —
+     mora no pop-up ⚙, nunca na barra (lei do Mestre, 02/11 23:07).
+     Ligada por omissão e persistida como a qualidade. Desligada,
+     mostrarDano nunca é chamado: nenhum número aparece. */
+  function marcarDanos() {
+    const tog = $('tog-danos');
+    tog.classList.toggle('on', numerosDano);
+    tog.textContent = numerosDano ? 'Ligados' : 'Desligados';
+    tog.setAttribute('aria-pressed', String(numerosDano));
+  }
+  $('tog-danos').addEventListener('click', () => {
+    numerosDano = !numerosDano;
+    try { localStorage.setItem('hudt1-numeros-dano', numerosDano ? 'ligado' : 'desligado'); } catch (_) {}
+    marcarDanos();
+    say(numerosDano
+      ? 'Números de dano <b>ligados</b> — ao acertar, as parcelas do dano saem da figura atacada em números.'
+      : 'Números de dano <b>desligados</b> — os acertos da Ong não mostram números.');
+  });
+
   function marcarQualidade() {
     document.querySelectorAll('[data-qualidade]').forEach(b =>
       b.classList.toggle('on', b.dataset.qualidade === qualidade));
@@ -562,6 +757,7 @@
   atualizarVez();
   renderAcoes();
   marcarQualidade();
+  marcarDanos();
   say('A carregar o campo…');
   view.ready.then(() => {
     selecionar(PROPRIA);
