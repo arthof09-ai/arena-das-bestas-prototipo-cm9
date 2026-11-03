@@ -104,15 +104,16 @@
    * encontra e como ela é por fora. Dados separados dos mecânicos, de
    * propósito: este objecto não tem um único campo técnico. */
   const VISTA = {
-    orc:     { nome: 'ORC TEST',        sub: 'Criatura',
+    orc:     { nome: 'ORC TEST',        sub: 'Criatura', imagem: 'imagens/orc.webp',
       onde: 'Terras afastadas e lugares de batalha.',
       aparencia: 'Uma figura humanoide grande e forte, de ombros largos e braços compridos.',
       frase: 'Impressiona pelo tamanho — é das maiores figuras que a Ong já viu.' },
     capanga: { nome: 'CAPANGA 1',       sub: 'Pessoa',
+      /* sem imagem: não existe arte aprovada do Capanga (lacuna declarada nas NOTAS) */
       onde: 'Estradas e lugares de passagem.',
       aparencia: 'Um homem comum, de roupa simples de viagem.',
       frase: 'À primeira vista, passa por uma pessoa qualquer da estrada.' },
-    lobo:    { nome: 'LOBO DA CAVERNA', sub: 'Besta',
+    lobo:    { nome: 'LOBO DA CAVERNA', sub: 'Besta', imagem: 'imagens/lobo.jpg',
       onde: 'Cavernas e lugares escuros e fechados.',
       aparencia: 'Um lobo grande, de quatro patas, com o pelo escuro em tons de cinzento-carvão. Tem uma cicatriz sobre o olho esquerdo, branco e cego, a ponta da orelha direita cortada e a pata dianteira esquerda branca.',
       frase: 'Mesmo de longe, reconhece-se pela cicatriz e pela pata branca.' }
@@ -461,8 +462,21 @@
     } else {
       /* Cartão de vista, tipo Pokédex: só onde se encontra e como é
          por fora. NENHUM campo mecânico — este ramo lê apenas
-         v.onde / v.aparencia / v.frase (e nome/sub no cabeçalho). */
+         v.onde / v.aparencia / v.frase / v.imagem (e nome/sub no
+         cabeçalho). A ilustração entra logo a seguir ao cabeçalho,
+         antes de "Onde se encontra" (primeiro vê-se, depois lê-se),
+         e só quando a figura tem arte aprovada registada (v.imagem);
+         sem o campo, o elemento nem é renderizado e o cartão fica
+         com DOM e renderização iguais aos da T1.2. O onerror é
+         atributo inline de propósito: com innerHTML a imagem começa
+         a carregar na inserção e um listener tardio podia perder um
+         erro rápido (ex.: 404) — ficheiro em falta nunca vira ícone
+         de imagem partida. */
+      const retratoVista = v.imagem
+        ? `<figure class="retrato-vista"><img src="${v.imagem}" alt="Ilustração de ${v.nome}" onerror="this.closest('figure').remove()"></figure>`
+        : '';
       corpo = `
+        ${retratoVista}
         <h2>Onde se encontra</h2>
         <p class="vista">${v.onde}</p>
         <h2>Como ele é</h2>

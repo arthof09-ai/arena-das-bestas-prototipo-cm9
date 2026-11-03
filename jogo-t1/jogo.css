@@ -121,6 +121,12 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
   color:#d9ccff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px}
 #ficha .nota{font-size:10px;color:var(--pergaminho-mudo);line-height:1.45;margin-top:8px}
 #ficha .vista{font-size:11px;color:var(--pergaminho-fraco);line-height:1.5;margin-top:2px}
+/* Ilustração do cartão de vista (Pokédex): moldura sobre o preto da
+   própria arte, borda fina de ouro das caixas existentes, e a figura
+   SEMPRE inteira (contain — nenhum traço aprovado fica cortado). */
+#ficha .retrato-vista{background:#000;border:1px solid rgba(201,162,39,.45);border-radius:8px;
+  margin:8px 0 2px;overflow:hidden;aspect-ratio:4/3;max-height:34vh}
+#ficha .retrato-vista img{display:block;width:100%;height:100%;object-fit:contain}
 #ficha footer{margin-top:9px;font-size:10px;color:#8a7c58;letter-spacing:.02em;line-height:1.35}
 
 /* ---------- faixa de baixo: UMA, fixa, 56 px ---------- */
@@ -195,6 +201,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
   #fichachip{width:162px;left:10px;bottom:66px}
   #ficha{width:25%;min-width:0;max-width:none;padding:8px 7px}
   #ficha h1{font-size:14px}
+  #ficha .retrato-vista{aspect-ratio:1/1;max-height:30vh}
   .attrs{flex-direction:column;gap:3px}
   .attrs div{display:flex;justify-content:space-between;align-items:baseline;padding:2px 6px}
   .attrs b{font-size:11px}
