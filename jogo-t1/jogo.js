@@ -53,6 +53,23 @@
   let numerosDano = true;
   try { numerosDano = localStorage.getItem('hudt1-numeros-dano') !== 'desligado'; } catch (_) {}
 
+  /* Controlo de velocidade (tranche T1.6 — decisão do Mestre,
+     03/11 11:46, refinada 11:48): cinco passos 1× · 1,5× · 2× ·
+     2,5× · 3×, opção nas configurações, persistida como as outras
+     preferências; 1× por omissão e valor estranho guardado volta
+     a 1. Só o RITMO muda — mecânica e resultados ficam iguais:
+     `ritmo` é o ajudante único e lê `velocidade` NO MOMENTO de
+     cada agendamento/duração, por isso trocar a meio da batalha
+     só afecta o que for agendado depois da troca (o que já está
+     em voo termina ao ritmo antigo; sem re-agendamentos). */
+  const VELOCIDADES = [1, 1.5, 2, 2.5, 3];
+  let velocidade = 1;
+  try {
+    const v = localStorage.getItem('hudt1-velocidade');
+    if (['1', '1.5', '2', '2.5', '3'].includes(v)) velocidade = Number(v);
+  } catch (_) {}
+  const ritmo = ms => ms / velocidade;
+
   let view;
   try {
     view = Campo3D.create(mapaEl, { area: AREA, units: ELENCO, qualidade });
@@ -444,13 +461,14 @@
   function lancarFlutuante(el, id, dx, atraso, dur, tipo) {
     el.style.opacity = '0';
     danosEl.appendChild(el);
-    flutuantes.push({ el, id, dx, atraso, dur, tipo, t0: performance.now() });
+    flutuantes.push({ el, id, dx, atraso: ritmo(atraso), dur: ritmo(dur), tipo, t0: performance.now() });
     if (!rafDanos) rafDanos = requestAnimationFrame(tickFlutuantes);
   }
   function mostrarImpacto(id) {
     const el = document.createElement('span');
     el.className = 'impacto';
     el.innerHTML = '<i></i>';
+    el.firstElementChild.style.animationDuration = (480 / velocidade) + 'ms';   // T1.6 corrigido: a duração vai no <i>, dono da animação impactoExpande (.48s no jogo.css) — posta no span não tinha efeito
     lancarFlutuante(el, id, 0, 0, 480, 'impacto');
   }
   function mostrarDano(id, parcelas) {
@@ -556,12 +574,12 @@
     passoEmCurso = true;
     supPartidaMovimentoOng({ x: nx, y: ny }, 1);
     view.move(PROPRIA, casaVista({ x: nx, y: ny }), {
-      path: [casaVista({ x: nx, y: ny })], durationMs: 200
+      path: [casaVista({ x: nx, y: ny })], durationMs: ritmo(200)
     });
   }
 
   /* ---------- máquina de turnos (T1.3 §1) ---------- */
-  const aguardar = ms => new Promise(res => setTimeout(res, ms));
+  const aguardar = ms => new Promise(res => setTimeout(res, ritmo(ms)));
   function fraseEsperaVez() {
     say(batalhaFim
       ? 'A batalha acabou — prime <b>Recomeçar</b>.'
@@ -644,7 +662,7 @@
     try {
       view.move(id, casaVista(destino), {
         path: destino.path.map(casaVista),
-        durationMs: Math.min(1700, Math.max(220, destino.passos * 190))
+        durationMs: ritmo(Math.min(1700, Math.max(220, destino.passos * 190)))
       });
     } catch (_) {
       // G-13.5: a cena recusou o movimento — a vez sobrevive.
@@ -1117,7 +1135,7 @@
       supPartidaMovimentoOng(destino, destino.passos);
       view.move(selecionada, casaVista(destino), {
         path: destino.path.map(casaVista),
-        durationMs: Math.min(1200, Math.max(220, destino.passos * 140))
+        durationMs: ritmo(Math.min(1200, Math.max(220, destino.passos * 140)))
       });
       return;
     }
@@ -1431,6 +1449,47 @@
   cfgEl.insertBefore(linhaAuto, $('stats'));
   botaoAuto.addEventListener('click', () => definirModoAutomatico(!modoAutomatico));
 
+  /* ---------- Controlo de velocidade (tranche T1.6) ----------
+   * Linha «Velocidade» criada aqui (o index.html é sagrado),
+   * IMEDIATAMENTE depois da linha do Modo automático e antes de
+   * #stats: .cfgrow + rótulo .cl + grupo .seg (a classe já existe
+   * no CSS — jogo.css não muda) com os cinco passos. Botão activo
+   * com .on. NUNCA na barra de baixo. Sem frase say() nova: o
+   * único texto novo é o rótulo e os passos, nas configurações.
+   * Trocar grava a preferência (hudt1-velocidade) e marca o .on;
+   * o ritmo em si lê-se em `ritmo`, no momento de cada uso. */
+  const linhaVelocidade = document.createElement('div');
+  linhaVelocidade.className = 'cfgrow vel';
+  const rotuloVelocidade = document.createElement('span');
+  rotuloVelocidade.className = 'cl';
+  rotuloVelocidade.textContent = 'Velocidade';
+  const grupoVelocidade = document.createElement('div');
+  grupoVelocidade.className = 'seg';
+  grupoVelocidade.setAttribute('role', 'group');
+  grupoVelocidade.setAttribute('aria-label', 'Velocidade');
+  const botoesVelocidade = [];
+  for (const v of VELOCIDADES) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = String(v).replace('.', ',') + '×';
+    b.addEventListener('click', () => definirVelocidade(v));
+    grupoVelocidade.appendChild(b);
+    botoesVelocidade.push({ v, b });
+  }
+  linhaVelocidade.appendChild(rotuloVelocidade);
+  linhaVelocidade.appendChild(grupoVelocidade);
+  cfgEl.insertBefore(linhaVelocidade, $('stats'));
+  function marcarVelocidade() {
+    for (const { v, b } of botoesVelocidade) b.classList.toggle('on', v === velocidade);
+  }
+  function definirVelocidade(v) {
+    if (!VELOCIDADES.includes(v)) return;
+    velocidade = v;
+    try { localStorage.setItem('hudt1-velocidade', String(velocidade)); } catch (_) {}
+    marcarVelocidade();
+  }
+  marcarVelocidade();
+
   function definirModoAutomatico(ligado) {
     modoAutomatico = !!ligado;
     geracaoAuto++;                       // pendente de outra geração nunca corre
@@ -1448,7 +1507,7 @@
       relogioAuto = null;
       if (!modoAutomatico || gen !== geracaoAuto || batalhaFim || vezAtual !== PROPRIA) return;
       passoAutomatico();
-    }, PASSO_AUTO_MS);
+    }, ritmo(PASSO_AUTO_MS));
   }
   /* O destino do movimento automático: o melhor destino da BFS
    * legal dela (calcularAlcancePara com a reserva actual), pontuado
@@ -1534,7 +1593,7 @@
     supPartidaMovimentoOng(destino, destino.passos);
     view.move(selecionada, casaVista(destino), {
       path: destino.path.map(casaVista),
-      durationMs: Math.min(1200, Math.max(220, destino.passos * 140))
+      durationMs: ritmo(Math.min(1200, Math.max(220, destino.passos * 140)))
     });
   }
 
