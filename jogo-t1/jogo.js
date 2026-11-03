@@ -245,6 +245,18 @@
   let alcance = new Map();    // chave(x,y) → {x, y, passos, path:[{x,y}]} em coords do motor
   let fichaAberta = null;     // id da figura cuja coluna está aberta
   let parado = false;         // o movimento foi interrompido por "Parar"
+  /* Correcções pós-críticos T1.5 (guarda de época dela): supEpoca
+     sobe em supCongelar e em supRestaurar; cada movimento DELA
+     regista a época ao partir (epocaMovimentoOng) e o moveend só
+     acerta contas se a época for a mesma. supRestauroPendente
+     guarda as unidades do último snapshot restaurado, para um
+     moveend tardio reafirmar essas posições. O relógio de guarda
+     do movimento dela (5 s, como o da IA) vive em
+     guardaMovimentoOng ({ epoca, relogio }). */
+  let supEpoca = 0;
+  let epocaMovimentoOng = 0;
+  let supRestauroPendente = null;   // unidades do snapshot restaurado, ou null
+  let guardaMovimentoOng = null;    // { epoca, relogio } do movimento dela em voo
 
   const unidade = id => view.getState().units.find(u => u.id === id);
   const nomeCena = id => (ELENCO.find(u => u.id === id) || {}).nome
@@ -299,7 +311,11 @@
     // é a vez (só o nome — público) e a rodada. No fim de batalha:
     // "FIM" / nome DELA / rodada final (§1.7, correcção O-1) — o nome
     // é o da Ong, não o do monstro que tinha a vez no golpe fatal.
-    $('vez-rotulo').textContent = batalhaFim ? 'FIM' : 'VEZ DE';
+    /* Correcções finais T1.5 (EXP-R1): com o Supervisor congelado
+       o indicador também diz «FIM» — estado terminal honesto; o
+       nome e a rodada seguem a regra de sempre (só batalhaFim os
+       troca), sem tocar em mais nada. */
+    $('vez-rotulo').textContent = (batalhaFim || supCongelado) ? 'FIM' : 'VEZ DE';
     $('vez-nome').textContent = batalhaFim ? nomeCena(PROPRIA) : nomeCena(vezAtual);
     $('vez-rodada').textContent = 'R' + rodada;
   }
@@ -522,20 +538,23 @@
      (excepção escrita à lei do silêncio: é ruído de repetição de
      tecla; segurar a seta anda passo a passo, um por passo acabado). */
   function passoSeta(dx, dy) {
+    if (supCongelado) return;   // pós-críticos T1.5: gelo selado também nas setas
     if (passoEmCurso) return;
     const u = unidade(PROPRIA);
     if (!u) return;
-    if (reservaMovimento < CASA_M) { esgotarReserva(); return; }
+    if (reservaMovimento < CASA_M) { supRegistar('bloqueada', { acao: 'mover', actor: PROPRIA, razao: 'Reserva de movimento esgotada' }); esgotarReserva(); return; }
     const nx = u.posicao.x + dx, ny = u.posicao.y + dy;
     if (nx < AREA.origin.x || nx >= AREA.origin.x + AREA.cols
       || ny < AREA.origin.y || ny >= AREA.origin.y + AREA.rows) {
+      supRegistar('bloqueada', { acao: 'mover', actor: PROPRIA, razao: 'Casa fora da arena' });
       say('Fim do campo por aí.');
       return;
     }
     const ocupada = view.getState().units.some(v =>
       v.id !== PROPRIA && v.posicao.x === nx && v.posicao.y === ny);
-    if (ocupada) { say('Essa casa está ocupada.'); return; }
+    if (ocupada) { supRegistar('bloqueada', { acao: 'mover', actor: PROPRIA, razao: 'Casa ocupada' }); say('Essa casa está ocupada.'); return; }
     passoEmCurso = true;
+    supPartidaMovimentoOng({ x: nx, y: ny }, 1);
     view.move(PROPRIA, casaVista({ x: nx, y: ny }), {
       path: [casaVista({ x: nx, y: ny })], durationMs: 200
     });
@@ -555,6 +574,10 @@
     ataquePendente = null;
     estado = 'base';
     atualizarVez(); renderAcoes();
+    autoJaMoveu = false;              // T1.5: a vez nova repõe o movimento automático
+    autoAtaqueEmCurso = false;
+    if (id === PROPRIA) agendarPassoAuto();   // T1.5: hook do Modo automático (desligado, não agenda)
+    supSnapshot();                    // Supervisor: ponto de retorno deste turno
   }
   /* Único sítio onde a vez muda (com iniciarVezIA e o arranque). */
   function passarVez() {
@@ -587,6 +610,7 @@
     say(aposOng
       ? `Vez da <b>Ong</b> encerrada — a batalha continua. Vez de <b>${nomeCena(id)}</b>.`
       : `Vez de <b>${nomeCena(id)}</b>.`);
+    supSnapshot();                    // Supervisor: ponto de retorno deste turno
     const minhaSeq = ++seqTurno;
     aguardar(ESPERA_ANUNCIO_MS).then(() => {
       if (seqTurno !== minhaSeq || batalhaFim) return;   // vez morta: silêncio
@@ -604,7 +628,19 @@
       fimDaVezIA(seq);
       return;
     }
+    /* Supervisor: o destino da IA tem de caber na reserva dela. */
+    if (destino.passos > (ORCAMENTOS[id] || 4)) {
+      supRegistar('bloqueada', { acao: 'mover', actor: id, razao: 'Destino além da reserva do monstro' });
+      fimDaVezIA(seq);
+      return;
+    }
     contextoIA = { id, seq, destino: { x: destino.x, y: destino.y }, relogio: setTimeout(() => relogioIA(id, seq), GUARDA_IA_MS) };
+    /* Supervisor (pós-críticos T1.5): o movimento LEGAL do monstro
+       também entra no registo — actor, de→para e passos. */
+    { const uIA = unidade(id);
+      supRegistar('accao', { acao: 'mover', actor: id,
+        de: uIA ? { x: uIA.posicao.x, y: uIA.posicao.y } : null,
+        para: { x: destino.x, y: destino.y }, passos: destino.passos }); }
     try {
       view.move(id, casaVista(destino), {
         path: destino.path.map(casaVista),
@@ -691,16 +727,31 @@
      flutuantes do monstro: o golpe marca-se com o impacto. */
   function atacarIA(id, seq) {
     const c = COMBATE_TEST[id];
+    /* Supervisor: o ataque da IA também é validado antes — sem
+       alcance, não acontece (a vez fecha pelo caminho normal). */
+    if (distanciaEntre(id, PROPRIA) > ALCANCE_IA_TEST) {
+      supRegistar('bloqueada', { acao: 'ataque', actor: id, razao: 'Monstro fora de alcance da Ong' });
+      return;
+    }
     let teste = 0;
     for (let i = 0; i < c.atkQtd; i++) teste += 1 + Math.floor(Math.random() * c.atkFaces);
     const acerta = teste + bonusTeste(c) >= defesaDe(PROPRIA);
     const verbos = FRASES_IA[id];
     if (!acerta) {
+      /* Supervisor (pós-críticos T1.5): o ataque LEGAL do monstro
+         entra no registo — actor, alvo e falha (sem Defesas nem
+         constantes internas). */
+      supRegistar('accao', { acao: 'ataque', actor: id, alvo: PROPRIA, acerto: false });
       say(`<b>${nomeCena(id)}</b> ${verbos.falha} a <b>Ong</b> e falhou.`);
       return;
     }
     mostrarImpacto(PROPRIA);
-    const total = rolarExpressao(c.dano).total;
+    const rIA = rolarExpressao(c.dano);
+    /* Supervisor: parcelas = total — se não bater, a batalha
+       congela e a resolução ABORTA neste tick (sem sofrerDano). */
+    if (!supConferirSoma(rIA.parcelas, rIA.total, id)) return;
+    const total = rIA.total;
+    supRegistar('accao', { acao: 'ataque', actor: id, alvo: PROPRIA, acerto: true, dano: total });
     const caiu = sofrerDano(total);
     if (caiu) return;                        // fimDeBatalha já disse a frase final
     say(`<b>${nomeCena(id)}</b> ${verbos.acerto} a <b>Ong</b> — ela perdeu <b>${total}</b> de vida.`);
@@ -721,6 +772,9 @@
   /* Fim de batalha (§1.7): nesta vista os monstros não têm vida —
      a batalha só termina se a Ong cair. A máquina pára onde está. */
   function fimDeBatalha() {
+    /* Supervisor (pós-críticos T1.5): evento TERMINAL do fim
+       natural — o registo passa a provar que a batalha acabou. */
+    supRegistar('fim', { actor: PROPRIA, danoSofrido });
     batalhaFim = true;
     seqTurno++;                              // invalida continuações pendentes
     if (contextoIA) consumirContextoIA(contextoIA.id);
@@ -731,17 +785,37 @@
   }
 
   /* ---------- acções da faixa ---------- */
-  acoesEl.addEventListener('click', e => {
-    const btn = e.target.closest('button[data-acao]');
-    if (!btn) return;   // clique no texto da faixa não é gesto (EM-P4)
-    const acao = btn.dataset.acao;
+  /* Handler nomeado (T1.5): o clique da faixa e o controlador do
+     Modo automático chamam a MESMA função — o pipeline legal é um
+     só; o automático não duplica resolução nenhuma. */
+  function tratarAcao(acao) {
     const u = unidade(selecionada);
+    /* Supervisor: batalha congelada — só o Recomeçar AGE; as
+       outras acções não mutam nada, mas respondem com a frase do
+       mundo (EXP-R1: pós-gelo, silêncio é proibido nesta casca). */
+    if (supCongelado) {
+      if (acao === 'recomecar') location.reload();
+      else say('A batalha parou — prime <b>Recomeçar</b>.');
+      return;
+    }
     /* Guarda de vez (§1.5): na vez de um monstro, cliques em botões
        da faixa (incl. botões obsoletos da transição de renderização)
        só produzem a frase de espera. Excepção EM-P2: no estado
        'fim', a acção recomecar NUNCA é bloqueada. */
     if (acao === 'recomecar') { location.reload(); return; }
     if (vezAtual !== PROPRIA || batalhaFim) { fraseEsperaVez(); return; }
+    /* Supervisor do Comestre (T1.5): TODA a acção é validada ANTES
+       de acontecer. Bloqueio registado no Supervisor; nos bloqueios
+       "moles" o caminho existente continua e recusa com a frase de
+       sempre, sem efeito nenhum; nos "duros" (caminhos sem recusa
+       própria) a acção pára aqui, com o estado intacto. */
+    const bloqueioSup = supValidarAcaoOng(acao);
+    if (bloqueioSup) {
+      supRegistar('bloqueada', { acao, actor: PROPRIA, razao: bloqueioSup.razao });
+      if (bloqueioSup.duro) return;
+    } else {
+      supRegistar('accao', { acao, actor: PROPRIA });
+    }
     if (acao === 'voltar') { estado = 'base'; ataquePendente = null; renderAcoes(); say('É a vez da <b>Ong</b>.'); return; }
     if (acao === 'mover') { entrarMover(); return; }
     if (acao === 'cancelar') {
@@ -758,7 +832,7 @@
       // ("…parou."), pintada depois, que tem de ficar na linha.
       parado = true;
       say('A parar…');
-      if (u) view.move(selecionada, casaVista(u.posicao), { immediate: true });
+      if (u) { epocaMovimentoOng = supEpoca; view.move(selecionada, casaVista(u.posicao), { immediate: true }); }
       return;
     }
     if (acao === 'atacar') {
@@ -790,6 +864,9 @@
       for (let i = 0; i < c.atkQtd; i++) face += 1 + Math.floor(Math.random() * c.atkFaces);
       const total = face + bonusTeste(c);
       ataquePendente = { tipo: 'chicote', nome: c.arma, face, total, acerta: total >= defesaDe(alvo) };
+      /* Supervisor (pós-críticos T1.5): a rolagem PÚBLICA dela
+         (face e total, os mesmos da frase) entra no registo. */
+      supRegistar('accao', { acao: 'ataque-basico', actor: PROPRIA, alvo, face, total });
       estado = 'rolagem'; renderAcoes();
       say(`${c.arma} de <b>Ong</b> contra <b>${nomeCena(alvo)}</b> · <b>1d6+${bonusTeste(c)} → ${face} + ${bonusTeste(c)} = ${total}</b> · o Mestre confirma se acertou.`);
       return;
@@ -844,6 +921,10 @@
       }
       mostrarImpacto(alvo);
       const r = rolarExpressao(expressaoOng());
+      /* Supervisor: parcelas = total — se não bater, a batalha
+         congela e a resolução ABORTA neste tick (sem dano). */
+      if (!supConferirSoma(r.parcelas, r.total, PROPRIA)) return;
+      supRegistar('accao', { acao: 'ataque', actor: PROPRIA, alvo, acerto: true, dano: r.total });
       const total = numerosDano ? mostrarDano(alvo, r.parcelas) : null;
       say(`<b>Acerto</b> · ${pend.nome} atinge ${ALVO_NOME[alvo] || nomeCena(alvo)}.` +
         (total != null ? ' As parcelas do dano saem da figura em números.' : ''));
@@ -862,6 +943,11 @@
       passarVez();
       return;
     }
+  }
+  acoesEl.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-acao]');
+    if (!btn) return;   // clique no texto da faixa não é gesto (EM-P4)
+    tratarAcao(btn.dataset.acao);
   });
 
   /* ---------- ficha: chip (a própria) e coluna lateral ---------- */
@@ -933,6 +1019,12 @@
   function fecharFicha() { fichaAberta = null; fichaEl.hidden = true; chipEl.hidden = false; }
   fichaEl.addEventListener('click', e => { if (e.target.closest('[data-fechar]')) fecharFicha(); });
   chipEl.addEventListener('click', () => {
+    /* Supervisor (pós-críticos T1.5, Conflitos A1): batalha
+       congelada — o chip não muta NADA (sem estado novo, sem
+       apagar ataquePendente, sem repintar a faixa); correcções
+       finais (EXP-R1): responde com a frase do mundo, sem
+       silêncio. */
+    if (supCongelado) { say('A batalha parou — prime <b>Recomeçar</b>.'); return; }
     // Na vez de um monstro (ou no fim), o chip responde como os
     // toques: frase de espera (§1.5); a ficha dela vê-se antes e depois.
     if (vezAtual !== PROPRIA || batalhaFim) { fraseEsperaVez(); return; }
@@ -949,6 +1041,11 @@
    * A cena devolve {unitId, cell}: a figura pela caixa projectada e a
    * casa por contenção no plano do solo — sem raio de atracção em px. */
   function tratarToque(clientX, clientY) {
+    /* Supervisor (pós-críticos T1.5, Conflitos A1): batalha
+       congelada — o toque não muta NADA (sem alvo novo, sem
+       estado, sem abrir cartão nem ficha); correcções finais
+       (EXP-R1): responde com a frase do mundo, sem silêncio. */
+    if (supCongelado) { say('A batalha parou — prime <b>Recomeçar</b>.'); return; }
     fecharCfg();
     // Intercepção à entrada (§1.5/§1.7): na vez de um monstro ou no
     // fim da batalha, qualquer toque só produz a frase de espera —
@@ -1004,6 +1101,7 @@
       }
       const destino = alcance.get(chave(cel.x, cel.y));
       if (!destino) {
+        supRegistar('bloqueada', { acao: 'mover', actor: PROPRIA, razao: 'Casa fora da reserva de movimento' });
         say(ajudaGrid
           ? 'Essa casa está longe demais — escolhe uma das <b>casas acesas</b>.'
           : `Longe demais — restam-te <b>${fmtM(reservaMovimento)}</b> nesta vez.`);
@@ -1016,6 +1114,7 @@
       caminhoPendente = destino.path;
       view.showMovement([]); view.showHover(null);
       say(`<b>${u ? u.nome : nomeCena(selecionada)}</b> está a andar…`);
+      supPartidaMovimentoOng(destino, destino.passos);
       view.move(selecionada, casaVista(destino), {
         path: destino.path.map(casaVista),
         durationMs: Math.min(1200, Math.max(220, destino.passos * 140))
@@ -1031,6 +1130,32 @@
      pendente (§4.4): três figuras podem andar nesta tranche. */
   view.on('moveend', u => {
     if (!u || batalhaFim) return;              // nada se move depois da queda
+    if (supRestaurando) return;                // Supervisor: reposição não é movimento de jogo
+    /* Supervisor (pós-críticos T1.5, Conflitos A2): guarda de
+       ÉPOCA no moveend DELA. Se a época mudou desde a partida
+       (congelamento ou restauro pelo meio), esta chegada é
+       tardia: NÃO desconta reserva, NÃO repinta nada — e havendo
+       restauro pendente, reafirma as posições do snapshot (a
+       animação velha pode ter pousado a figura fora dele). */
+    if (u.id === PROPRIA && epocaMovimentoOng !== supEpoca) {
+      custoPendente = null; caminhoPendente = null;
+      passoEmCurso = false; parado = false;
+      supDesarmarGuardaMovimentoOng();
+      if (supRestauroPendente) {
+        const snapUnidades = supRestauroPendente;
+        supRestauroPendente = null;
+        supRestaurando = true;               // a reafirmação não é movimento de jogo
+        for (const su of snapUnidades) {
+          const uv = unidade(su.id);
+          if (uv && (uv.posicao.x !== su.x || uv.posicao.y !== su.y))
+            view.move(su.id, casaVista({ x: su.x, y: su.y }), { immediate: true });
+        }
+        supRestaurando = false;
+        supConferirInvariantes('moveend-tardio');
+      }
+      return;
+    }
+    supConferirInvariantes('moveend');         // Supervisor: invariantes após cada movimento
     if (u.id !== PROPRIA) {
       /* Chegou um monstro. A conclusão do movimento tem UM dono:
          quem chega primeiro (este tratador ou o relógio de guarda)
@@ -1057,6 +1182,7 @@
     }
     /* A Ong andou — por toque (custoPendente) ou por seta
        (passoEmCurso). O desconto acontece uma única vez, aqui. */
+    supDesarmarGuardaMovimentoOng();   // o moveend chegou: a guarda dela desarma
     const eraPasso = passoEmCurso;
     const foiParado = parado;
     parado = false;
@@ -1092,11 +1218,13 @@
       }
     }
     if (fichaAberta === u.id) abrirFicha(u.id);   // reabre a ficha/cartão de vista da figura que andou
+    agendarPassoAuto();   // T1.5: o moveend dela retoma o Modo automático (desligado, não agenda passo novo)
   });
   view.on('camera', () => { sincronizarCamera(); mostrarZoom(); });
   view.on('zoom', () => mostrarZoom());
   view.on('stats', s => {
     $('stats').textContent = `${Math.round(s.fps)} FPS · ${s.triangles ?? '—'} triângulos · ${s.drawCalls ?? '—'} chamadas`;
+    supAmostraStats(s);                      // Supervisor: fluidez (amostras e lacunas grandes)
   });
   view.on('error', e => say((e && e.message) || 'Erro na vista 3D.'));
 
@@ -1188,7 +1316,13 @@
       else say('Tela cheia indisponível neste navegador.');
     } catch (_) { say('O navegador não permitiu a tela cheia.'); }
   });
-  $('btn-alerta').addEventListener('click', () => say('Alertas: <b>nenhum</b> por agora.'));
+  /* Correcções finais T1.5 (EXP-R1): em batalha limpa, a frase de
+     sempre; havendo alertas do Supervisor, a frase só aponta para
+     as configurações — existência e caminho, NUNCA o conteúdo
+     (durante o jogo, nada do Supervisor na superfície: A6). */
+  $('btn-alerta').addEventListener('click', () => say(supAlertas.length
+    ? 'Alertas: vê nas configurações (⚙).'
+    : 'Alertas: <b>nenhum</b> por agora.'));
 
   function sincronizarCamera() {
     const modo = view.getState().camera;
@@ -1259,6 +1393,468 @@
       ? 'Números de dano <b>ligados</b> — ao acertar, as parcelas do dano saem da figura atacada em números.'
       : 'Números de dano <b>desligados</b> — os acertos da Ong não mostram números.');
   });
+
+  /* ---------- Modo automático (tranche T1.5) ----------
+   * Opção das configurações rápidas, DESLIGADA por omissão e sem
+   * persistência: nasce desligada em cada arranque. A linha é
+   * criada aqui porque o index.html é intocável nesta tranche —
+   * entra em #cfgpop, antes de #stats, com as classes existentes
+   * (.cfgrow/.tog). Ligado, na vez da Ong uma IA básica de teste
+   * joga por ela PELO PIPELINE LEGAL: chama tratarAcao com as
+   * mesmas acções do clique e anda pelo mesmo caminho do toque.
+   * Transformação e consumível NUNCA são automáticos (v1).
+   * Ritmo: PASSO_AUTO_MS entre passos. Desligar sobe a geração e
+   * limpa o relógio: um passo pendente nunca corre, e o moveend
+   * dela com o modo desligado não agenda passo novo. Ligar e
+   * desligar não dizem frase nenhuma: o único texto novo é o
+   * rótulo e os estados, dentro das configurações. */
+  const PASSO_AUTO_MS = 850;   // pausa entre passos automáticos (700–1000 ms)
+  let modoAutomatico = false;
+  let geracaoAuto = 0;         // geração do controlador: desligar invalida pendentes
+  let relogioAuto = null;      // o único relógio do controlador
+  let autoJaMoveu = false;     // no máximo UM movimento automático por vez dela
+  let autoAtaqueEmCurso = false;   // a gaveta de ataque foi aberta pelo controlador
+
+  const linhaAuto = document.createElement('div');
+  linhaAuto.className = 'cfgrow';
+  const rotuloAuto = document.createElement('span');
+  rotuloAuto.className = 'cl';
+  rotuloAuto.textContent = 'Modo automático';
+  const botaoAuto = document.createElement('button');
+  botaoAuto.type = 'button';
+  botaoAuto.id = 'tog-auto';
+  botaoAuto.className = 'tog';
+  botaoAuto.textContent = 'Desligado';
+  botaoAuto.setAttribute('aria-pressed', 'false');
+  linhaAuto.appendChild(rotuloAuto);
+  linhaAuto.appendChild(botaoAuto);
+  cfgEl.insertBefore(linhaAuto, $('stats'));
+  botaoAuto.addEventListener('click', () => definirModoAutomatico(!modoAutomatico));
+
+  function definirModoAutomatico(ligado) {
+    modoAutomatico = !!ligado;
+    geracaoAuto++;                       // pendente de outra geração nunca corre
+    if (relogioAuto) { clearTimeout(relogioAuto); relogioAuto = null; }
+    botaoAuto.classList.toggle('on', modoAutomatico);
+    botaoAuto.textContent = modoAutomatico ? 'Ligado' : 'Desligado';
+    botaoAuto.setAttribute('aria-pressed', String(modoAutomatico));
+    if (modoAutomatico) agendarPassoAuto();
+  }
+  function agendarPassoAuto() {
+    if (!modoAutomatico || supCongelado || batalhaFim || vezAtual !== PROPRIA) return;
+    if (relogioAuto) return;             // um passo pendente chega
+    const gen = geracaoAuto;
+    relogioAuto = setTimeout(() => {
+      relogioAuto = null;
+      if (!modoAutomatico || gen !== geracaoAuto || batalhaFim || vezAtual !== PROPRIA) return;
+      passoAutomatico();
+    }, PASSO_AUTO_MS);
+  }
+  /* O destino do movimento automático: o melhor destino da BFS
+   * legal dela (calcularAlcancePara com a reserva actual), pontuado
+   * pelo mapaDistancias do alvo — menor distância ao alvo, desempate
+   * por menos passos e depois pela ordem da BFS. Só vale se melhorar
+   * a distância actual dela ao alvo. */
+  function escolherDestinoAuto(alvoId) {
+    const eu = unidade(PROPRIA);
+    if (!eu) return null;
+    const teto = Math.floor(reservaMovimento / CASA_M);
+    if (teto < 1) return null;
+    const distAlvo = mapaDistancias(alvoId);
+    const distActual = distAlvo.get(chave(eu.posicao.x, eu.posicao.y));
+    let melhor = null;
+    for (const c of calcularAlcancePara(PROPRIA, teto).values()) {
+      const d = distAlvo.get(chave(c.x, c.y));
+      if (d === undefined) continue;
+      if (!melhor || d < melhor.d || (d === melhor.d && c.passos < melhor.destino.passos))
+        melhor = { d, destino: c };
+    }
+    if (!melhor) return null;
+    if (distActual !== undefined && melhor.d >= distActual) return null;
+    return melhor.destino;
+  }
+  /* Um passo do controlador. Cada passo faz UMA acção do pipeline
+   * e agenda o seguinte (o ritmo é o PASSO_AUTO_MS); o movimento é
+   * a excepção: quem retoma é o moveend dela (hook), no fim da
+   * animação. Estados pendentes ao ligar tratam-se sem inventar
+   * resolução: rolagem de chicote confirma pelo pipeline,
+   * resultado continua, gavetas abertas repõem-se à base antes de
+   * planear. EXCEPÇÃO fechada (FID-R1): um pendente de
+   * Transformação NUNCA é confirmado pelo controlador — o passo
+   * só reagenda a verificação e a decisão fica manual. */
+  function passoAutomatico() {
+    if (!modoAutomatico || supCongelado || batalhaFim || vezAtual !== PROPRIA) return;
+    if (estado === 'movendo') return;    // a animação manda: o moveend retoma
+    if (estado === 'rolagem') {
+      if (ataquePendente && ataquePendente.tipo === 'transformacao') { agendarPassoAuto(); return; }
+      tratarAcao('confirmar'); agendarPassoAuto(); return;
+    }
+    if (estado === 'resultado') { tratarAcao('continuar'); agendarPassoAuto(); return; }
+    if (estado === 'mover') { tratarAcao('cancelar'); agendarPassoAuto(); return; }
+    if (estado === 'consumivel') { tratarAcao('voltar'); agendarPassoAuto(); return; }
+    if (estado === 'atacar') {
+      if (!autoAtaqueEmCurso) { tratarAcao('voltar'); agendarPassoAuto(); return; }
+      autoAtaqueEmCurso = false;
+      tratarAcao('ataque-basico'); agendarPassoAuto(); return;
+    }
+    if (estado !== 'base') return;
+    if (atacou) { tratarAcao('encerrar'); return; }
+    /* Alvo: o monstro vivo mais próximo por distanciaEntre; o
+     * desempate é a ordem de `ordem` (a iteração segue essa ordem
+     * e só um < estrito troca). Sem alvos vivos, pára estável —
+     * sem ciclo e sem ecrã novo. */
+    const vivos = ordem.filter(id => id !== PROPRIA && unidade(id) && unidade(id).vivo !== false);   // FID-R2: alvo VIVO, não só existente
+    if (!vivos.length) return;
+    let alvoId = null, menor = Infinity;
+    for (const id of vivos) {
+      const d = distanciaEntre(PROPRIA, id);
+      if (d < menor) { menor = d; alvoId = id; }
+    }
+    alvo = alvoId;
+    if (menor <= COMBATE_TEST.ong.alcance) {
+      tratarAcao('atacar');
+      if (estado === 'atacar') { autoAtaqueEmCurso = true; agendarPassoAuto(); }
+      else tratarAcao('encerrar');
+      return;
+    }
+    if (autoJaMoveu) { tratarAcao('encerrar'); return; }
+    const destino = escolherDestinoAuto(alvoId);
+    if (!destino) { tratarAcao('encerrar'); return; }
+    autoJaMoveu = true;
+    /* O movimento automático é o do toque, tal e qual: estado
+     * 'movendo', custo/caminho pendentes, view.move com a mesma
+     * fórmula de duração — o desconto único acontece no moveend
+     * dela, como no toque. */
+    const u = unidade(selecionada);
+    estado = 'movendo'; parado = false; renderAcoes();
+    custoPendente = destino.passos;
+    caminhoPendente = destino.path;
+    view.showMovement([]); view.showHover(null);
+    say(`<b>${u ? u.nome : nomeCena(selecionada)}</b> está a andar…`);
+    supPartidaMovimentoOng(destino, destino.passos);
+    view.move(selecionada, casaVista(destino), {
+      path: destino.path.map(casaVista),
+      durationMs: Math.min(1200, Math.max(220, destino.passos * 140))
+    });
+  }
+
+  /* ---------- Supervisor do Comestre (T1.5 — adenda do Mestre) ----------
+   * Camada nativa DENTRO da casca, sentada nos chokepoints do
+   * pipeline: valida TODA a acção ANTES de ela acontecer (as dela
+   * por tratarAcao; o movimento por toque e por seta; a IA dos
+   * monstros por vezDaIA/atacarIA), vigia invariantes após
+   * resoluções e moveend e num relógio leve de 500 ms, guarda um
+   * ponto de retorno por turno e mantém o registo da batalha.
+   * NÃO cria mecânica paralela nem muda números nem frases: nos
+   * bloqueios "moles" limita-se a registar e o caminho existente
+   * recusa com a frase de sempre, sem efeito; nos "duros"
+   * (caminhos sem recusa própria) a acção pára antes, com o
+   * estado intacto. Violação de invariante dura CONGELA a batalha
+   * na hora — sem chamar fimDeBatalha e sem setVivo (ela não
+   * caiu): o erro só aparece na área de supervisão das
+   * configurações (imersão — a superfície de jogo não o anuncia).
+   * O registo exportável NÃO tem Defesas nem constantes de
+   * combate: só eventos, alertas e snapshots. */
+  const SUP_RELOGIO_MS = 500;   // relógio leve de invariantes
+  /* Tectos declarados (pós-críticos T1.5, Conflitos A5): o registo
+     e a pilha de snapshots rodam — os mais antigos saem primeiro. */
+  const SUP_MAX_EVENTOS = 1000;
+  const SUP_MAX_SNAPSHOTS = 40;
+  const SUP_GUARDA_MOVIMENTO_MS = 5000;   // relógio de guarda do movimento dela (= o da IA)
+  let supCongelado = false;
+  let supRestaurando = false;
+  let supSeq = 0;               // seq monotónico dos eventos (sobrevive à rotação do registo)
+  const supRegisto = [];        // eventos: turno/accao/bloqueada/alerta/restauro/fluidez/fim/guarda
+  const supAlertas = [];        // { rodada, vez, razao } — vazia em batalha limpa
+  const supPilha = [];          // pontos de retorno: { turno, estado }
+  const supAmostrasFps = [];    // fluidez via 'stats' da vista (amostras ≤1/s)
+  let supStatsUltimo = 0, supStatsUltimaAmostra = 0;
+
+  function supRegistar(tipo, dados) {
+    /* Timestamp em TODOS os eventos (pós-críticos T1.5): sem ele,
+       o ritmo e o silêncio do registo eram improváveis ao vivo. */
+    supRegisto.push(Object.assign(
+      { seq: ++supSeq, ts: Date.now(), tipo, rodada, vez: vezAtual }, dados || {}));
+    while (supRegisto.length > SUP_MAX_EVENTOS) supRegisto.shift();   // tecto A5
+  }
+  /* Partida de um movimento DELA (toque, seta ou automático):
+     regista a época corrente, arma o relógio de guarda de 5 s e
+     regista o movimento legal no Supervisor (actor, de→para,
+     passos) — o rasto que os críticos ao vivo não viam. */
+  function supPartidaMovimentoOng(para, passos) {
+    epocaMovimentoOng = supEpoca;
+    const u = unidade(PROPRIA);
+    supRegistar('accao', { acao: 'mover', actor: PROPRIA,
+      de: u ? { x: u.posicao.x, y: u.posicao.y } : null,
+      para: { x: para.x, y: para.y }, passos });
+    supDesarmarGuardaMovimentoOng();
+    const epoca = supEpoca;
+    guardaMovimentoOng = { epoca, relogio: setTimeout(() => supRelogioGuardaMovimentoOng(epoca), SUP_GUARDA_MOVIMENTO_MS) };
+  }
+  function supDesarmarGuardaMovimentoOng() {
+    if (guardaMovimentoOng) { clearTimeout(guardaMovimentoOng.relogio); guardaMovimentoOng = null; }
+  }
+  /* Relógio de guarda do movimento DELA (pós-críticos T1.5,
+     Conflitos A7, como o GUARDA_IA_MS dos monstros): se o moveend
+     não vier em 5 s, destrava SEM descontar o que não andou —
+     os pendentes de custo limpam-se e o estado 'movendo' volta à
+     base; um passo de seta só perde o passoEmCurso. Fica registo. */
+  function supRelogioGuardaMovimentoOng(epoca) {
+    guardaMovimentoOng = null;
+    if (supCongelado || epoca !== supEpoca) return;
+    if (estado !== 'movendo' && !passoEmCurso) return;
+    custoPendente = null; caminhoPendente = null; passoEmCurso = false; parado = false;
+    if (estado === 'movendo') { estado = 'base'; renderAcoes(); }
+    supRegistar('guarda', { acao: 'mover', actor: PROPRIA, razao: 'O moveend dela não chegou em 5 s — movimento destravado sem desconto' });
+    agendarPassoAuto();   // destravada, o Modo automático pode retomar
+  }
+  /* Validação das acções DELA (chokepoint: tratarAcao). Devolve
+   * { razao, duro? } ou null. A Transformação valida o PA no
+   * Confirmar — é aí que ela realmente entra, antes do débito. */
+  function supValidarAcaoOng(acao) {
+    if (acao === 'atacar') {
+      if (estado === 'movendo' || view.getState().moving) return { razao: 'A figura ainda está a andar' };
+      if (atacou) return { razao: 'A Ong já atacou nesta vez' };
+      if (!alvo) return { razao: 'Sem alvo escolhido' };
+      if (!unidade(alvo)) return { razao: 'O alvo já não está na batalha' };
+      if (unidade(alvo).vivo === false) return { razao: 'O alvo já não está na batalha' };   // FID-R2: alvo VIVO
+      if (distanciaAte(alvo) > COMBATE_TEST.ong.alcance) return { razao: 'Alvo fora de alcance' };
+      return null;
+    }
+    if (acao === 'ataque-basico') {
+      if (estado !== 'atacar' || !alvo || atacou
+        || distanciaAte(alvo) > COMBATE_TEST.ong.alcance)
+        return { razao: 'Ataque básico sem condições para acontecer', duro: true };
+      return null;
+    }
+    if (acao === 'transformacao') {
+      if (transformada) return { razao: 'A Ong já está transformada' };
+      return null;
+    }
+    if (acao === 'confirmar') {
+      if (!ataquePendente) return { razao: 'Nada para confirmar' };
+      if (ataquePendente.tipo === 'transformacao') {
+        const t = COMBATE_TEST.ong.transformacao;
+        const livre = FICHAS.ong.alma.total - FICHAS.ong.alma.comprometido - paGasto;
+        if (livre < t.custo) return { razao: 'Alma livre não chega para a Transformação' };
+      } else if (!alvo || distanciaAte(alvo) > COMBATE_TEST.ong.alcance) {
+        return { razao: 'Alvo fora de alcance' };
+      }
+      return null;
+    }
+    if (acao === 'mover') {
+      if (estado === 'movendo' || view.getState().moving) return { razao: 'A figura ainda está a andar' };
+      if (reservaMovimento < CASA_M) return { razao: 'Reserva de movimento esgotada' };
+      return null;
+    }
+    if (acao === 'encerrar') {
+      if (estado === 'movendo' || view.getState().moving)
+        return { razao: 'Não pode encerrar a vez enquanto anda', duro: true };
+      return null;
+    }
+    return null;
+  }
+  /* Soma das parcelas = total do dano, nos dois sentidos.
+     Devolve booleano (pós-críticos T1.5, Conflitos A3): quem chama
+     ABORTA a resolução nesse tick se devolver falso. */
+  function supConferirSoma(parcelas, total, actor) {
+    let soma = 0;
+    for (const p of parcelas) soma += p.valor;
+    if (soma !== total) { supCongelar('A soma das parcelas do dano não bate com o total'); return false; }
+    return true;
+  }
+  function supInvarianteViolada() {
+    if (paGasto < 0 || paGasto > FICHAS.ong.alma.total) return 'Pontos de alma gastos fora dos limites';
+    if (FICHAS.ong.alma.total - FICHAS.ong.alma.comprometido - paGasto < 0) return 'Alma livre negativa';
+    if (danoSofrido < 0) return 'Dano marcado negativo';
+    if (FICHAS.ong.vida.total - danoSofrido > FICHAS.ong.vida.total) return 'Vida acima do máximo';
+    if (reservaMovimento < -1e-9 || reservaMovimento > DESLOCAMENTO_ONG_M + 1e-9)
+      return 'Reserva de movimento fora dos limites';
+    const casas = new Set();
+    for (const u of view.getState().units) {
+      if (u.posicao.x < AREA.origin.x || u.posicao.x >= AREA.origin.x + AREA.cols
+        || u.posicao.y < AREA.origin.y || u.posicao.y >= AREA.origin.y + AREA.rows)
+        return 'Figura fora da arena';
+      const k = chave(u.posicao.x, u.posicao.y);
+      if (casas.has(k)) return 'Duas figuras na mesma casa';
+      casas.add(k);
+    }
+    return null;
+  }
+  function supConferirInvariantes(origem) {
+    if (supCongelado || supRestaurando) return;
+    const razao = supInvarianteViolada();
+    if (razao) supCongelar(razao);
+  }
+  /* Congelar: pára continuações e relógios, terminal estável com
+   * Recomeçar — a Ong NÃO caiu (sem fimDeBatalha, sem setVivo) e
+   * nada disto se anuncia na superfície de jogo. */
+  function supCongelar(razao) {
+    if (supCongelado) return;
+    supCongelado = true;
+    supEpoca++;                          // guarda de época: moveend tardio dela não acerta contas
+    supDesarmarGuardaMovimentoOng();
+    supAlertas.push({ rodada, vez: vezAtual, razao });
+    supRegistar('alerta', { razao, congelou: true });
+    /* Evento terminal do congelamento (pós-críticos T1.5): o
+       registo marca onde a batalha parou e porquê. */
+    supRegistar('fim', { actor: PROPRIA, congelamento: true, razao });
+    supRenderAlertas();
+    geracaoAuto++;
+    if (relogioAuto) { clearTimeout(relogioAuto); relogioAuto = null; }
+    seqTurno++;                          // continuações da IA morrem
+    if (contextoIA) consumirContextoIA(contextoIA.id);
+    estado = 'fim';
+    atualizarVez(); renderAcoes();   // EXP-R1: o indicador passa a «FIM» no gelo (terminal honesto)
+  }
+  /* Fluidez: só pelo que a vista diz em 'stats' — amostras de FPS
+   * (≤1/s) e registo das lacunas grandes entre eventos. */
+  function supAmostraStats(s) {
+    const agora = performance.now();
+    if (supStatsUltimo && agora - supStatsUltimo > 2000)
+      supRegistar('fluidez', { lacunaMs: Math.round(agora - supStatsUltimo) });
+    supStatsUltimo = agora;
+    if (agora - supStatsUltimaAmostra >= 1000) {
+      supStatsUltimaAmostra = agora;
+      supAmostrasFps.push(Math.round(s.fps));
+      if (supAmostrasFps.length > 120) supAmostrasFps.shift();
+    }
+  }
+
+  /* ---------- Supervisor: pontos de retorno (um passo atrás, v1) ---------- */
+  function supEstadoCanonico() {
+    return {
+      rodada, indiceVez, vez: vezAtual,
+      unidades: view.getState().units.map(u => ({
+        id: u.id, x: u.posicao.x, y: u.posicao.y, vivo: u.vivo !== false })),
+      danoSofrido, paGasto, transformada, reservaMovimento, atacou, alvo
+    };
+  }
+  function supSnapshot() {
+    if (supCongelado) return;
+    const estadoSnap = supEstadoCanonico();
+    const turno = estadoSnap.rodada + ':' + estadoSnap.indiceVez + ':' + estadoSnap.vez;
+    if (supPilha.length && supPilha[supPilha.length - 1].turno === turno) return;   // deduplicação por turno
+    supPilha.push({ turno, estado: estadoSnap });
+    while (supPilha.length > SUP_MAX_SNAPSHOTS) supPilha.shift();   // tecto A5
+    supRegistar('turno', { vezSnap: estadoSnap.vez });
+  }
+  function supRestaurar() {
+    if (supPilha.length < 2) {
+      supRegistar('restauro', { ok: false, razao: 'Sem turno anterior guardado' });
+      /* EXP-R2: o clique sem estado anterior responde DENTRO das
+         configurações (linha #sup-ultimo) — sem say() novo. */
+      supUltimoEl.textContent = 'Ainda não há um estado anterior guardado.';
+      return;
+    }
+    const idx = supPilha.length - 2;             // o turno anterior ao actual
+    const snap = supPilha[idx].estado;
+    supRestaurando = true;                       // o moveend ignora a reposição
+    /* Guarda de época + restauro pendente (pós-críticos T1.5,
+       Conflitos A2): um movimento dela ainda em voo, ao chegar,
+       é ignorado e as posições deste snapshot são reafirmadas.
+       Âmbito declarado: o «Voltar» também funciona depois do
+       FIM natural (ferramenta de teste/replay — ver NOTAS). */
+    supEpoca++;
+    supRestauroPendente = snap.unidades.map(u => ({ ...u }));
+    supDesarmarGuardaMovimentoOng();
+    geracaoAuto++;
+    if (relogioAuto) { clearTimeout(relogioAuto); relogioAuto = null; }
+    seqTurno++;
+    if (contextoIA) consumirContextoIA(contextoIA.id);
+    for (const su of snap.unidades) {
+      const u = unidade(su.id);
+      if (u && (u.posicao.x !== su.x || u.posicao.y !== su.y))
+        view.move(su.id, casaVista({ x: su.x, y: su.y }), { immediate: true });
+      const uv = unidade(su.id);
+      if (uv && (uv.vivo !== false) !== su.vivo) view.setVivo(su.id, su.vivo);
+    }
+    danoSofrido = snap.danoSofrido; paGasto = snap.paGasto;
+    transformada = snap.transformada;
+    reservaMovimento = snap.reservaMovimento; atacou = snap.atacou;
+    alvo = snap.alvo;
+    rodada = snap.rodada; indiceVez = snap.indiceVez;
+    ataquePendente = null; custoPendente = null; caminhoPendente = null;
+    passoEmCurso = false; parado = false;
+    const ongSnap = snap.unidades.find(u => u.id === PROPRIA);
+    if (ongSnap && ongSnap.vivo) batalhaFim = false;
+    supPilha.length = idx + 1;                   // o futuro velho sai da pilha
+    supCongelado = false;                        // voltar é também a saída do congelamento
+    atualizarChipVida();
+    supRestaurando = false;
+    supRegistar('restauro', { ok: true, rodadaSnap: snap.rodada, vezSnap: snap.vez });
+    /* EXP-R2: confirmação do voltar DENTRO das configurações
+       (linha #sup-ultimo) — sem say() novo. */
+    supUltimoEl.textContent = `Voltado ao turno anterior — rodada ${snap.rodada}, vez de ${nomeCena(snap.vez)}.`;
+    if (snap.vez === PROPRIA) {
+      iniciarVez(PROPRIA);
+      say(`É a vez da <b>Ong</b> (rodada ${rodada}).`);
+    } else {
+      iniciarVezIA(snap.vez, false);
+    }
+    supConferirInvariantes('restauro');
+  }
+
+  /* ---------- Supervisor: superfície do Mestre (só #cfgpop) ---------- */
+  const linhaSupA = document.createElement('div');
+  linhaSupA.className = 'cfgrow';
+  const rotuloSupA = document.createElement('span');
+  rotuloSupA.className = 'cl';
+  rotuloSupA.textContent = 'Supervisor do Comestre';
+  const botaoVoltarSup = document.createElement('button');
+  botaoVoltarSup.type = 'button';
+  botaoVoltarSup.id = 'sup-voltar';
+  botaoVoltarSup.className = 'tog';
+  botaoVoltarSup.textContent = 'Voltar ao último estado bom';
+  linhaSupA.appendChild(rotuloSupA);
+  linhaSupA.appendChild(botaoVoltarSup);
+  cfgEl.insertBefore(linhaSupA, $('stats'));
+  const linhaSupB = document.createElement('div');
+  linhaSupB.className = 'cfgrow';
+  const rotuloSupB = document.createElement('span');
+  rotuloSupB.className = 'cl';
+  rotuloSupB.textContent = 'Registo da batalha';
+  const botaoExportarSup = document.createElement('button');
+  botaoExportarSup.type = 'button';
+  botaoExportarSup.id = 'sup-exportar';
+  botaoExportarSup.className = 'tog';
+  botaoExportarSup.textContent = 'Exportar registo';
+  linhaSupB.appendChild(rotuloSupB);
+  linhaSupB.appendChild(botaoExportarSup);
+  cfgEl.insertBefore(linhaSupB, $('stats'));
+  const alertasSupEl = document.createElement('div');
+  alertasSupEl.id = 'sup-alertas';
+  cfgEl.insertBefore(alertasSupEl, $('stats'));
+  const preSupEl = document.createElement('pre');
+  preSupEl.id = 'sup-json';
+  cfgEl.insertBefore(preSupEl, $('stats'));
+  /* EXP-R2: linha de estado própria da secção do Supervisor —
+     o retorno visível do «Voltar» e do «Exportar», só dentro
+     das configurações. */
+  const supUltimoEl = document.createElement('div');
+  supUltimoEl.id = 'sup-ultimo';
+  cfgEl.insertBefore(supUltimoEl, $('stats'));
+  function supRenderAlertas() {
+    alertasSupEl.innerHTML = '';
+    for (const a of supAlertas) {
+      const d = document.createElement('div');
+      d.textContent = `Rodada ${a.rodada} · vez de ${nomeCena(a.vez)} — ${a.razao}`;
+      alertasSupEl.appendChild(d);
+    }
+  }
+  function supExportar() {
+    preSupEl.textContent = JSON.stringify({
+      eventos: supRegisto,
+      alertas: supAlertas,
+      snapshots: supPilha.map(e => e.estado),
+      estadoActual: supEstadoCanonico(),
+      fluidez: { amostrasFps: supAmostrasFps }
+    }, null, 1);
+    supUltimoEl.textContent = 'Registo exportado abaixo.';   // EXP-R2
+  }
+  botaoVoltarSup.addEventListener('click', () => supRestaurar());
+  botaoExportarSup.addEventListener('click', () => supExportar());
+  setInterval(() => supConferirInvariantes('relogio'), SUP_RELOGIO_MS);
 
   function marcarQualidade() {
     document.querySelectorAll('[data-qualidade]').forEach(b =>

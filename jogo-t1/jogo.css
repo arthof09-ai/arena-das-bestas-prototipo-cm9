@@ -68,6 +68,18 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
   border:1px solid rgba(201,162,39,.8);background:rgba(28,21,12,.85);color:var(--pergaminho-fraco)}
 .tog.on{background:var(--ouro);color:#1c1508}
 #cfgpop .stats{margin-top:6px;font-size:10px;color:var(--pergaminho-mudo);font-variant-numeric:tabular-nums}
+/* Supervisor do Comestre (pós-críticos T1.5, Visual A8): a área de
+   alertas e o <pre> do registo exportado ficam CONTIDOS dentro do
+   pop-up de 252 px — altura máxima com rolagem interna e quebra de
+   linha, sem transbordo horizontal nem pop-up descontrolado. */
+#sup-alertas{max-height:96px;overflow-y:auto;font-size:11px;line-height:1.4;
+  color:var(--pergaminho-fraco);overflow-wrap:break-word;word-break:break-word}
+#sup-json{max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:break-word;
+  word-break:break-word;font-size:10px;line-height:1.35;color:var(--pergaminho-fraco)}
+/* Correcções finais T1.5 (EXP-R2): a linha de estado do Supervisor
+   (#sup-ultimo) fica contida no pop-up, na mesma língua visual. */
+#sup-ultimo{font-size:11px;line-height:1.4;color:var(--pergaminho-fraco);
+  overflow-wrap:break-word;word-break:break-word;padding:4px 0}
 
 /* ---------- ficha fechada: chip flutuante (só a própria) ---------- */
 #fichachip{position:fixed;left:12px;bottom:68px;width:182px;z-index:20;text-align:left;
