@@ -166,9 +166,8 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 .dano b{font-family:Georgia,'DejaVu Serif',serif;font-size:19px}
 .dano small{font-size:8.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
 .dano.t-dados{color:#fff3d0}
-.dano.t-forca{color:#ff9a5c}
 .dano.t-bonus{color:var(--ouro-vivo)}
-.dano.t-magia{color:#c3b3ff}
+.dano.t-tecnica{color:#8ad6ff}
 .dano.t-total{color:var(--ouro-claro)}
 .dano.t-total b{font-size:26px}
 .impacto{position:absolute;left:0;top:0;will-change:transform,opacity}
