@@ -274,6 +274,12 @@
   let epocaMovimentoOng = 0;
   let supRestauroPendente = null;   // unidades do snapshot restaurado, ou null
   let guardaMovimentoOng = null;    // { epoca, relogio } do movimento dela em voo
+  /* Correcções T1.7 (F10.7): contador de erros da camada crítica —
+     os catch dos hooks/motores incrementam-no em vez de engolirem
+     em silêncio total; a passividade mantém-se (o jogo nunca parte
+     por causa da camada), mas a falha deixa rasto em
+     analises.errosCamada. */
+  let supCritErrosCamada = 0;
 
   const unidade = id => view.getState().units.find(u => u.id === id);
   const nomeCena = id => (ELENCO.find(u => u.id === id) || {}).nome
@@ -572,7 +578,8 @@
       v.id !== PROPRIA && v.posicao.x === nx && v.posicao.y === ny);
     if (ocupada) { supRegistar('bloqueada', { acao: 'mover', actor: PROPRIA, razao: 'Casa ocupada' }); say('Essa casa está ocupada.'); return; }
     passoEmCurso = true;
-    supPartidaMovimentoOng({ x: nx, y: ny }, 1);
+    supPartidaMovimentoOng({ x: nx, y: ny }, 1,
+      [{ x: u.posicao.x, y: u.posicao.y }, { x: nx, y: ny }]);   // T1.7: caminho da seta = [actual, seguinte]
     view.move(PROPRIA, casaVista({ x: nx, y: ny }), {
       path: [casaVista({ x: nx, y: ny })], durationMs: ritmo(200)
     });
@@ -599,6 +606,7 @@
   }
   /* Único sítio onde a vez muda (com iniciarVezIA e o arranque). */
   function passarVez() {
+    try { supCritAntesDePassarVez(); } catch (_) { supCritErrosCamada++; }   // T1.7: fecha a vez nos acumuladores (passivo)
     seqTurno++;                       // invalida qualquer sequência antiga
     indiceVez = (indiceVez + 1) % ordem.length;
     if (indiceVez === 0) rodada++;
@@ -658,7 +666,8 @@
     { const uIA = unidade(id);
       supRegistar('accao', { acao: 'mover', actor: id,
         de: uIA ? { x: uIA.posicao.x, y: uIA.posicao.y } : null,
-        para: { x: destino.x, y: destino.y }, passos: destino.passos }); }
+        para: { x: destino.x, y: destino.y }, passos: destino.passos,
+        path: destino.path.map(p => ({ x: p.x, y: p.y })) }); }   // T1.7: o caminho fica no evento mover
     try {
       view.move(id, casaVista(destino), {
         path: destino.path.map(casaVista),
@@ -1132,7 +1141,7 @@
       caminhoPendente = destino.path;
       view.showMovement([]); view.showHover(null);
       say(`<b>${u ? u.nome : nomeCena(selecionada)}</b> está a andar…`);
-      supPartidaMovimentoOng(destino, destino.passos);
+      supPartidaMovimentoOng(destino, destino.passos, destino.path);
       view.move(selecionada, casaVista(destino), {
         path: destino.path.map(casaVista),
         durationMs: ritmo(Math.min(1200, Math.max(220, destino.passos * 140)))
@@ -1174,6 +1183,7 @@
       return;
     }
     supConferirInvariantes('moveend');         // Supervisor: invariantes após cada movimento
+    try { supCritFecharMovimento(u.id); } catch (_) { supCritErrosCamada++; }   // T1.7: fecha o segmento de movimento (passivo)
     if (u.id !== PROPRIA) {
       /* Chegou um monstro. A conclusão do movimento tem UM dono:
          quem chega primeiro (este tratador ou o relógio de guarda)
@@ -1243,6 +1253,7 @@
   view.on('stats', s => {
     $('stats').textContent = `${Math.round(s.fps)} FPS · ${s.triangles ?? '—'} triângulos · ${s.drawCalls ?? '—'} chamadas`;
     supAmostraStats(s);                      // Supervisor: fluidez (amostras e lacunas grandes)
+    try { supCritAmostraStats(s); } catch (_) { supCritErrosCamada++; }   // T1.7: amostras do Crítico (passivo)
   });
   view.on('error', e => say((e && e.message) || 'Erro na vista 3D.'));
 
@@ -1578,7 +1589,7 @@
     }
     if (autoJaMoveu) { tratarAcao('encerrar'); return; }
     const destino = escolherDestinoAuto(alvoId);
-    if (!destino) { tratarAcao('encerrar'); return; }
+    if (!destino) { try { supCritAutoSemDestino(); } catch (_) { supCritErrosCamada++; } tratarAcao('encerrar'); return; }
     autoJaMoveu = true;
     /* O movimento automático é o do toque, tal e qual: estado
      * 'movendo', custo/caminho pendentes, view.move com a mesma
@@ -1590,7 +1601,7 @@
     caminhoPendente = destino.path;
     view.showMovement([]); view.showHover(null);
     say(`<b>${u ? u.nome : nomeCena(selecionada)}</b> está a andar…`);
-    supPartidaMovimentoOng(destino, destino.passos);
+    supPartidaMovimentoOng(destino, destino.passos, destino.path);
     view.move(selecionada, casaVista(destino), {
       path: destino.path.map(casaVista),
       durationMs: ritmo(Math.min(1200, Math.max(220, destino.passos * 140)))
@@ -1635,17 +1646,21 @@
     supRegisto.push(Object.assign(
       { seq: ++supSeq, ts: Date.now(), tipo, rodada, vez: vezAtual }, dados || {}));
     while (supRegisto.length > SUP_MAX_EVENTOS) supRegisto.shift();   // tecto A5
+    /* Supervisor-Crítico (T1.7): camada passiva de padrões — lê o
+       evento acabado de registar; nunca altera nada. */
+    try { supCritObservarEvento(supRegisto[supRegisto.length - 1]); } catch (_) { supCritErrosCamada++; }
   }
   /* Partida de um movimento DELA (toque, seta ou automático):
      regista a época corrente, arma o relógio de guarda de 5 s e
      regista o movimento legal no Supervisor (actor, de→para,
      passos) — o rasto que os críticos ao vivo não viam. */
-  function supPartidaMovimentoOng(para, passos) {
+  function supPartidaMovimentoOng(para, passos, path) {
     epocaMovimentoOng = supEpoca;
     const u = unidade(PROPRIA);
     supRegistar('accao', { acao: 'mover', actor: PROPRIA,
       de: u ? { x: u.posicao.x, y: u.posicao.y } : null,
-      para: { x: para.x, y: para.y }, passos });
+      para: { x: para.x, y: para.y }, passos,
+      path: Array.isArray(path) ? path.map(p => ({ x: p.x, y: p.y })) : null });   // T1.7: caminho no evento (decisão registada nas NOTAS)
     supDesarmarGuardaMovimentoOng();
     const epoca = supEpoca;
     guardaMovimentoOng = { epoca, relogio: setTimeout(() => supRelogioGuardaMovimentoOng(epoca), SUP_GUARDA_MOVIMENTO_MS) };
@@ -1902,18 +1917,1084 @@
     }
   }
   function supExportar() {
+    let dicasCrit = [], analisesCrit = {};
+    try { dicasCrit = supCritDicasExport(); analisesCrit = supCritAnalises(); } catch (_) { supCritErrosCamada++; }
     preSupEl.textContent = JSON.stringify({
       eventos: supRegisto,
       alertas: supAlertas,
       snapshots: supPilha.map(e => e.estado),
       estadoActual: supEstadoCanonico(),
-      fluidez: { amostrasFps: supAmostrasFps }
+      fluidez: { amostrasFps: supAmostrasFps },
+      dicas: dicasCrit,          // T1.7: anotações do Supervisor-Crítico
+      analises: analisesCrit     // T1.7: resumos numéricos da camada de padrões
     }, null, 1);
     supUltimoEl.textContent = 'Registo exportado abaixo.';   // EXP-R2
   }
   botaoVoltarSup.addEventListener('click', () => supRestaurar());
   botaoExportarSup.addEventListener('click', () => supExportar());
-  setInterval(() => supConferirInvariantes('relogio'), SUP_RELOGIO_MS);
+
+  /* ---------- Supervisor-Crítico (tranche T1.7) ----------
+   * Camada PASSIVA de padrões, anotações e análises sobre o
+   * registo que o Supervisor da T1.5 já escreve: lê eventos,
+   * snapshots e amostras — nunca altera uma acção, um número ou
+   * um ritmo. A unidade de análise é o PADRÃO, não o evento; cada
+   * dica é uma ANOTAÇÃO ancorada (batalha, segmento, rodada, vez,
+   * actor, medida e limiar). Motores em duas cadências: ao fechar
+   * cada rodada (padrões baratos) e no fim da batalha (batalha
+   * completa). Nenhum ciclo novo por frame: a camada pendura-se
+   * no registo, no relógio de 500 ms, no tratador de stats (≤1/s
+   * para FPS), nos moveend e nas fronteiras de turno/rodada.
+   * REGRA DE VELOCIDADE (T1.6): todos os limiares de TEMPO das
+   * dicas dividem pelo factor activo — cada intervalo guarda a
+   * velocidade do seu início e a anotação carrega a medida real
+   * e o limiar efectivo (limiar base ÷ velocidade). FPS e tempos
+   * de frame são tempo real de renderização: NÃO escalam.
+   * Superfície: SÓ a lista «Dicas do Supervisor» em #cfgpop —
+   * nada em say(), nada na barra, nenhum ícone (imersão 100%).
+   * Bandeira de teste (invisível, só para a bateria medir o custo
+   * da camada): localStorage 'hudt1-crit-off'='1' desliga os
+   * acumuladores e os motores; a página não a mostra em lado
+   * nenhum e nenhuma preferência a escreve. */
+  const SUPCRIT_MAX_DICAS = 12, SUPCRIT_MAX_POR_CAT = 3;
+  const SUPCRIT_AGG_CHAVE = 'hudt1-analises';
+  let supCritDesligado = false;
+  try { supCritDesligado = localStorage.getItem('hudt1-crit-off') === '1'; } catch (_) {}
+  const supCritMediana = ns => {
+    if (!ns.length) return 0;
+    const s = [...ns].sort((a, b) => a - b), m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  };
+  const supCritSeg = ms => (Math.round(ms / 100) / 10).toString().replace('.', ',');
+  function supCritAggVazio() {
+    return { batalhas: 0, quedas: {}, usoCasas: {}, alvosAuto: {}, fps: [], deslize: {}, padroes: {} };
+  }
+  function supCritAggLer() {
+    try {
+      const j = JSON.parse(localStorage.getItem(SUPCRIT_AGG_CHAVE) || 'null');
+      if (j && typeof j === 'object' && typeof j.batalhas === 'number')
+        return Object.assign(supCritAggVazio(), j);
+    } catch (_) {}
+    return supCritAggVazio();
+  }
+  let supCritAgg = supCritAggLer();
+  function supCritAggGuardar() {
+    try { localStorage.setItem(SUPCRIT_AGG_CHAVE, JSON.stringify(supCritAgg)); } catch (_) {}
+  }
+  function supCritNovoAcc() {
+    const ultimoActo = {};
+    for (const u of ELENCO) ultimoActo[u.id] = { ts: Date.now(), vel: velocidade };
+    return {
+      uso: new Map(), movimentos: [], ataques: [],
+      ataquesOngAuto: [], ataquesOngManual: [],
+      danoPorActor: new Map(), danoPorRodada: new Map(), danoTotal: 0,
+      recusas: new Map(), runChave: null, runN: 0, runMax: new Map(), lacunas: [],
+      turnos: [], esperas: [], ongVazias: 0, ongDesperdicadas: 0, monstroSemAgir: new Map(),
+      deslize: new Map(), movidos: new Map(), naoMedidos: 0, ataquesTotais: 0, ultimoAtaqueActor: null,
+      autoSemAproximar: 0, autoSemDestino: 0, ultimoActo
+    };
+  }
+  const supCrit = {
+    segmento: 1, batalha: (supCritAgg.batalhas || 0) + 1,
+    dicas: [], chaves: new Map(), ocultas: 0,
+    acc: supCritNovoAcc(), turnoCtx: null, espera: null,
+    abertos: new Map(), ultimoStats: null, fpsAm: [], ultFpsTs: 0,
+    fronteiras: [], frames: [], framesLen: 0, enq: [], ultEnq: 0,
+    tInicio: performance.now(), tReady: null, tStats1: null,
+    clips: new Map(), agregadoSomado: false, padroesBatalha: new Set(),
+    ultRodadaVista: 1
+  };
+  view.ready.then(() => { supCrit.tReady = performance.now(); }, () => {});
+
+  /* ---------- superfície do Crítico (só #cfgpop, antes de #stats) ---------- */
+  const linhaCrit = document.createElement('div');
+  linhaCrit.className = 'cfgrow';
+  const rotuloCrit = document.createElement('span');
+  rotuloCrit.className = 'cl';
+  rotuloCrit.textContent = 'Dicas do Supervisor';
+  /* Correcções T1.7 (R-EXP-4a): o botão «Limpar histórico» NÃO apaga
+     dicas — a explicação vai no <small> do rótulo, no padrão das
+     linhas «Ajuda do grid»/«Números de dano». */
+  const smallCrit = document.createElement('small');
+  smallCrit.textContent = 'o histórico guarda só as contagens entre batalhas; as dicas desta batalha não se apagam';
+  rotuloCrit.appendChild(smallCrit);
+  const botaoLimparCrit = document.createElement('button');
+  botaoLimparCrit.type = 'button';
+  botaoLimparCrit.id = 'sup-limpar-analises';
+  botaoLimparCrit.className = 'tog';
+  botaoLimparCrit.textContent = 'Limpar histórico de análises';
+  linhaCrit.appendChild(rotuloCrit);
+  linhaCrit.appendChild(botaoLimparCrit);
+  cfgEl.insertBefore(linhaCrit, $('stats'));
+  const dicasSupEl = document.createElement('div');
+  dicasSupEl.id = 'sup-dicas';
+  cfgEl.insertBefore(dicasSupEl, $('stats'));
+  botaoLimparCrit.addEventListener('click', () => {
+    supCritAgg = supCritAggVazio();      // limpa SÓ o agregado entre batalhas
+    supCritAggGuardar();
+    supCrit.padroesBatalha.clear();
+    supUltimoEl.textContent = 'Histórico de análises limpo.';
+  });
+  const SUPCRIT_CATS = [['mecanica', 'Mecânica'], ['visual', 'Artes e visual'],
+    ['maquina', 'Máquina'], ['animacao', 'Animações'], ['jogabilidade', 'Jogabilidade']];
+  function supCritRender() {
+    /* Correcções T1.7 (R-EXP-6b): a reconstrução preserva a posição
+       de leitura — uma emissão a meio da leitura não pode fazer a
+       lista saltar para o topo. */
+    const scrollAntes = dicasSupEl.scrollTop;
+    dicasSupEl.innerHTML = '';
+    /* R-EXP-4b: estado vazio explicado — uma secção anunciada sem
+       nada por baixo lê-se como avaria, não como «ainda não há
+       nada para dizer». */
+    if (!supCrit.dicas.length) {
+      const vazio = document.createElement('div');
+      vazio.textContent = 'Ainda não há dicas nesta batalha. As dicas aparecem aqui quando alguma coisa se repete ou sai do normal.';
+      dicasSupEl.appendChild(vazio);
+    }
+    for (const [cat, rot] of SUPCRIT_CATS) {
+      const ds = supCrit.dicas.filter(d => d.categoria === cat);
+      if (!ds.length) continue;
+      const h = document.createElement('div');
+      h.className = 'sup-cat';   // R-EXP-6a: título de categoria com estilo próprio (jogo.css)
+      h.textContent = rot;
+      dicasSupEl.appendChild(h);
+      for (const d of ds) {
+        const el = document.createElement('div');
+        el.className = 'sup-dica';
+        /* R-EXP-5: âncora honesta — padrões de batalha inteira ou
+           de máquina (ambito:'batalha', decidido na emissão) não
+           acusam a vez de ninguém. */
+        el.textContent = d.ambito === 'batalha'
+          ? `Batalha inteira — ${d.texto}`
+          : `Rodada ${d.rodada} · vez de ${nomeCena(d.vez)} — ${d.texto}`;
+        dicasSupEl.appendChild(el);
+      }
+    }
+    dicasSupEl.scrollTop = scrollAntes;
+  }
+  supCritRender();   // pinta já o estado vazio (R-EXP-4b)
+
+  /* ---------- emissor de dicas (anotação §3, anti-ruído §6) ---------- */
+  let supCritSeqDica = 0;
+  let supCritSeqSeg = 0;   // id de cada segmento de movimento (F3: amostras etiquetadas por movimento)
+  function supCritEmitir(d) {
+    if (supCritDesligado) return;
+    /* Crónico: o mesmo padrão+actor em ≥3 batalhas sobe sempre e
+       a frase diz em quantas batalhas já apareceu (contado uma
+       vez por batalha, a partir do agregado persistido).
+       Correcções T1.7 (F10.1): a chave crónica passa a ser a MESMA
+       do dedupe (padrão+actor+assunto) — zonas mortas diferentes
+       (o M3 emite com assunto = a zona) já não se fundem num
+       «crónico» só. */
+    const chaveCron = d.padrao + '|' + (d.actor || '') + '|' + (d.assunto || '');
+    if (!supCrit.padroesBatalha.has(chaveCron)) {
+      supCrit.padroesBatalha.add(chaveCron);
+      supCritAgg.padroes[chaveCron] = (supCritAgg.padroes[chaveCron] || 0) + 1;
+      supCritAggGuardar();
+    }
+    const nBat = supCritAgg.padroes[chaveCron] || 0;
+    const cronico = nBat >= 3;
+    const chave = d.padrao + '|' + (d.actor || '') + '|' + (d.assunto || '');
+    const existente = supCrit.chaves.get(chave);
+    if (existente) {
+      /* Dedupe: a mesma dica não se repete; se a medida DOBRAR,
+         a entrada existente actualiza em vez de duplicar. Os
+         padrões de TOTAIS de batalha (M3/M4/M5/A3) passam
+         `actualizar`: a anotação final reflecte o total final da
+         batalha, que é o número que os críticos recalculam. */
+      if (d.actualizar || d.medida >= existente.medida * 2) {
+        existente.medida = d.medida; existente.limiar = d.limiar;
+        existente.rodada = d.rodada; existente.cronico = cronico;
+        if (d.ambito) existente.ambito = d.ambito;   // R-EXP-5: o âmbito acompanha a actualização
+        existente.texto = cronico ? d.texto + ` Já aconteceu em ${nBat} batalhas.` : d.texto;
+        supCritRender();
+      }
+      return;
+    }
+    const dica = {
+      id: ++supCritSeqDica, batalha: supCrit.batalha, segmento: supCrit.segmento,
+      rodada: d.rodada, vez: d.vez || d.actor || vezAtual, actor: d.actor || null,
+      categoria: d.categoria, padrao: d.padrao, medida: d.medida, limiar: d.limiar,
+      ambito: d.ambito || null,   // R-EXP-5: sinal de âncora (só muda a lista; rodada/vez exportados não mudam)
+      cronico, texto: cronico ? d.texto + ` Já aconteceu em ${nBat} batalhas.` : d.texto,
+      _prio: (d.prioridade || 1) * (cronico ? 10 : 1), _chave: chave
+    };
+    const naCat = supCrit.dicas.filter(x => x.categoria === d.categoria);
+    if (supCrit.dicas.length >= SUPCRIT_MAX_DICAS || naCat.length >= SUPCRIT_MAX_POR_CAT) {
+      /* Tecto: fica a de maior prioridade; a cortada CONTA em
+         analises.cortadas — silêncio sobre o corte é proibido. */
+      const cand = naCat.length >= SUPCRIT_MAX_POR_CAT ? naCat : supCrit.dicas;
+      let fraca = null;
+      for (const x of cand) if (!fraca || x._prio < fraca._prio) fraca = x;
+      if (fraca && dica._prio > fraca._prio) {
+        supCrit.dicas.splice(supCrit.dicas.indexOf(fraca), 1);
+        supCrit.chaves.delete(fraca._chave);
+        supCrit.ocultas++;
+      } else { supCrit.ocultas++; return; }
+    }
+    supCrit.dicas.push(dica);
+    supCrit.chaves.set(chave, dica);
+    supCritRender();
+  }
+  function supCritDicasExport() {
+    return supCrit.dicas.map(d => ({
+      id: d.id, batalha: d.batalha, segmento: d.segmento, rodada: d.rodada,
+      vez: d.vez, actor: d.actor, categoria: d.categoria, padrao: d.padrao,
+      medida: d.medida, limiar: d.limiar, ambito: d.ambito || null, cronico: d.cronico, texto: d.texto
+    }));
+  }
+
+  /* ---------- acumuladores: observação dos eventos do registo ---------- */
+  function supCritUso(x, y) {
+    const k = chave(x, y), acc = supCrit.acc;
+    acc.uso.set(k, (acc.uso.get(k) || 0) + 1);
+  }
+  function supCritClipsDe(id) {
+    const el = ELENCO.find(u => u.id === id);
+    if (!el) return null;
+    return supCrit.clips.has(el.modelo) ? supCrit.clips.get(el.modelo) : null;
+  }
+  function supCritRegistaModelos(s) {
+    if (!s || !Array.isArray(s.models)) return;
+    for (const m of s.models)
+      if (m && typeof m.modelo === 'string' && Array.isArray(m.clips))
+        supCrit.clips.set(m.modelo, m.clips.slice());
+  }
+  function supCritFecharTurno(ts) {
+    const ctx = supCrit.turnoCtx;
+    if (!ctx) return;
+    supCrit.turnoCtx = null;
+    let envelope = null;
+    if (ctx.actor === PROPRIA && ctx.auto)
+      envelope = Math.max(1, ctx.accoes) * PASSO_AUTO_MS
+        + (ctx.moveu ? Math.min(1200, Math.max(220, ctx.passos * 140)) : 0);
+    else if (ctx.actor !== PROPRIA)
+      envelope = ESPERA_ANUNCIO_MS + ESPERA_FIM_MS + (ctx.atacou ? ESPERA_ATAQUE_MS : 0)
+        + (ctx.moveu ? Math.min(1700, Math.max(220, ctx.passos * 190)) : 0);
+    /* A vez manual dela não tem envelope honesto (o tempo de
+       pensar é dela) — envelope null e o M1 ignora-a: lacuna
+       declarada nas NOTAS. */
+    supCrit.acc.turnos.push({
+      actor: ctx.actor, rodada: ctx.rodada, auto: !!ctx.auto,
+      inicio: ctx.inicio, durMs: ts - ctx.inicio, vel: ctx.vel,
+      passos: ctx.passos, moveu: ctx.moveu, atacou: ctx.atacou, envelopeMs: envelope
+    });
+  }
+  function supCritAntesDePassarVez() {
+    if (supCritDesligado) return;
+    const acc = supCrit.acc, ctx = supCrit.turnoCtx;
+    if (vezAtual === PROPRIA) {
+      if (ctx && ctx.actor === PROPRIA) {
+        if (!ctx.moveu && !ctx.atacou && !ctx.transformou
+          && reservaMovimento >= DESLOCAMENTO_ONG_M - 1e-9) acc.ongVazias++;
+        const alvoAoAlcance = ELENCO.some(u => u.id !== PROPRIA
+          && unidade(u.id) && unidade(u.id).vivo !== false
+          && distanciaEntre(PROPRIA, u.id) <= COMBATE_TEST.ong.alcance);
+        if (!ctx.atacou && reservaMovimento >= DESLOCAMENTO_ONG_M / 2 && alvoAoAlcance)
+          acc.ongDesperdicadas++;
+      }
+      /* J2: a espera de quem joga começa quando a vez dela fecha. */
+      supCrit.espera = { ts: Date.now(), rodada, vel: velocidade };
+    } else if (ctx && ctx.actor === vezAtual && !ctx.moveu && !ctx.atacou) {
+      acc.monstroSemAgir.set(vezAtual, (acc.monstroSemAgir.get(vezAtual) || 0) + 1);
+    }
+  }
+  function supCritRegistaMovimento(ev) {
+    const acc = supCrit.acc;
+    const path = Array.isArray(ev.path) ? ev.path.map(p => ({ x: p.x, y: p.y })) : null;
+    if (ev.de) supCritUso(ev.de.x, ev.de.y);
+    let celulas = [];
+    if (path && path.length) { celulas = path; for (const p of path) supCritUso(p.x, p.y); }
+    else if (ev.para) { celulas = [ev.para]; supCritUso(ev.para.x, ev.para.y); }
+    acc.movimentos.push({
+      actor: ev.actor, rodada: ev.rodada, de: ev.de || null, para: ev.para || null,
+      passos: ev.passos || celulas.length, caminho: celulas
+    });
+    /* Segmento de movimento (A1/J4): partida registada → moveend.
+       Amostras de animação SÓ contam as que caem DURANTE o
+       segmento (eventos stats com o segmento aberto). */
+    const auto = ev.actor === PROPRIA && modoAutomatico;
+    supCrit.abertos.set(ev.actor, {
+      actor: ev.actor, rodada: ev.rodada, inicio: ev.ts, passos: ev.passos || celulas.length,
+      segId: ++supCritSeqSeg,   // F3: identidade do movimento, para etiquetar as amostras de enquadramento
+      amostras: [], auto, alvoAuto: auto ? alvo : null,
+      distAntes: auto && alvo ? distanciaEntre(PROPRIA, alvo) : null
+    });
+    acc.ultimoActo[ev.actor] = { ts: ev.ts, vel: velocidade };
+  }
+  function supCritObservarEvento(ev) {
+    if (supCritDesligado || !ev) return;
+    const acc = supCrit.acc;
+    if (ev.tipo === 'turno') {
+      supCritFecharTurno(ev.ts);
+      const actor = ev.vezSnap || ev.vez;
+      supCrit.turnoCtx = {
+        actor, rodada: ev.rodada, inicio: ev.ts, vel: velocidade,
+        auto: actor === PROPRIA && modoAutomatico,
+        moveu: false, atacou: false, transformou: false, passos: 0, accoes: 0
+      };
+      for (const u of view.getState().units) supCritUso(u.posicao.x, u.posicao.y);
+      if (supCrit.ultimoStats) supCritFronteira(ev.rodada);
+      supCritAmostraEnq('turno');
+      if (actor === PROPRIA && supCrit.espera) {
+        const e = supCrit.espera;
+        supCrit.espera = null;
+        acc.esperas.push({ rodada: e.rodada, durMs: ev.ts - e.ts, vel: e.vel });
+      }
+      if (ev.rodada > supCrit.ultRodadaVista) {
+        const fechada = supCrit.ultRodadaVista;
+        supCrit.ultRodadaVista = ev.rodada;
+        supCritAvaliar(fechada, false);
+      }
+      return;
+    }
+    if (ev.tipo === 'accao') {
+      acc.runChave = null; acc.runN = 0;   // acção legal quebra a série de recusas (J3)
+      const ctx = supCrit.turnoCtx;
+      if (ctx && ev.actor === ctx.actor) {
+        ctx.accoes++;
+        if (ev.acao === 'mover') { ctx.moveu = true; ctx.passos += ev.passos || 0; }
+        if (ev.acao === 'ataque' || ev.acao === 'ataque-basico') ctx.atacou = true;
+        if (ev.acao === 'confirmar' && ataquePendente && ataquePendente.tipo === 'transformacao')
+          ctx.transformou = true;
+      }
+      if (ev.acao === 'mover') supCritRegistaMovimento(ev);
+      if (ev.acao === 'ataque') {
+        acc.ataquesTotais++;
+        acc.ultimoAtaqueActor = ev.actor;
+        acc.ataques.push({ actor: ev.actor, alvo: ev.alvo, acerto: !!ev.acerto, dano: ev.dano || 0, rodada: ev.rodada });
+        if (ev.alvo === PROPRIA && ev.acerto && ev.dano) {
+          acc.danoPorActor.set(ev.actor, (acc.danoPorActor.get(ev.actor) || 0) + ev.dano);
+          acc.danoPorRodada.set(ev.rodada, (acc.danoPorRodada.get(ev.rodada) || 0) + ev.dano);
+          acc.danoTotal += ev.dano;
+        }
+      }
+      if (ev.acao === 'ataque-basico' && ev.actor === PROPRIA && ev.alvo) {
+        const distAlvo = distanciaEntre(PROPRIA, ev.alvo);
+        let outro = false;
+        for (const u of ELENCO) {
+          if (u.id === PROPRIA || u.id === ev.alvo) continue;
+          const un = unidade(u.id);
+          if (un && un.vivo !== false && distanciaEntre(PROPRIA, u.id) <= distAlvo) { outro = true; break; }
+        }
+        const reg = { alvo: ev.alvo, rodada: ev.rodada, distanciaAlvo: distAlvo === Infinity ? null : distAlvo, outroMaisPertoOuIgual: outro };
+        if (modoAutomatico) acc.ataquesOngAuto.push(reg); else acc.ataquesOngManual.push(reg);
+      }
+      if (ev.actor && acc.ultimoActo[ev.actor]) acc.ultimoActo[ev.actor] = { ts: ev.ts, vel: velocidade };
+      return;
+    }
+    if (ev.tipo === 'bloqueada') {
+      const chaveR = (ev.acao || '') + '|' + (ev.razao || '');
+      acc.recusas.set(chaveR, (acc.recusas.get(chaveR) || 0) + 1);
+      if (acc.runChave === chaveR) acc.runN++; else { acc.runChave = chaveR; acc.runN = 1; }
+      if (acc.runN > (acc.runMax.get(chaveR) || 0)) acc.runMax.set(chaveR, acc.runN);
+      return;
+    }
+    if (ev.tipo === 'fluidez') { acc.lacunas.push({ rodada: ev.rodada, lacunaMs: ev.lacunaMs || 0 }); return; }
+    if (ev.tipo === 'restauro' && ev.ok) {
+      /* Segmento novo: os acumuladores NÃO cruzam o corte; as
+         dicas já emitidas ficam, marcadas com o seu segmento.
+         Correcções T1.7 (F1): as SÉRIES de amostras também
+         recomeçam — enquadramento, FPS, fronteiras e tempos de
+         frame não podem cruzar o corte (uma dica Q1/V3/Q3 não
+         pode nascer de amostras de um futuro apagado). */
+      supCrit.segmento++;
+      supCrit.acc = supCritNovoAcc();
+      supCrit.turnoCtx = null; supCrit.espera = null;
+      supCrit.abertos.clear();
+      supCrit.enq = []; supCrit.fpsAm = [];
+      supCrit.fronteiras = []; supCrit.frames = []; supCrit.framesLen = 0;
+      supCrit.ultRodadaVista = rodada;
+      return;
+    }
+    if (ev.tipo === 'fim' && !ev.congelamento) {
+      supCritFecharTurno(ev.ts);
+      supCritAvaliar(ev.rodada, true);
+      supCritSomarAgregado(ev.rodada);
+    }
+  }
+  function supCritAutoSemDestino() {
+    if (!supCritDesligado) supCrit.acc.autoSemDestino++;
+  }
+  function supCritSomarAgregado(rodadaQueda) {
+    if (supCrit.agregadoSomado) return;
+    supCrit.agregadoSomado = true;
+    const acc = supCrit.acc, agg = supCritAgg;
+    agg.batalhas++;
+    agg.quedas[rodadaQueda] = (agg.quedas[rodadaQueda] || 0) + 1;
+    for (const [k, v] of acc.uso) agg.usoCasas[k] = (agg.usoCasas[k] || 0) + v;
+    for (const a of acc.ataquesOngAuto) agg.alvosAuto[a.alvo] = (agg.alvosAuto[a.alvo] || 0) + 1;
+    for (const [k, v] of acc.deslize) agg.deslize[k] = (agg.deslize[k] || 0) + v;
+    if (supCrit.fpsAm.length) {
+      const fs = supCrit.fpsAm.map(a => a.fps);
+      agg.fps.push({ min: Math.min(...fs), mediana: supCritMediana(fs) });
+      while (agg.fps.length > 50) agg.fps.shift();   // tecto do agregado: últimas 50 batalhas
+    }
+    supCritAggGuardar();
+  }
+
+  /* ---------- amostras: stats, enquadramento, fronteiras ---------- */
+  function supCritAmostraStats(s) {
+    if (supCritDesligado || !s) return;
+    supCrit.ultimoStats = s;
+    const agora = performance.now();
+    if (!supCrit.tStats1) supCrit.tStats1 = agora;
+    supCritRegistaModelos(s);
+    if (agora - supCrit.ultFpsTs >= 1000) {   // FPS: ≤1/s, como o Supervisor
+      supCrit.ultFpsTs = agora;
+      if (typeof s.fps === 'number') {
+        supCrit.fpsAm.push({ rodada, fps: Math.round(s.fps) });
+        while (supCrit.fpsAm.length > 300) supCrit.fpsAm.shift();
+      }
+    }
+    /* Amostras de animação DENTRO dos segmentos abertos (A1). */
+    if (s.animations && typeof s.animations.walk === 'number')
+      for (const seg of supCrit.abertos.values()) seg.amostras.push(s.animations.walk);
+    supCritAmostraEnq('stats');
+  }
+  function supCritAmostraEnq(motivo) {
+    if (supCritDesligado) return;
+    const agora = performance.now();
+    if (agora - supCrit.ultEnq < 500) return;   // ≤2/s
+    supCrit.ultEnq = agora;
+    const rectos = {};
+    for (const u of ELENCO) {
+      try {
+        const r = view.projectUnit(u.id);
+        if (r) rectos[u.id] = [r.left, r.right, r.top, r.bottom];
+      } catch (_) { supCritErrosCamada++; }
+    }
+    if (!Object.keys(rectos).length) return;
+    /* F3: a amostra fica etiquetada com o segmento de movimento
+       aberto de cada figura (actor → segId) — é o que permite ao
+       V2 agrupar as amostras POR MOVIMENTO. */
+    const segs = {};
+    for (const seg of supCrit.abertos.values()) segs[seg.actor] = seg.segId;
+    supCrit.enq.push({ ts: Date.now(), rodada, vez: vezAtual, motivo, rectos, segs });
+    while (supCrit.enq.length > 200) supCrit.enq.shift();
+  }
+  function supCritRelogio() { supCritAmostraEnq('relogio'); }
+  function supCritFronteira(r) {
+    const s = supCrit.ultimoStats;
+    if (!s || !Array.isArray(s.models)) return;
+    const total = s.totalTriangles || 0;
+    supCrit.fronteiras.push({
+      rodada: r, total, drawCalls: s.drawCalls || 0,
+      modelos: s.models.map(m => ({
+        modelo: m.modelo, triangles: m.triangles || 0,
+        parte: total ? Math.round((m.triangles || 0) / total * 100) : 0
+      }))
+    });
+    while (supCrit.fronteiras.length > 60) supCrit.fronteiras.shift();
+  }
+  function supCritFecharMovimento(id) {
+    if (supCritDesligado) return;
+    const acc = supCrit.acc;
+    const seg = supCrit.abertos.get(id);
+    supCritAmostraEnq('moveend');
+    if (!seg) return;
+    supCrit.abertos.delete(id);
+    /* A1 — deslize, com a regra de honestidade do desenho: sem
+       clipe de andar, deslize por construção (casas todas); com
+       clipe, só se afirma com amostras DURANTE o segmento, todas
+       com walk = 0; sem amostras dentro, não se afirma nada. */
+    const clips = supCritClipsDe(id);
+    let deslize = null;
+    if (clips !== null && !clips.some(n => /walk|andar/i.test(String(n)))) deslize = seg.passos;
+    else if (clips !== null) {
+      if (seg.amostras.length && seg.amostras.every(w => w === 0)) deslize = seg.passos;
+      else if (seg.amostras.length) deslize = 0;
+    }
+    if (deslize === null) acc.naoMedidos++;
+    else if (deslize > 0) acc.deslize.set(id, (acc.deslize.get(id) || 0) + deslize);
+    acc.movidos.set(id, (acc.movidos.get(id) || 0) + seg.passos);
+    if (seg.auto && seg.alvoAuto && seg.distAntes !== null) {
+      if (distanciaEntre(PROPRIA, seg.alvoAuto) >= seg.distAntes) acc.autoSemAproximar++;
+    }
+    if (acc.ultimoActo[id]) acc.ultimoActo[id] = { ts: Date.now(), vel: velocidade };
+  }
+
+  /* ---------- motores de padrões (duas cadências) ---------- */
+  function supCritAvaliar(r, fim) {
+    if (supCritDesligado) return;
+    /* Correcções T1.7: os catch dos motores contam em
+       analises.errosCamada (F10.7) — engolidos, mas visíveis. */
+    const P = [supCritAvalM1, supCritAvalM2, supCritAvalM6,
+      supCritAvalV, supCritAvalQ1, supCritAvalQ2, supCritAvalQ3, supCritAvalQ4,
+      supCritAvalA1, supCritAvalA2,
+      supCritAvalJ1, supCritAvalJ2, supCritAvalJ3, supCritAvalJ4];
+    for (const f of P) { try { f(r); } catch (_) { supCritErrosCamada++; } }
+    if (fim) {
+      try { supCritAvalM3(r); } catch (_) { supCritErrosCamada++; }
+      /* F2 (via (a), a escolhida): o M4 avalia SÓ no fim da batalha,
+         como M3/M5/A3 — uma dica de foco emitida a meio podia ficar
+         falsa no fim (o foco diluía-se e ninguém retractava), e a
+         exportação final é o artefacto que os críticos lêem.
+         Nenhum outro motor depende da cadência de rodada do M4:
+         ele só lê danoPorActor/ataquesOngAuto, que ninguém consome. */
+      try { supCritAvalM4(r); } catch (_) { supCritErrosCamada++; }
+      try { supCritAvalM5(r); } catch (_) { supCritErrosCamada++; }
+      try { supCritAvalA3(r); } catch (_) { supCritErrosCamada++; }   // estrutural: uma vez, com o total final
+    }
+  }
+  function supCritAvalM1(r) {
+    const grupos = new Map();
+    for (const t of supCrit.acc.turnos) {
+      if (t.envelopeMs === null || t.envelopeMs === undefined) continue;
+      const g = t.actor === PROPRIA ? 'ong-auto' : t.actor;
+      if (!grupos.has(g)) grupos.set(g, []);
+      grupos.get(g).push(t);
+    }
+    for (const [g, ts] of grupos) {
+      const actor = g === 'ong-auto' ? PROPRIA : g;
+      const nome = nomeCena(actor);
+      if (ts.length >= 2) {
+        const medJogo = supCritMediana(ts.map(t => t.durMs * t.vel));
+        const medEnv = supCritMediana(ts.map(t => t.envelopeMs));
+        if (medJogo > medEnv * 1.4) {
+          const medReal = supCritMediana(ts.map(t => t.durMs));
+          const velRef = supCritMediana(ts.map(t => t.vel)) || 1;
+          /* R-EXP-7c: a frase diz também o ESPERADO (o envelope
+             mediano, em tempo real à velocidade de referência). */
+          const espReal = medEnv / velRef;
+          supCritEmitir({
+            categoria: 'mecanica', padrao: 'ritmo-turno', actor, rodada: r, vez: actor,
+            medida: Math.round(medReal),
+            limiar: Math.round(medEnv * 1.4 / velRef),
+            prioridade: ts.length * (medJogo / (medEnv * 1.4)),
+            texto: `As vezes de ${nome} estão a demorar mais do que o esperado — cerca de ${supCritSeg(medReal)} segundos por vez, quando o esperado era cerca de ${supCritSeg(espReal)} segundos.`
+          });
+          continue;
+        }
+      }
+      for (const t of ts) {
+        if (t.durMs * t.vel > 2 * t.envelopeMs && !(t.moveu && t.passos >= 6)) {
+          supCritEmitir({
+            categoria: 'mecanica', padrao: 'ritmo-turno', actor, rodada: t.rodada, vez: actor,
+            assunto: 'isolado', medida: Math.round(t.durMs), limiar: Math.round(2 * t.envelopeMs / t.vel),
+            prioridade: 2 * (t.durMs * t.vel / (2 * t.envelopeMs)),
+            texto: `Uma vez de ${nome} demorou ${supCritSeg(t.durMs)} segundos — o dobro do esperado para o que ela fez.`
+          });
+          break;
+        }
+      }
+    }
+    /* Ritmo da rodada (a outra metade do M1): duração por rodada. */
+    const porRodada = new Map();
+    for (const t of supCrit.acc.turnos) {
+      if (!porRodada.has(t.rodada)) porRodada.set(t.rodada, []);
+      porRodada.get(t.rodada).push(t);
+    }
+    const fechadas = [...porRodada.keys()].filter(x => x <= r);
+    if (fechadas.length >= 2) {
+      const dur = rr => porRodada.get(rr).reduce((a, t) => a + t.durMs * t.vel, 0);
+      const ultima = fechadas[fechadas.length - 1], primeira = fechadas[0];
+      if (dur(ultima) > dur(primeira) * 1.4 && dur(primeira) > 0) {
+        supCritEmitir({
+          categoria: 'mecanica', padrao: 'ritmo-rodada', actor: PROPRIA, rodada: ultima, vez: PROPRIA,
+          medida: Math.round(porRodada.get(ultima).reduce((a, t) => a + t.durMs, 0)),
+          limiar: Math.round(porRodada.get(primeira).reduce((a, t) => a + t.durMs, 0) * 1.4
+            / supCritMediana(porRodada.get(ultima).map(t => t.vel))),
+          prioridade: dur(ultima) / dur(primeira),
+          texto: `A rodada ${ultima} demorou ${supCritSeg(porRodada.get(ultima).reduce((a, t) => a + t.durMs, 0))} segundos; a rodada ${primeira} tinha demorado ${supCritSeg(porRodada.get(primeira).reduce((a, t) => a + t.durMs, 0))}. O ritmo não está igual.`
+        });
+      }
+    }
+  }
+  function supCritAvalM2(r) {
+    const acc = supCrit.acc;
+    const sigs = new Map(), dest = new Map();
+    for (const mv of acc.movimentos) {
+      let cam = mv.caminho.map(p => p.x + ',' + p.y);
+      if (mv.de && cam.length && cam[0] === mv.de.x + ',' + mv.de.y) cam = cam.slice(1);
+      const sig = (mv.de ? mv.de.x + ',' + mv.de.y : '?') + '>' + cam.join(';');
+      const k1 = mv.actor + '|' + sig;
+      sigs.set(k1, (sigs.get(k1) || 0) + 1);
+      if (mv.para) {
+        const k2 = mv.actor + '|' + mv.para.x + ',' + mv.para.y;
+        if (!dest.has(mv.actor)) dest.set(mv.actor, { total: 0, por: new Map() });
+        const dd = dest.get(mv.actor);
+        dd.total++; dd.por.set(k2, (dd.por.get(k2) || 0) + 1);
+      }
+    }
+    for (const [k, n] of sigs) {
+      if (n < 2) continue;
+      const actor = k.split('|')[0];
+      supCritEmitir({
+        categoria: 'mecanica', padrao: 'caminho-repetido', actor, rodada: r, vez: actor,
+        assunto: k, medida: n, limiar: 2, prioridade: n,
+        texto: `${nomeCena(actor)} andou ${n} vezes pelo mesmo caminho até à mesma casa. A batalha está a repetir-se.`
+      });
+    }
+    for (const [actor, dd] of dest) {
+      if (dd.total < 3) continue;
+      for (const [k, n] of dd.por) {
+        const parte = Math.round(n / dd.total * 100);
+        if (parte >= 60) supCritEmitir({
+          categoria: 'mecanica', padrao: 'caminho-repetido', actor, rodada: r, vez: actor,
+          assunto: 'destino:' + k, medida: parte, limiar: 60, prioridade: n * (parte / 60),
+          texto: `${nomeCena(actor)} vai quase sempre parar à mesma casa (${n} de ${dd.total} vezes).`
+        });
+      }
+    }
+  }
+  function supCritAvalM3(r) {
+    const acc = supCrit.acc;
+    const usadas = acc.uso.size, mortas = 70 - usadas;
+    const pct = Math.round(mortas / 70 * 100);
+    if (pct < 35) return;
+    const quadrantes = [
+      ['o canto de cima, à esquerda', (x, y) => x < 5 && y < 4],
+      ['o canto de cima, à direita', (x, y) => x >= 5 && y < 4],
+      ['o canto de baixo, à esquerda', (x, y) => x < 5 && y >= 4],
+      ['o canto de baixo, à direita', (x, y) => x >= 5 && y >= 4]
+    ];
+    let pior = null;
+    for (const [nome, f] of quadrantes) {
+      let n = 0, total = 0;
+      for (let x = 0; x < 10; x++) for (let y = 0; y < 7; y++) {
+        if (!f(x, y)) continue;
+        total++;
+        if (!acc.uso.has(chave(x, y))) n++;
+      }
+      /* Correcções T1.7 (F10.6): a zona nomeada é a de maior
+         PROPORÇÃO de casas mortas — os quadrantes de cima têm 20
+         casas e os de baixo 15; a contagem absoluta favorecia os
+         de cima mesmo com um de baixo 100% morto. */
+      const prop = total ? n / total : 0;
+      if (!pior || prop > pior.prop) pior = { nome, n, prop };
+    }
+    supCritEmitir({
+      categoria: 'mecanica', padrao: 'zona-morta', actor: PROPRIA, rodada: r, vez: PROPRIA, actualizar: true,
+      /* F10.1: o assunto é a zona — a chave crónica (padrão+actor+
+         assunto) distingue zonas mortas diferentes entre batalhas.
+         R-EXP-5: facto de batalha inteira → ambito 'batalha'. */
+      assunto: pior ? pior.nome : '', ambito: 'batalha',
+      medida: pct, limiar: 35, prioridade: pct / 35,
+      texto: `${mortas} das 70 casas do campo nunca foram pisadas nesta batalha — ${pior ? pior.nome : 'uma parte do campo'} ficou morto.`
+    });
+  }
+  function supCritAvalM4(r) {
+    const acc = supCrit.acc;
+    if (acc.danoTotal > 0) {
+      for (const [actor, dano] of acc.danoPorActor) {
+        const parte = Math.round(dano / acc.danoTotal * 100);
+        if (parte > 60) supCritEmitir({
+          categoria: 'mecanica', padrao: 'foco-de-dano', actor, rodada: r, vez: actor, actualizar: true,
+          medida: parte, limiar: 60, prioridade: parte / 60,
+          texto: `Quase todo o dano que a Ong levou veio de ${nomeCena(actor)} (${parte} em cada 100). Os outros quase não contam nesta batalha.`
+        });
+      }
+    }
+    const auto = acc.ataquesOngAuto;
+    if (auto.length >= 3 && auto.every(a => a.alvo === auto[0].alvo)
+      && auto.some(a => a.outroMaisPertoOuIgual)) {
+      supCritEmitir({
+        categoria: 'mecanica', padrao: 'foco-da-ong-auto', actor: PROPRIA, rodada: r, vez: PROPRIA, actualizar: true,
+        medida: auto.length, limiar: 3, prioridade: auto.length / 3,
+        texto: `A Ong automática bateu sempre no mesmo inimigo (${auto.length} ataques), mesmo quando outro estava mais perto.`
+      });
+    }
+  }
+  function supCritAvalM5(r) {
+    if (r <= 1 || r > 5) {
+      supCritEmitir({
+        categoria: 'mecanica', padrao: 'queda-fora-da-janela', actor: PROPRIA, rodada: r, vez: PROPRIA, actualizar: true,
+        medida: r, limiar: r <= 1 ? 2 : 5, prioridade: 2,
+        texto: r <= 1
+          ? `A Ong caiu logo na 1.ª rodada — o normal desta batalha é cair no fim da 2.ª. A batalha está mais dura do que devia.`
+          : `Ela aguentou até à ${r}.ª rodada. Com estes três inimigos, o esperado era cair muito antes.`
+      });
+    }
+    const acc = supCrit.acc;
+    if (acc.danoTotal > 0) {
+      for (const [rr, dano] of acc.danoPorRodada) {
+        const parte = Math.round(dano / acc.danoTotal * 100);
+        if (parte > 70) supCritEmitir({
+          categoria: 'mecanica', padrao: 'dano-concentrado', actor: PROPRIA, rodada: rr, vez: PROPRIA, actualizar: true,
+          medida: parte, limiar: 70, prioridade: parte / 70,
+          texto: `Quase todo o dano que a Ong levou caiu numa só rodada (a ${rr}.ª): ${parte} em cada 100.`
+        });
+      }
+    }
+  }
+  function supCritAvalM6(r) {
+    const acc = supCrit.acc;
+    if (acc.ongDesperdicadas >= 2) supCritEmitir({
+      categoria: 'mecanica', padrao: 'accao-desperdicada', actor: PROPRIA, rodada: r, vez: PROPRIA,
+      assunto: 'ong-sem-atacar', medida: acc.ongDesperdicadas, limiar: 2, prioridade: acc.ongDesperdicadas / 2,
+      texto: `A Ong fechou ${acc.ongDesperdicadas} vezes sem atacar e com mais de metade do andar por gastar.`
+    });
+    for (const [actor, n] of acc.monstroSemAgir) {
+      if (n >= 2) supCritEmitir({
+        categoria: 'mecanica', padrao: 'accao-desperdicada', actor, rodada: r, vez: actor,
+        assunto: 'monstro-parado:' + actor, medida: n, limiar: 2, prioridade: n / 2,
+        texto: `${nomeCena(actor)} passou ${n} vezes sem conseguir chegar perto dela — a vez dele não serviu para nada.`
+      });
+    }
+    for (const [k, n] of acc.recusas) {
+      if (n >= 3) {
+        const razao = k.split('|')[1] || k;
+        supCritEmitir({
+          categoria: 'mecanica', padrao: 'accao-desperdicada', actor: PROPRIA, rodada: r, vez: PROPRIA,
+          assunto: 'recusas:' + k, medida: n, limiar: 3, prioridade: n / 3,
+          texto: `O jogo recusou ${n} vezes a mesma coisa: ${razao}.`
+        });
+      }
+    }
+  }
+  function supCritAvalV(r) {
+    const am = supCrit.enq;
+    if (!am.length) return;
+    /* Viewport lido com guarda: se uma dimensão não existir no
+       ambiente, ela não limita (degradação honesta; nos
+       navegadores reais innerWidth/innerHeight existem sempre). */
+    /* F10.8: guarda simétrica nas duas dimensões — dimensão em
+       falta não limita (antes o innerWidth caía para 0 e tudo
+       ficava «fora do ecrã»). */
+    const VW = typeof innerWidth === 'number' ? innerWidth : Number.MAX_SAFE_INTEGER;
+    const VH = typeof innerHeight === 'number' ? innerHeight : Number.MAX_SAFE_INTEGER;
+    for (const u of ELENCO) {
+      const daVez = am.filter(a => a.vez === u.id && a.rectos[u.id]);
+      if (daVez.length >= 2) {
+        const alturas = daVez.map(a => a.rectos[u.id][3] - a.rectos[u.id][2]);
+        const abaixo = alturas.filter(h => h < 40).length / alturas.length;
+        if (abaixo >= 0.5) supCritEmitir({
+          categoria: 'visual', padrao: 'figura-pequena', actor: u.id, rodada: r, vez: u.id,
+          medida: Math.round(supCritMediana(alturas)), limiar: 40, prioridade: 1 / Math.max(1, supCritMediana(alturas) / 40),
+          texto: `Quando é a vez de ${nomeCena(u.id)}, a figura mede só ${Math.round(supCritMediana(alturas))} pontinhos de ecrã (px) — pequeno demais para se ver o que ela faz.`
+        });
+      }
+      /* V2 (correcção F3): o limiar «>25% fora» mede-se POR
+         MOVIMENTO — as amostras agrupam-se pelo segmento de
+         movimento em que caíram (partida→moveend, etiqueta `segs`
+         posta na amostragem) e os 25% aplicam-se dentro de cada
+         movimento, como o desenho define. Um movimento 100% fora
+         com peso pequeno na batalha dispara; amostras fora
+         espalhadas pela batalha, sem nenhum movimento >25% fora,
+         calam. O ramo da fronteira de turno mantém-se como estava. */
+      const gruposMov = new Map();
+      for (const a of am) {
+        if (!a.rectos[u.id]) continue;
+        const sid = a.segs && a.segs[u.id];
+        if (!sid) continue;
+        if (!gruposMov.has(sid)) gruposMov.set(sid, { total: 0, fora: 0 });
+        const g = gruposMov.get(sid);
+        g.total++;
+        const [l, rr2, t, b] = a.rectos[u.id];
+        const cx = (l + rr2) / 2, cy = (t + b) / 2;
+        if (l < 0 || t < 0 || rr2 > VW || b > VH || cx < 0 || cx > VW || cy < 0 || cy > VH) g.fora++;
+      }
+      let piorParte = 0;
+      for (const g of gruposMov.values())
+        if (g.total) piorParte = Math.max(piorParte, Math.round(g.fora / g.total * 100));
+      const fronteiraFora = am.some(a => a.motivo === 'turno' && a.vez === u.id && a.rectos[u.id]
+        && ((a.rectos[u.id][0] + a.rectos[u.id][1]) / 2 < 0 || (a.rectos[u.id][0] + a.rectos[u.id][1]) / 2 > VW
+          || (a.rectos[u.id][2] + a.rectos[u.id][3]) / 2 < 0 || (a.rectos[u.id][2] + a.rectos[u.id][3]) / 2 > VH));
+      if (piorParte > 25 || fronteiraFora) supCritEmitir({
+        categoria: 'visual', padrao: 'fora-de-enquadramento', actor: u.id, rodada: r, vez: u.id,
+        medida: piorParte, limiar: 25, prioridade: Math.max(1, piorParte / 25),
+        texto: fronteiraFora && piorParte <= 25
+          ? `Na vez de ${nomeCena(u.id)}, a figura nem aparece no ecrã — a câmara ficou noutro sítio.`
+          : `${nomeCena(u.id)} passa parte do tempo fora do ecrã (${piorParte} em cada 100 momentos).`
+      });
+    }
+    /* V3: pares colados — sobreposição >50% do recto menor em
+       ≥2 amostras seguidas. */
+    for (let i = 0; i < ELENCO.length; i++) for (let j = i + 1; j < ELENCO.length; j++) {
+      const a = ELENCO[i].id, b = ELENCO[j].id;
+      let seguidas = 0, maior = 0, disparou = false;
+      for (const s of am) {
+        const ra = s.rectos[a], rb = s.rectos[b];
+        if (!ra || !rb) { seguidas = 0; continue; }
+        const areaA = (ra[1] - ra[0]) * (ra[3] - ra[2]), areaB = (rb[1] - rb[0]) * (rb[3] - rb[2]);
+        const inter = Math.max(0, Math.min(ra[1], rb[1]) - Math.max(ra[0], rb[0]))
+          * Math.max(0, Math.min(ra[3], rb[3]) - Math.max(ra[2], rb[2]));
+        const parte = Math.min(areaA, areaB) > 0 ? inter / Math.min(areaA, areaB) * 100 : 0;
+        if (parte > 50) { seguidas++; maior = Math.max(maior, parte); } else seguidas = 0;
+        if (seguidas >= 2 && !disparou) {
+          disparou = true;
+          supCritEmitir({
+            categoria: 'visual', padrao: 'figuras-coladas', actor: a, rodada: s.rodada, vez: s.vez,
+            assunto: 'par:' + a + '+' + b, medida: Math.round(maior), limiar: 50, prioridade: maior / 50,
+            texto: `${nomeCena(a)} e ${nomeCena(b)} ficam um em cima do outro no ecrã durante a luta — não se percebe quem é quem.`
+          });
+        }
+      }
+    }
+  }
+  function supCritAvalQ1(r) {
+    const am = supCrit.fpsAm, acc = supCrit.acc;
+    if (am.length >= 5) {
+      const abaixo = Math.round(am.filter(a => a.fps < 30).length / am.length * 100);
+      if (abaixo >= 20) {
+        const min = am.reduce((a, b) => (b.fps < a.fps ? b : a), am[0]);
+        supCritEmitir({
+          categoria: 'maquina', padrao: 'fluidez', actor: PROPRIA, rodada: min.rodada, vez: PROPRIA,
+          assunto: 'abaixo30', ambito: 'batalha', medida: abaixo, limiar: 20, prioridade: abaixo / 20,
+          texto: `Os quadros caíram para ${min.fps} por segundo na rodada ${min.rodada}. Em ${abaixo} de cada 100 momentos, o jogo esteve abaixo dos 30 quadros por segundo.`
+        });
+      }
+      for (let i = 0; i + 1 < am.length; i++) {
+        if (am[i].fps - am[i + 1].fps > 20) {
+          const seg3 = am.slice(i + 1, i + 4);
+          if (!seg3.length || supCritMediana(seg3.map(a => a.fps)) < am[i].fps - 10) {
+            supCritEmitir({
+              categoria: 'maquina', padrao: 'fluidez', actor: PROPRIA, rodada: am[i + 1].rodada, vez: PROPRIA,
+              assunto: 'queda', ambito: 'batalha', medida: am[i].fps - am[i + 1].fps, limiar: 20, prioridade: (am[i].fps - am[i + 1].fps) / 20,
+              texto: `Os quadros caíram de repente, de ${am[i].fps} para ${am[i + 1].fps} por segundo, na rodada ${am[i + 1].rodada}, e não voltaram logo ao normal.`
+            });
+            break;
+          }
+        }
+      }
+    }
+    if (acc.lacunas.length) {
+      const maior = acc.lacunas.reduce((a, b) => (b.lacunaMs > a.lacunaMs ? b : a), acc.lacunas[0]);
+      supCritEmitir({
+        categoria: 'maquina', padrao: 'fluidez', actor: PROPRIA, rodada: maior.rodada, vez: PROPRIA,
+        assunto: 'lacuna', ambito: 'batalha', medida: maior.lacunaMs, limiar: 2000, prioridade: maior.lacunaMs / 2000,
+        texto: `O jogo engasgou uma vez durante ${supCritSeg(maior.lacunaMs)} segundos, na rodada ${maior.rodada}.`
+      });
+    }
+  }
+  function supCritAvalQ2(r) {
+    if (typeof view.getFrameTimes !== 'function') return;
+    let ft = [];
+    try { ft = view.getFrameTimes() || []; } catch (_) { supCritErrosCamada++; return; }
+    if (!Array.isArray(ft) || ft.length < 10) return;
+    let troco = ft.slice(supCrit.framesLen);
+    if (troco.length < 10) troco = ft;
+    supCrit.framesLen = ft.length;
+    const ord = [...troco].sort((a, b) => a - b);
+    const p95 = ord[Math.min(ord.length - 1, Math.floor(ord.length * 0.95))];
+    supCrit.frames.push({ rodada: r, p95: Math.round(p95 * 10) / 10, n: troco.length });
+    while (supCrit.frames.length > 40) supCrit.frames.shift();
+    const daRodada = supCrit.fpsAm.filter(a => a.rodada === r);
+    const mediaFps = daRodada.length ? daRodada.reduce((a, b) => a + b.fps, 0) / daRodada.length : null;
+    /* Correcções T1.7 (F4): sem FPS da rodada conhecido (mediaFps
+       null), o Q2 CALA — a condição do desenho é «numa rodada com
+       FPS médio ≥ 50», e dada-como-cumprida não é cumprida.
+       R-EXP-7a: a frase traz o p95 MEDIDO, em milissegundos. */
+    if (p95 > 33 && mediaFps !== null && mediaFps >= 50) supCritEmitir({
+      categoria: 'maquina', padrao: 'tempos-de-frame', actor: PROPRIA, rodada: r, vez: PROPRIA,
+      medida: Math.round(p95), limiar: 33, prioridade: p95 / 33,
+      texto: `A média parece boa, mas há saltos: 1 em cada 20 imagens demora ${Math.round(p95)} milissegundos — o dobro do tempo normal. É isso que faz o jogo parecer aos soluços.`
+    });
+  }
+  function supCritAvalQ3(r) {
+    const fr = supCrit.fronteiras;
+    if (!fr.length) return;
+    const ult = fr[fr.length - 1];
+    for (const m of ult.modelos) {
+      if (m.parte > 60) {
+        const dono = ELENCO.find(u => u.modelo === m.modelo);
+        supCritEmitir({
+          categoria: 'maquina', padrao: 'peso-da-cena', actor: dono ? dono.id : PROPRIA, rodada: r,
+          vez: dono ? dono.id : PROPRIA, assunto: 'modelo:' + m.modelo,
+          medida: m.parte, limiar: 60, prioridade: m.parte / 60,
+          /* E-8 (oportunista): sem dono encontrado, a frase cai
+             para «uma figura» — nunca o nome interno do modelo. */
+          texto: `Quase todo o peso do desenho está numa figura só: ${dono ? nomeCena(dono.id) : 'uma figura'} tem ${m.parte} em cada 100 triângulos da cena.`
+        });
+      }
+    }
+    for (let i = 1; i < fr.length; i++) {
+      /* Correcções T1.7 (F10.4): a condição do desenho «sem ter
+         entrado figura nova» — se o n.º de modelos difere entre as
+         duas fronteiras comparadas, o par não se compara (cala). */
+      if (fr[i].modelos.length !== fr[i - 1].modelos.length) continue;
+      if (fr[i - 1].total > 0 && fr[i].total > fr[i - 1].total * 1.25) {
+        const subida = Math.round((fr[i].total / fr[i - 1].total - 1) * 100);
+        supCritEmitir({
+          categoria: 'maquina', padrao: 'peso-da-cena', actor: PROPRIA, rodada: r, vez: PROPRIA,
+          assunto: 'crescimento', ambito: 'batalha', medida: subida, limiar: 25,
+          prioridade: fr[i].total / fr[i - 1].total,
+          /* R-EXP-7b: a frase traz a subida MEDIDA. */
+          texto: `O número de triângulos subiu ${subida}% durante a batalha sem entrar nada novo — pode estar a acumular desenho.`
+        });
+        break;
+      }
+    }
+  }
+  function supCritAvalQ4(r) {
+    if (!supCrit.tReady) return;
+    const dt = Math.round(supCrit.tReady - supCrit.tInicio);
+    if (dt > 3000) supCritEmitir({
+      categoria: 'maquina', padrao: 'carregamento', actor: PROPRIA, rodada: r, vez: PROPRIA,
+      ambito: 'batalha',   // R-EXP-5: facto de máquina/batalha, não da vez de ninguém
+      medida: dt, limiar: 3000, prioridade: dt / 3000,
+      /* R-EXP-3a: a causa («o peso está no carregamento das
+         figuras») saiu — mede-se só o total casca→ready. */
+      texto: `A página demorou ${supCritSeg(dt)} segundos até estar pronta para jogar.`
+    });
+  }
+  function supCritAvalA1(r) {
+    const acc = supCrit.acc;
+    for (const [actor, casas] of acc.deslize) {
+      if (casas >= 1) {
+        const total = acc.movidos.get(actor) || casas;
+        supCritEmitir({
+          categoria: 'animacao', padrao: 'deslize', actor, rodada: r, vez: actor,
+          medida: casas, limiar: 1, prioridade: casas,
+          texto: `${nomeCena(actor)} deslizou ${casas} casas sem dar um passo — andou como um brinquedo a flutuar (em ${total} casas andadas nesta batalha).`
+        });
+      }
+    }
+  }
+  function supCritAvalA2(r) {
+    const acc = supCrit.acc;
+    for (const u of ELENCO) {
+      const clips = supCritClipsDe(u.id);
+      if (clips !== null && clips.length === 0) supCritEmitir({
+        categoria: 'animacao', padrao: 'estatua', actor: u.id, rodada: r, vez: u.id,
+        medida: 0, limiar: 1, prioridade: 1,
+        texto: `${nomeCena(u.id)} não tem animação nenhuma no modelo — é uma estátua do princípio ao fim.`
+      });
+      const un = unidade(u.id);
+      const ult = acc.ultimoActo[u.id];
+      if (un && un.vivo !== false && ult) {
+        const paradoMs = Date.now() - ult.ts;
+        if (paradoMs * ult.vel > 20000) supCritEmitir({
+          categoria: 'animacao', padrao: 'tempo-parado', actor: u.id, rodada: r, vez: u.id,
+          medida: Math.round(paradoMs), limiar: Math.round(20000 / ult.vel), prioridade: paradoMs * ult.vel / 20000,
+          texto: `${nomeCena(u.id)} ficou ${supCritSeg(paradoMs)} segundos sem se mexer. Parado assim, parece desligado.`
+        });
+      }
+    }
+  }
+  function supCritAvalA3(r) {
+    const acc = supCrit.acc;
+    /* Estrutural e de batalha inteira: actor null de propósito —
+       a anotação é da batalha, não de uma figura (a âncora da vez
+       é a da última figura que atacou). */
+    if (acc.ataquesTotais >= 1) supCritEmitir({
+      categoria: 'animacao', padrao: 'ataque-sem-gesto', actor: null,
+      ambito: 'batalha',   // R-EXP-5: a âncora é a batalha, não a última figura que atacou
+      rodada: r, vez: acc.ultimoAtaqueActor || PROPRIA, actualizar: true,
+      medida: acc.ataquesTotais, limiar: 1, prioridade: 1,
+      texto: `Os ataques não têm gesto: a figura não levanta o braço nem a pata; só aparece o anel do golpe. Em ${acc.ataquesTotais} ataques, foram ${acc.ataquesTotais} sem gesto.`
+    });
+  }
+  function supCritAvalJ1(r) {
+    if (supCrit.acc.ongVazias >= 2) supCritEmitir({
+      categoria: 'jogabilidade', padrao: 'vez-vazia', actor: PROPRIA, rodada: r, vez: PROPRIA,
+      medida: supCrit.acc.ongVazias, limiar: 2, prioridade: supCrit.acc.ongVazias / 2,
+      texto: `${supCrit.acc.ongVazias} vezes da Ong não serviram para nada: nem andou, nem atacou. Ou a posição dela está má, ou falta-lhe alcance.`
+    });
+  }
+  function supCritAvalJ2(r) {
+    const es = supCrit.acc.esperas;
+    if (!es.length) return;
+    const pior = es.reduce((a, b) => (b.durMs * b.vel > a.durMs * a.vel ? b : a), es[0]);
+    if (pior.durMs * pior.vel > 20000) {
+      supCritEmitir({
+        categoria: 'jogabilidade', padrao: 'espera-de-quem-joga', actor: PROPRIA, rodada: pior.rodada, vez: PROPRIA,
+        assunto: 'isolada', medida: Math.round(pior.durMs), limiar: Math.round(20000 / pior.vel),
+        prioridade: pior.durMs * pior.vel / 20000,
+        texto: `Entre uma vez tua e a outra, passaram ${supCritSeg(pior.durMs)} segundos a ver os monstros, na rodada ${pior.rodada}.`
+      });
+      return;
+    }
+    const medJogo = supCritMediana(es.map(e => e.durMs * e.vel));
+    /* R-EXP-2 (= F9): a frase da mediana diz SÓ a duração medida —
+       a decomposição «espera parada vs. eles a andarem» não é
+       medida por ninguém e saiu da frase. */
+    if (medJogo > 12000) {
+      const medReal = supCritMediana(es.map(e => e.durMs));
+      const velRef = supCritMediana(es.map(e => e.vel));
+      supCritEmitir({
+        categoria: 'jogabilidade', padrao: 'espera-de-quem-joga', actor: PROPRIA, rodada: r, vez: PROPRIA,
+        assunto: 'mediana', medida: Math.round(medReal), limiar: Math.round(12000 / velRef),
+        prioridade: medJogo / 12000,
+        texto: `Entre uma vez tua e a outra, passam cerca de ${supCritSeg(medReal)} segundos a ver os monstros.`
+      });
+    }
+  }
+  function supCritAvalJ3(r) {
+    const acc = supCrit.acc;
+    for (const [k, n] of acc.runMax) {
+      if (n >= 3) {
+        const razao = k.split('|')[1] || k;
+        supCritEmitir({
+          categoria: 'jogabilidade', padrao: 'toques-sem-efeito', actor: PROPRIA, rodada: r, vez: PROPRIA,
+          assunto: 'seguidas:' + k, medida: n, limiar: 3, prioridade: n / 3,
+          texto: `Tocaste ${n} vezes seguidas e o jogo só disse que não dava. A razão foi sempre a mesma: ${razao}.`
+        });
+      }
+    }
+    for (const [k, n] of acc.recusas) {
+      if (n >= 5) {
+        const razao = k.split('|')[1] || k;
+        supCritEmitir({
+          categoria: 'jogabilidade', padrao: 'toques-sem-efeito', actor: PROPRIA, rodada: r, vez: PROPRIA,
+          assunto: 'total:' + k, medida: n, limiar: 5, prioridade: n / 5,
+          texto: `A mesma recusa apareceu ${n} vezes nesta batalha: ${razao}.`
+        });
+      }
+    }
+  }
+  function supCritAvalJ4(r) {
+    const acc = supCrit.acc;
+    if (acc.autoSemAproximar >= 2) supCritEmitir({
+      categoria: 'jogabilidade', padrao: 'automatico-sem-aproximar', actor: PROPRIA, rodada: r, vez: PROPRIA,
+      assunto: 'sem-aproximar', medida: acc.autoSemAproximar, limiar: 2, prioridade: acc.autoSemAproximar / 2,
+      texto: `Com o automático ligado, a Ong andou ${acc.autoSemAproximar} vezes sem ficar mais perto do inimigo. O caminho que ela escolhe pode melhorar.`
+    });
+    if (acc.autoSemDestino >= 2) supCritEmitir({
+      categoria: 'jogabilidade', padrao: 'automatico-sem-aproximar', actor: PROPRIA, rodada: r, vez: PROPRIA,
+      assunto: 'sem-destino', medida: acc.autoSemDestino, limiar: 2, prioridade: acc.autoSemDestino / 2,
+      texto: `Com o automático ligado, ${acc.autoSemDestino} vezes dela fecharam porque não havia um destino melhor para andar.`
+    });
+  }
+
+  /* ---------- análises (resumo numérico da exportação) ---------- */
+  function supCritAnalises() {
+    if (supCritDesligado) return { desligada: true, errosCamada: supCritErrosCamada };
+    const acc = supCrit.acc;
+    const usoObj = {};
+    for (const [k, v] of acc.uso) usoObj[k] = v;
+    const fs = supCrit.fpsAm.map(a => a.fps);
+    return {
+      batalha: supCrit.batalha, segmento: supCrit.segmento,
+      mapaUso: { usadas: acc.uso.size, total: 70, casas: usoObj },
+      temposTurno: acc.turnos, esperas: acc.esperas,
+      movimentos: acc.movimentos, ataques: acc.ataques,
+      danoPorActor: Object.fromEntries(acc.danoPorActor),
+      danoPorRodada: Object.fromEntries(acc.danoPorRodada), danoTotal: acc.danoTotal,
+      ataquesOngAuto: acc.ataquesOngAuto, ataquesOngManual: acc.ataquesOngManual,
+      recusas: Object.fromEntries(acc.recusas), recusasSeguidas: Object.fromEntries(acc.runMax),
+      lacunas: acc.lacunas,
+      ongVazias: acc.ongVazias, ongDesperdicadas: acc.ongDesperdicadas,
+      monstroSemAgir: Object.fromEntries(acc.monstroSemAgir),
+      fluidez: {
+        amostras: supCrit.fpsAm,
+        min: fs.length ? Math.min(...fs) : null,
+        media: fs.length ? Math.round(fs.reduce((a, b) => a + b, 0) / fs.length * 10) / 10 : null,
+        pctAbaixo30: fs.length ? Math.round(fs.filter(f => f < 30).length / fs.length * 100) : null
+      },
+      frames: supCrit.frames, fronteirasCena: supCrit.fronteiras,
+      enquadramento: { amostras: supCrit.enq },
+      animacao: {
+        deslizePorActor: Object.fromEntries(acc.deslize),
+        casasAndadas: Object.fromEntries(acc.movidos),
+        segmentosNaoMedidos: acc.naoMedidos,
+        ataques: acc.ataquesTotais, ataquesSemGesto: acc.ataquesTotais,
+        clipsPorModelo: Object.fromEntries([...supCrit.clips].map(([k, v]) => [k, v.slice()]))
+      },
+      carregamento: {
+        arranqueAteProntoMs: supCrit.tReady ? Math.round(supCrit.tReady - supCrit.tInicio) : null,
+        arranqueAtePrimeiroStatsMs: supCrit.tStats1 ? Math.round(supCrit.tStats1 - supCrit.tInicio) : null
+      },
+      autoSemAproximar: acc.autoSemAproximar, autoSemDestino: acc.autoSemDestino,
+      cortadas: supCrit.ocultas,
+      errosCamada: supCritErrosCamada,   // F10.7: erros engolidos pelos hooks/motores, contados
+      agregado: JSON.parse(JSON.stringify(supCritAgg))
+    };
+  }
+  setInterval(() => {
+    supConferirInvariantes('relogio');
+    try { supCritRelogio(); } catch (_) { supCritErrosCamada++; }   // T1.7: amostragem de enquadramento (≤2/s, passiva)
+  }, SUP_RELOGIO_MS);
 
   function marcarQualidade() {
     document.querySelectorAll('[data-qualidade]').forEach(b =>

@@ -82,6 +82,21 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
    (#sup-ultimo) fica contida no pop-up, na mesma língua visual. */
 #sup-ultimo{font-size:11px;line-height:1.4;color:var(--pergaminho-fraco);
   overflow-wrap:break-word;word-break:break-word;padding:4px 0}
+/* Supervisor-Crítico (T1.7): a lista «Dicas do Supervisor» fica
+   contida no pop-up como a de alertas — altura máxima com rolagem
+   interna e quebra de linha. Só existe dentro das configurações. */
+#sup-dicas{max-height:120px;overflow-y:auto;font-size:11px;line-height:1.4;
+  color:var(--pergaminho-fraco);overflow-wrap:break-word;word-break:break-word}
+/* Correcções T1.7 (R-EXP-6a): os títulos de categoria da lista de
+   dicas ganham a língua dos h3 do pop-up (dourado, 10 px, maiúsculas
+   com espaçamento) e cada dica ganha respiro — margem inferior e
+   separador tracejado como o das .cfgrow. Sem isto, a lista cheia
+   era um muro de texto onde as categorias se perdiam. */
+#sup-dicas .sup-cat{font-family:Georgia,'DejaVu Serif',serif;font-size:10px;
+  letter-spacing:.18em;color:var(--ouro);text-transform:uppercase;margin:7px 0 3px}
+#sup-dicas .sup-cat:first-child{margin-top:0}
+#sup-dicas .sup-dica{margin-bottom:6px;padding-bottom:6px;
+  border-bottom:1px dashed rgba(201,162,39,.25)}
 
 /* ---------- ficha fechada: chip flutuante (só a própria) ---------- */
 #fichachip{position:fixed;left:12px;bottom:68px;width:182px;z-index:20;text-align:left;
