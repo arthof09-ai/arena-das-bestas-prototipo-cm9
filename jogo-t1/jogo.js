@@ -51,20 +51,41 @@
   const PROPRIA = 'ong';                 // a personagem da jogadora deste aparelho
   const ORDEM_VEZ = ['ong', 'orc', 'capanga', 'lobo'];
   const ATAQUES = {
-    ong:     { tecnica: 'Lâmina de Maré', curta: 'Lâmina',   custo: 3, bonus: 6, alvoNome: 'o Lobo', alvoCA: 15 },
-    orc:     { tecnica: 'Golpe Brutal',   curta: 'Golpe',    custo: 2, bonus: 7, alvoNome: 'o Lobo', alvoCA: 15 },
-    capanga: { tecnica: 'Estocada',       curta: 'Estocada', custo: 2, bonus: 5, alvoNome: 'a Ong',  alvoCA: 15 },
-    lobo:    { tecnica: 'Mordida',        curta: 'Mordida',  custo: 2, bonus: 6, alvoNome: 'a Ong',  alvoCA: 15 }
+    ong:     { tecnica: 'Lâmina de Maré', curta: 'Lâmina',   custo: 3, bonus: 6, alvoNome: 'o Lobo' },
+    orc:     { tecnica: 'Golpe Brutal',   curta: 'Golpe',    custo: 2, bonus: 7, alvoNome: 'o Lobo' },
+    capanga: { tecnica: 'Estocada',       curta: 'Estocada', custo: 2, bonus: 5, alvoNome: 'a Ong' },
+    lobo:    { tecnica: 'Mordida',        curta: 'Mordida',  custo: 2, bonus: 6, alvoNome: 'a Ong' }
   };
+  /* FICHAS só tem a ficha completa da PRÓPRIA (Ong) — é a única ficha
+     que pode aparecer neste aparelho. Não há entradas mecânicas de
+     figuras alheias neste objecto, de propósito (ver VISTA, abaixo). */
   const FICHAS = {
     ong: { completa: true, nome: 'ONG', sub: 'Espiritualista · Água',
       vida: { total: 24, perdido: 6 }, alma: { livre: 7, total: 10, comprometido: 3 },
       ca: 15, desloc: '9 m', ini: '+4', ataque: '+6', cd: '13',
       attrs: [['FOR', 12], ['DES', 16], ['CON', 13], ['INT', 11], ['SAB', 15], ['CAR', 10]],
-      tecnicas: [['Lâmina de Maré', '3 PA'], ['Véu de Névoa', '2 PA']] },
-    orc:     { nome: 'ORC TEST',        sub: 'Personagem de teste', tipo: 'Personagem', ca: 14, defesa: 12, arma: 'Machado de guerra' },
-    capanga: { nome: 'CAPANGA 1',       sub: 'Personagem de teste', tipo: 'Personagem', ca: 13, defesa: 11, arma: 'Espada curta' },
-    lobo:    { nome: 'LOBO DA CAVERNA', sub: 'Besta',               tipo: 'Besta',      ca: 12, defesa: 11, arma: 'Mordida' }
+      tecnicas: [['Lâmina de Maré', '3 PA'], ['Véu de Névoa', '2 PA']] }
+  };
+  /* ---------- cartão de vista (decisão do Mestre, 03/11 07:35-07:36) ----------
+   * Figuras que não são a própria NÃO têm ficha na tela da jogadora:
+   * nada de CA, defesa, arma, dano, posição, deslocamento, vida, alma
+   * ou atributos — isso é "meta game". O cartão que abre ao tocar numa
+   * figura é só de VISTA e história leve, tipo Pokédex: onde ela se
+   * encontra e como ela é por fora. Dados separados dos mecânicos, de
+   * propósito: este objecto não tem um único campo técnico. */
+  const VISTA = {
+    orc:     { nome: 'ORC TEST',        sub: 'Criatura',
+      onde: 'Terras afastadas e lugares de batalha.',
+      aparencia: 'Uma figura humanoide grande e forte, de ombros largos e braços compridos.',
+      frase: 'Impressiona pelo tamanho — é das maiores figuras que a Ong já viu.' },
+    capanga: { nome: 'CAPANGA 1',       sub: 'Pessoa',
+      onde: 'Estradas e lugares de passagem.',
+      aparencia: 'Um homem comum, de roupa simples de viagem.',
+      frase: 'À primeira vista, passa por uma pessoa qualquer da estrada.' },
+    lobo:    { nome: 'LOBO DA CAVERNA', sub: 'Besta',
+      onde: 'Cavernas e lugares escuros e fechados.',
+      aparencia: 'Um lobo grande, de quatro patas, com o pelo escuro em tons de cinzento-carvão. Tem uma cicatriz sobre o olho esquerdo, branco e cego, a ponta da orelha direita cortada e a pata dianteira esquerda branca.',
+      frase: 'Mesmo de longe, reconhece-se pela cicatriz e pela pata branca.' }
   };
 
   /* ---------- estado da casca ---------- */
@@ -212,7 +233,10 @@
       const atk = ATAQUES[selecionada];
       const nomeAtaque = acao === 'tecnica' ? atk.tecnica : 'Ataque básico';
       estado = 'rolagem'; renderAcoes();
-      say(`${nomeAtaque} de <b>${nomeCena(selecionada)}</b> · <b>1d20+${atk.bonus} → 14 + ${atk.bonus} = ${14 + atk.bonus}</b> contra CA ${atk.alvoCA}.`);
+      // A CA do alvo NÃO aparece: é informação técnica da outra figura
+      // ("meta game", decisão do Mestre 03/11 07:35). A frase mostra só
+      // a rolagem de quem ataca e deixa o acerto para o Mestre confirmar.
+      say(`${nomeAtaque} de <b>${nomeCena(selecionada)}</b> · <b>1d20+${atk.bonus} → 14 + ${atk.bonus} = ${14 + atk.bonus}</b> · o Mestre confirma se acertou.`);
       acoesEl.dataset.pendente = nomeAtaque;
       return;
     }
@@ -235,13 +259,13 @@
 
   /* ---------- ficha: chip (a própria) e coluna lateral ---------- */
   function abrirFicha(id) {
-    const f = FICHAS[id];
-    if (!f) return;
+    const f = FICHAS[id] || null;          // ficha completa: só a própria
+    const v = f ? null : VISTA[id];        // outras figuras: cartão de vista
+    if (!f && !v) return;
     fichaAberta = id;
-    const u = unidade(id);
     const fechar = '<button type="button" class="fx" data-fechar aria-label="Fechar ficha">✕</button>';
     let corpo = '';
-    if (f.completa) {
+    if (f) {
       const vidaAtual = f.vida.total - f.vida.perdido;
       corpo = `
         <div class="rec"><div class="rt"><span>VIDA</span><b>${vidaAtual}/${f.vida.total}</b></div>
@@ -266,24 +290,20 @@
         ${f.tecnicas.map(([n, c]) => `<div class="tec"><span>${n}</span><em>${c}</em></div>`).join('')}
         <footer>Ficha Base · valores TEST fictícios</footer>`;
     } else {
+      /* Cartão de vista, tipo Pokédex: só onde se encontra e como é
+         por fora. NENHUM campo mecânico — este ramo lê apenas
+         v.onde / v.aparencia / v.frase (e nome/sub no cabeçalho). */
       corpo = `
-        <h2>Dados públicos</h2>
-        <div class="resumo">
-          <div class="ca"><b>${f.ca}</b><span>CA</span></div>
-          <div class="rgrid">
-            <div><span>DEFESA</span><b>${f.defesa}</b></div>
-            <div><span>ARMA</span><b>${f.arma}</b></div>
-            <div><span>POSIÇÃO</span><b>casa ${u ? u.posicao.x : '—'}, ${u ? u.posicao.y : '—'}</b></div>
-            <div><span>ESTADO</span><b>${u && !u.vivo ? 'Caído' : 'De pé'}</b></div>
-          </div>
-        </div>
-        <p class="nota">${f.tipo === 'Besta'
-          ? 'A vida e a alma das bestas <b>nunca</b> aparecem no ecrã das jogadoras — aqui só entram dados públicos.'
-          : 'A ficha completa de outra jogadora só aparece no aparelho dela. Aqui vês só os dados públicos.'}</p>
-        <footer>Ficha Base · valores TEST fictícios</footer>`;
+        <h2>Onde se encontra</h2>
+        <p class="vista">${v.onde}</p>
+        <h2>Como ele é</h2>
+        <p class="vista">${v.aparencia}</p>
+        <p class="vista">${v.frase}</p>
+        <p class="nota">A ficha técnica desta figura <b>só o Mestre vê</b> — na tela da jogadora não há números nem mecânica dela.</p>
+        <footer>Cartão de vista · demonstração TEST</footer>`;
     }
     fichaEl.innerHTML = `
-      <header><div><h1>${f.nome}</h1><div class="sub">${f.sub}</div><span class="testchip">TEST</span></div>${fechar}</header>
+      <header><div><h1>${f ? f.nome : v.nome}</h1><div class="sub">${f ? f.sub : v.sub}</div><span class="testchip">TEST</span></div>${fechar}</header>
       ${corpo}`;
     fichaEl.hidden = false;
     chipEl.hidden = true;
@@ -367,7 +387,7 @@
     estado = 'base'; renderAcoes();
     say(parado ? `<b>${u.nome}</b> parou.` : `<b>${u.nome}</b> chegou ao destino.`);
     parado = false;
-    if (fichaAberta === u.id) abrirFicha(u.id);   // actualiza a posição no cartão público
+    if (fichaAberta === u.id) abrirFicha(u.id);   // reabre a ficha/cartão de vista da figura que andou
   });
   view.on('camera', () => { sincronizarCamera(); mostrarZoom(); });
   view.on('zoom', () => mostrarZoom());

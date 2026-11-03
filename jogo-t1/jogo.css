@@ -120,6 +120,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 .tec em{font-style:normal;background:rgba(91,74,158,.35);border:1px solid rgba(138,118,201,.7);
   color:#d9ccff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px}
 #ficha .nota{font-size:10px;color:var(--pergaminho-mudo);line-height:1.45;margin-top:8px}
+#ficha .vista{font-size:11px;color:var(--pergaminho-fraco);line-height:1.5;margin-top:2px}
 #ficha footer{margin-top:9px;font-size:10px;color:#8a7c58;letter-spacing:.02em;line-height:1.35}
 
 /* ---------- faixa de baixo: UMA, fixa, 56 px ---------- */
