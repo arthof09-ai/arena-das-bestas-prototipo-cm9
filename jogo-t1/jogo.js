@@ -92,9 +92,9 @@
      SÓ na demo do Codex — não é personagem do jogo) ---------- */
   const AREA = { cols: 10, rows: 7, origin: { x: 0, y: 0 } };
   const ELENCO = [
-    { id: 'orc',     nome: 'Orc',             modelo: 'modelos/orc-t1.glb', x: 3, y: 3, alturaMetros: 2.4,  vivo: true },
-    { id: 'ong',     nome: 'Ong',             modelo: 'modelos/ong-rogue.glb',     x: 6, y: 2, alturaMetros: 1.75, vivo: true, animacoes: { idle: 'Idle_A', andar: 'Walking_A', ataque: 'Melee_Unarmed_Attack_Punch_A', reacao: 'Hit_A' } },
-    { id: 'capanga', nome: 'Capanga 1',       modelo: 'modelos/capanga-knight.glb', x: 7, y: 4, alturaMetros: 1.8,  vivo: true, animacoes: { idle: 'Idle_A', andar: 'Walking_A', ataque: 'Melee_Unarmed_Attack_Punch_A', reacao: 'Hit_A' } },
+    { id: 'orc',     nome: 'Orc',             modelo: 'modelos/orc-quaternius.glb', x: 3, y: 3, alturaMetros: 2.4,  vivo: true },
+    { id: 'ong',     nome: 'Ong',             modelo: 'modelos/ong-rogue.glb',     x: 6, y: 2, alturaMetros: 1.75, vivo: true, animacoes: { idle: 'Idle_B', andar: 'Walking_B', ataque: 'Melee_Unarmed_Attack_Punch_A', reacao: 'Hit_B' } },
+    { id: 'capanga', nome: 'Capanga 1',       modelo: 'modelos/capanga-knight.glb', x: 7, y: 4, alturaMetros: 1.8,  vivo: true, animacoes: { idle: 'Idle_B', andar: 'Walking_B', ataque: 'Melee_Unarmed_Attack_Punch_A', reacao: 'Hit_B' } },
     { id: 'lobo',    nome: 'Lobo da Caverna', modelo: 'marcador-lobo',     x: 2, y: 5, alturaMetros: 0.9,  vivo: true }
   ];
   /* Tranche T-D (contrato apresentarAtaque): Ong e Capanga declaram
@@ -103,6 +103,17 @@
      dentro dos dois ficheiros). Orc e Lobo NÃO declaram nada: sem
      clipe, a cena degrada sozinha para avanço/recuo (ramo sem-clipe
      do contrato §5) — nenhum gesto inventado na casca. */
+  /* FUSÃO T-D sobre o vivo (2026-11-04): os GLB viajantes passam a ser
+     os FUNDIDOS da obra T-D (16 clipes/figura) e Ong/Capanga declaram
+     o subconjunto que a cena SAGRADA do vivo aceita e executa —
+     idle Idle_B (idle vivo), andar Walking_B, reacção Hit_B; o ataque
+     Punch_A fica. As chaves correr, esquiva, morte, mortePose e
+     levantar e o campo velocidades da casca-td NÃO são declarados: a cena do
+     vivo (89d09286…) rejeita-os em addUnit (prova em recibos) — os
+     clipes vivem no GLB, sem efeito, até a cena os aceitar.
+     Orc: modelo grátis Quaternius (§8 do RELATORIO-TD-CLIPES, ordem
+     das 22:00) — caminho só; os 14 clipes do GLB NÃO são declarados
+     (o Orc continua figura de teste parada). */
   /* Reservas internas de movimento dos MONSTROS, em casas (T1.3):
      governam só a IA básica nas vezes deles — internas, nunca
      exibidas, lidas apenas pela IA. A Ong NÃO está aqui: a reserva
@@ -701,6 +712,23 @@
 
   /* ---------- máquina de turnos (T1.3 §1) ---------- */
   const aguardar = ms => new Promise(res => setTimeout(res, ritmo(ms)));
+  /* FUSÃO T-D: esquiva — função transplantada da casca-td (obra T-D
+     §1.3): no máximo UMA por rodada por figura da IA (regra de
+     sequência Q4); o alvo é quem se esquiva do golpe falhado. A cena
+     sagrada do vivo NÃO expõe apresentarEsquiva: a chamada lança e o
+     catch degrada em silêncio — a falha fica exactamente como estava
+     no vivo. O orçamento (esquivaGasta) é estado de apresentação,
+     nunca de mecânica: nenhum resultado muda com ou sem gesto. */
+  const esquivaGasta = { rodada: 0, porMonstro: new Set() };
+  function tentarEsquiva(monstro, alvo) {
+    if (esquivaGasta.rodada !== rodada) { esquivaGasta.rodada = rodada; esquivaGasta.porMonstro.clear(); }
+    if (esquivaGasta.porMonstro.has(monstro)) return;
+    esquivaGasta.porMonstro.add(monstro);
+    try {
+      const p = view.apresentarEsquiva(monstro, alvo);
+      if (p && p.catch) p.catch(() => {});
+    } catch (_) { /* sem clipe de esquiva: a falha fica como estava */ }
+  }
   /* ---------- apresentação do confronto (tranche T-D) ----------
    * Único chamador de view.apresentarAtaque na casca. O contrato
    * (CONTRATO-APRESENTAR-ATAQUE §§1–2, 6): a cena recebe SÓ dois ids
@@ -952,6 +980,7 @@
          entra no registo — actor, alvo e falha (sem Defesas nem
          constantes internas). */
       supRegistar('accao', { acao: 'ataque', actor: id, alvo: PROPRIA, acerto: false });
+      tentarEsquiva(id, PROPRIA);          // FUSÃO T-D: ela esquiva-se do golpe falhado (degrada sem gesto na cena do vivo)
       /* T-D: a tentativa VÊ-SE — a apresentação é do confronto, não
          do acerto (a cena nem recebe o resultado). A frase da falha
          só sai quando o gesto fecha. Se a época/vez mudou durante o
@@ -1017,7 +1046,15 @@
     batalhaFim = true;
     seqTurno++;                              // invalida continuações pendentes
     if (contextoIA) consumirContextoIA(contextoIA.id);
-    view.setVivo(PROPRIA, false);
+    /* FUSÃO T-D (casca-td §1.3): a queda entra pela máquina de morte
+       da cena (Death_A -> pose persistente) quando ela existe —
+       nunca pela prancha do setVivo; na cena sagrada do vivo, que
+       não expõe apresentarMorte, o catch degrada para o setVivo de
+       sempre: mesmo resultado visível hoje, caminho T-D pronto. */
+    try {
+      const pm = view.apresentarMorte(PROPRIA);
+      if (pm && pm.catch) pm.catch(() => {});
+    } catch (_) { view.setVivo(PROPRIA, false); }
     estado = 'fim';
     atualizarVez(); renderAcoes();
     say('A <b>Ong</b> caiu — fim desta batalha. Prime <b>Recomeçar</b> para jogar outra vez.');
@@ -2212,7 +2249,17 @@
       if (u && (u.posicao.x !== su.x || u.posicao.y !== su.y))
         view.move(su.id, casaVista({ x: su.x, y: su.y }), { immediate: true });
       const uv = unidade(su.id);
-      if (uv && (uv.vivo !== false) !== su.vivo) view.setVivo(su.id, su.vivo);
+      if (uv && (uv.vivo !== false) !== su.vivo) {
+        /* FUSÃO T-D (casca-td §1.3): restauro de figura morta entra
+           pela pose de morte rápida quando a cena a tem; na cena
+           sagrada do vivo cai no setVivo de sempre. */
+        if (su.vivo === false && typeof view.apresentarMorte === 'function') {
+          try {
+            const pm = view.apresentarMorte(su.id, { rapido: true });
+            if (pm && pm.catch) pm.catch(() => {});
+          } catch (_) { view.setVivo(su.id, false); }
+        } else view.setVivo(su.id, su.vivo);
+      }
     }
     danoSofrido = snap.danoSofrido; paGasto = snap.paGasto;
     transformada = snap.transformada;
