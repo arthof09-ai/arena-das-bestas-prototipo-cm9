@@ -23,9 +23,70 @@
  * do teclado. Ver NOTAS-T1.md, secção "Tranches T1.4+T1.3". */
 (() => {
   'use strict';
+
+  /* ---------- Trinco de arranque único + bandeira consumida ----------
+   * (Volta S-001, V-03 — sentença §2 do JULGAMENTO-S001) Esta guarda é
+   * a PRIMEIRA coisa executada dentro da IIFE: antes de qualquer
+   * leitura de DOM, de Campo3D.create() e de qualquer criação de
+   * elementos. Se este documento já arrancou uma vez (a propriedade
+   * __CAMPO_ARRANQUE_UNICO__ já existe em window), esta execução
+   * termina de imediato, em silêncio — não cria nada, não regista
+   * ouvintes, não toca no estado, não lança: a primeira instância
+   * continua a ser a única dona da página. A primeira execução sela
+   * o trinco por Object.defineProperty (não escrevível, não
+   * configurável, não enumerável, valor congelado com o modo lido)
+   * e consome a bandeira: window.CAMPO_MESTRE fica trancado com o
+   * valor lido ao arranque, por isso levantá-la depois do arranque
+   * deixa de ter qualquer efeito, mesmo antes de uma tentativa de
+   * re-execução. Fronteira verdadeira: sem re-entrada por uso da
+   * página, por globais vivos, por reload, nem por re-execução do
+   * script já corrido; quem controlar o documento ANTES do primeiro
+   * arranque (cópia local editada, override de DevTools) tem poder
+   * equivalente a abrir mestre.html — é contra esse poder que vale
+   * a regra NÃO-PUBLICAR (RSM-01), não este trinco. Em cada documento
+   * novo (Party, Mestre, reload) o contexto nasce limpo — sem trinco
+   * e com a bandeira por trancar — logo nenhum arranque legítimo
+   * executa este ficheiro duas vezes no mesmo documento. */
+  if (typeof window !== 'undefined' && !!window) {
+    if (Object.prototype.hasOwnProperty.call(window, '__CAMPO_ARRANQUE_UNICO__')) return;
+    const __modoArranque = window.CAMPO_MESTRE === true;
+    try {
+      Object.defineProperty(window, '__CAMPO_ARRANQUE_UNICO__', {
+        value: Object.freeze({ modoMestre: __modoArranque }),
+        writable: false, configurable: false, enumerable: false
+      });
+    } catch (_) {}
+    try {
+      Object.defineProperty(window, 'CAMPO_MESTRE', {
+        value: __modoArranque, writable: false, configurable: false
+      });
+    } catch (_) {}
+  }
+
   const $ = id => document.getElementById(id);
   const mapaEl = $('mapa'), msgTxt = $('mensagem-txt'), acoesEl = $('acoes');
   const fichaEl = $('ficha'), chipEl = $('fichachip'), cfgEl = $('cfgpop');
+
+  /* ---------- Contexto do Mestre (correcção S-001+M-016) ----------
+   * As superfícies de bastidores (Supervisor, «Voltar ao último
+   * estado bom», «Exportar registo», dicas do Supervisor-Crítico e
+   * o botão de alertas) só nascem na vista do Mestre: mestre.html
+   * levanta window.CAMPO_MESTRE ANTES de carregar este ficheiro.
+   * Na vista da Party (index.html) a bandeira nunca existe: os
+   * controlos NÃO são criados (não é esconder — é não existir) e
+   * supExportar/supRestaurar recusam à entrada. Lido UMA vez, ao
+   * arranque, e consumido pelo trinco de arranque único (V-03,
+   * acima): nenhum código posterior lê nem aceita a bandeira, e
+   * levantá-la na consola da página da Party não abre nada — nem
+   * por re-execução do script já corrido (a 2.ª execução é um
+   * no-op selado). Fronteira verdadeira (sentença §2): sem
+   * re-entrada por uso da página, por globais vivos, por reload,
+   * nem por re-execução; quem controlar o documento antes do
+   * primeiro arranque tem poder equivalente a abrir mestre.html
+   * — contra esse poder vale a regra NÃO-PUBLICAR (RSM-01). A
+   * entrada do Mestre é o ficheiro mestre.html, só local. */
+  const MODO_MESTRE = typeof window !== 'undefined' && !!window
+    && window.CAMPO_MESTRE === true;
 
   /* ---------- elenco oficial do jogo (a figura de teste UAL1 fica
      SÓ na demo do Codex — não é personagem do jogo) ---------- */
@@ -175,6 +236,15 @@
       ? { qtd: c.dano.qtd, faces: c.dano.faces, bonus: c.transformacao.dmgBonusNovo }
       : c.dano;
   }
+  /* M-004 (spec Dunloc R06: «toda rolagem exibe a fórmula usada»): a
+     fórmula de dano DELA em texto — «8d6+28» (normal) / «8d6+34»
+     (transformada). Só a expressão da PRÓPRIA é alguma vez escrita
+     com esta função: as expressões das figuras alheias continuam
+     proibidas em qualquer superfície (privacidade da Party). */
+  function formulaDanoOng(expr) {
+    const e = expr || expressaoOng();
+    return `${e.qtd}d${e.faces}` + (e.bonus ? `+${e.bonus}` : '');
+  }
 
   /* ---------- turnos e IA básica (tranche T1.3) ----------
    * Ordem da rodada: constante interna de iniciativa TEST. O +4 da
@@ -190,12 +260,16 @@
   /* Alcance de ataque da IA: 1 casa — fonte: os três têm alcance 1
      na ficha TEST (não é empréstimo do alcance dela). */
   const ALCANCE_IA_TEST = 1;
-  /* Verbos da IA: palavras genéricas da acção visível — nunca nomes
+  /* Verbos da IA (M-018 + LB-C-08): os verbos nomeiam a acção
+     VISÍVEL da arma interna de cada um — a patada do Lobo, o
+     golpe do Capanga, o machado do Orc (a arma VÊ-SE na
+     ilustração aprovada do cartão da Party; só o substantivo,
+     nunca número, fórmula ou dado junto a ele) — nunca nomes
      de técnica, nunca armas com dados (fronteira EM-P3). */
   const FRASES_IA = {
-    lobo:    { acerto: 'mordeu',       falha: 'tentou morder' },
-    capanga: { acerto: 'golpeou',      falha: 'tentou golpear' },
-    orc:     { acerto: 'agarrou',      falha: 'tentou agarrar' }
+    lobo:    { acerto: 'deu uma patada',    falha: 'tentou dar uma patada' },
+    capanga: { acerto: 'golpeou',           falha: 'tentou golpear' },
+    orc:     { acerto: 'desferiu o machado', falha: 'tentou desferir o machado' }
   };
   /* Tempos da vez da IA (D-13.6): a vez do monstro tem de se ver. */
   const ESPERA_ANUNCIO_MS = 800, ESPERA_ATAQUE_MS = 500, ESPERA_FIM_MS = 1000;
@@ -257,7 +331,7 @@
      «ataque-sem-gesto» nascem e morrem juntos, no mesmo segmento
      (correcção R1 do julgamento de Fidelidade da T-D: antes eram
      universos diferentes e o 0 saía do clamp, não da contagem). */
-  let estado = 'base';        // base | atacar | consumivel | mover | movendo | rolagem | resultado | vez-ia | fim
+  let estado = 'base';        // base | atacar | consumivel | mover | movendo | rolagem | resultado | vez-ia | confirmar-fim | fim
   /* Máquina de turnos (T1.3): a vez roda por ORDEM. vezAtual,
      indiceVez e rodada só mudam em passarVez()/iniciarVezIA() e no
      arranque — nenhum outro caminho os escreve. */
@@ -271,6 +345,7 @@
   let caminhoPendente = null;   // o path (motor) desse caminho — custo do Parar pelas casas andadas (D-13.15)
   let passoEmCurso = false;     // um passo de seta está a animar (pressões novas ignoram-se)
   let contextoIA = null;        // { id, seq, relogio, destino? } do movimento/ataque da IA em voo — consumo único (G-13.3(d)); destino só no movimento (E-1)
+  let guardaExpiradaIA = null;  // M-009: { id, seq } da última guarda de 5 s expirada cuja figura ainda vem a caminho — a chegada tardia dela diz-se, não se engole em silêncio
   let vezIAFechada = -1;        // última geração de IA cuja conclusão já foi consumida (fimDaVezIA idempotente)
   let ajudaGrid = true;
   let alcance = new Map();    // chave(x,y) → {x, y, passos, path:[{x,y}]} em coords do motor
@@ -317,7 +392,8 @@
         B('atacar', '⚔', 'Atacar', 'primary') +
         B('mover', '🚶', 'Mover') +
         B('consumivel', '🎒', rp ? 'Consum.' : 'Consumível') +
-        B('encerrar', '✓', rp ? 'Fim' : 'Encerrar', 'ghost');
+        B('encerrar', '✓', rp ? 'Fim' : 'Encerrar', 'ghost') +
+        B('terminar', '✕', rp ? 'Term.' : 'Terminar', 'ghost');
     } else if (estado === 'atacar') {
       // A gaveta tem o básico dela (o Chicote, 0 PA) e a única técnica
       // com fonte nesta tranche: a Transformação, com o custo no rótulo.
@@ -331,6 +407,10 @@
       acoesEl.innerHTML = 'A agir…';
     } else if (estado === 'fim') {
       acoesEl.innerHTML = B('recomecar', '↻', 'Recomeçar', 'primary');
+    } else if (estado === 'confirmar-fim') {
+      // M-014: a saída da batalha pede confirmação — um toque errado
+      // não fecha um encontro a meio.
+      acoesEl.innerHTML = B('voltar', '←', 'Voltar', 'ghost') + B('terminar-sim', '✓', 'Sim, terminar', 'primary');
     } else if (estado === 'consumivel') {
       acoesEl.innerHTML = B('voltar', '←', 'Voltar', 'ghost');
     } else if (estado === 'mover') {
@@ -460,6 +540,26 @@
   /* A distância da Ong até um alvo — as chamadas antigas ficam com
      o comportamento de sempre, agora por cima de distanciaEntre. */
   function distanciaAte(alvoId) { return distanciaEntre(PROPRIA, alvoId); }
+  /* M-019: a recusa de alcance distingue os dois casos que a jogadora
+     consegue separar a olho: longe nas DUAS réguas (a frase de sempre)
+     e dentro do alcance pela régua que atravessa corpos
+     (mapaDistancias, a da pontuação da IA) mas com o caminho tapado
+     por outras figuras — o portão mede pelo caminho (distanciaEntre)
+     e a frase passa a dizer porquê, nos dois sítios do portão
+     (ao Atacar e na revalidação do Confirmar). */
+  function fraseForaDeAlcance(alvoId, contexto) {
+    const u = unidade(alvoId);
+    const atraves = u ? mapaDistancias(PROPRIA).get(chave(u.posicao.x, u.posicao.y)) : undefined;
+    const tapado = atraves !== undefined && atraves <= COMBATE_TEST.ong.alcance;
+    if (contexto === 'confirmar') {
+      return tapado
+        ? 'O caminho até ele está tapado por outras figuras — aproxima-te com <b>Mover</b> e tenta outra vez.'
+        : 'O alvo está longe demais — aproxima-te com <b>Mover</b> e tenta outra vez.';
+    }
+    return tapado
+      ? `<b>${nomeCena(alvoId)}</b> — o caminho até ele está tapado por outras figuras — aproxima-te com <b>Mover</b> antes de atacar.`
+      : `<b>${nomeCena(alvoId)}</b> está longe demais — aproxima-te com <b>Mover</b> antes de atacar.`;
+  }
 
   /* ---------- números de dano flutuantes (por parcela) ----------
    * Ao Confirmar um acerto da Ong, saem da figura atacada números
@@ -733,6 +833,7 @@
       fimDaVezIA(seq);
       return;
     }
+    guardaExpiradaIA = null;   // M-009: movimento novo desta figura — a marca de expiração anterior já não descreve nada em voo
     contextoIA = { id, seq, destino: { x: destino.x, y: destino.y }, relogio: setTimeout(() => relogioIA(id, seq), GUARDA_IA_MS) };
     /* Supervisor (pós-críticos T1.5): o movimento LEGAL do monstro
        também entra no registo — actor, de→para e passos. */
@@ -779,11 +880,18 @@
     return ctx;
   }
   function relogioIA(id, seq) {
-    // G-13.3(b): o moveend não veio em 5 s — trata como chegado sem
-    // movimento, para a vez nunca ficar presa.
+    // G-13.3(b): o moveend não veio em 5 s — a vez fecha para nunca
+    // ficar presa. M-009: a frase antiga («não conseguiu andar»)
+    // era FALSA — a animação continua e a figura chega na mesma; o
+    // que a guarda faz é fechar a VEZ (e com ela o ataque), não
+    // parar a figura. A frase passa a dizer exactamente isso, e a
+    // expiração fica marcada: quando o moveend tardio chegar, a
+    // chegada nomeia-se (ver o tratador de moveend). A guarda em si
+    // (5 s fixos, GUARDA_IA_MS) NÃO foi redesenhada nesta correcção.
     const ctx = consumirContextoIA(id);
     if (!ctx || ctx.seq !== seq || seqTurno !== seq || batalhaFim) return;
-    say(`<b>${nomeCena(id)}</b> não conseguiu andar.`);
+    guardaExpiradaIA = { id, seq };
+    say(`<b>${nomeCena(id)}</b> demorou a chegar — a vez dele terminou sem atacar.`);
     fimDaVezIA(seq);
   }
   /* Idempotente por geração: só a primeira chamada com a seq
@@ -880,10 +988,24 @@
     if (danoSofrido >= FICHAS.ong.vida.total) { fimDeBatalha(); return true; }
     return false;
   }
+  /* M-015: o chip reflecte SEMPRE a figura dela, nas duas barras e no
+     rótulo da Alma — os valores compõem-se das mesmas fórmulas da
+     ficha (Vida = total − danoSofrido; Alma livre = Total −
+     Comprometido − paGasto). Antes, esta função só escrevia a barra
+     da Vida e o rótulo/barra da Alma ficavam com o resíduo da maqueta
+     («PA 7», 70%) para sempre. O nome da função mantém-se: é o ponto
+     de actualização do chip chamado no arranque, no dano, no
+     restauro — e, desde esta correcção, também na Transformação. */
   function atualizarChipVida() {
-    const barra = chipEl.querySelector('.bar.vida i');
-    if (barra) barra.style.width =
+    const barraVida = chipEl.querySelector('.bar.vida i');
+    if (barraVida) barraVida.style.width =
       Math.max(0, Math.round((FICHAS.ong.vida.total - danoSofrido) / FICHAS.ong.vida.total * 100)) + '%';
+    const almaLivre = FICHAS.ong.alma.total - FICHAS.ong.alma.comprometido - paGasto;
+    const barraAlma = chipEl.querySelector('.bar.alma i');
+    if (barraAlma) barraAlma.style.width =
+      Math.max(0, Math.round(almaLivre / FICHAS.ong.alma.total * 100)) + '%';
+    const rotuloAlma = chipEl.querySelector('#chip-alma-rotulo');
+    if (rotuloAlma) rotuloAlma.textContent = `ALMA · PA ${almaLivre}`;
   }
   /* Fim de batalha (§1.7): nesta vista os monstros não têm vida —
      a batalha só termina se a Ong cair. A máquina pára onde está. */
@@ -899,6 +1021,21 @@
     estado = 'fim';
     atualizarVez(); renderAcoes();
     say('A <b>Ong</b> caiu — fim desta batalha. Prime <b>Recomeçar</b> para jogar outra vez.');
+  }
+  /* Terminar a batalha (M-014): a saída que a especificação reserva
+     à mesa — fecha o encontro a meio, SEM a Ong cair (sem setVivo):
+     é um fim declarado, não uma queda. O registo do Supervisor marca
+     a origem ('terminar') para o fim declarado se distinguir do fim
+     natural no registo exportado. */
+  function terminarBatalha() {
+    supRegistar('fim', { actor: PROPRIA, danoSofrido, origem: 'terminar' });
+    continuarAposApresentacao = false;   // terminal — nenhum Continuar diferido sobrevive
+    batalhaFim = true;
+    seqTurno++;                              // invalida continuações pendentes
+    if (contextoIA) consumirContextoIA(contextoIA.id);
+    estado = 'fim';
+    atualizarVez(); renderAcoes();
+    say('A batalha <b>terminou</b> — a mesa fechou este encontro. Prime <b>Recomeçar</b> para jogar outra vez.');
   }
 
   /* ---------- acções da faixa ---------- */
@@ -964,7 +1101,7 @@
       if (atacou) { say('A <b>Ong</b> já atacou nesta vez — prime <b>Encerrar</b> para fechar a vez dela.'); return; }
       if (!alvo) { say('Primeiro <b>toca no inimigo</b> que queres atacar — ele fica marcado como alvo.'); return; }
       if (distanciaAte(alvo) > COMBATE_TEST.ong.alcance) {
-        say(`<b>${nomeCena(alvo)}</b> está longe demais — aproxima-te com <b>Mover</b> antes de atacar.`);
+        say(fraseForaDeAlcance(alvo, 'atacar'));
         return;
       }
       estado = 'atacar'; renderAcoes();
@@ -973,8 +1110,28 @@
     }
     if (acao === 'consumivel') {
       estado = 'consumivel'; renderAcoes();
-      say('Itens · a <b>Ong</b> não tem nada para usar agora.');
+      /* M-013 + LB-C-03: frase declarativa na voz do mundo, sem
+         jargão de produção e sem prometer inventário futuro —
+         nesta batalha ela não traz nada para usar. */
+      say('Itens · nesta batalha ela não traz nada para usar.');
       return;
+    }
+    if (acao === 'terminar') {
+      /* LB-C-05: terminar só a partir da base — de outro estado
+         (rolagem, mover, …) a acção não abre a confirmação nem
+         arrasta pendentes (as casas acesas do Mover ficariam
+         fantasmas na base após o Voltar). */
+      if (estado !== 'base') { say('Primeiro volta às acções base.'); return; }
+      /* M-014: pedir a confirmação — a batalha não fecha por um toque. */
+      estado = 'confirmar-fim'; renderAcoes();
+      say(`Terminar esta batalha? A rodada ${rodada} fica por fechar — prime <b>Sim, terminar</b> para fechar, ou <b>Voltar</b> para continuar a jogar.`);
+      return;
+    }
+    if (acao === 'terminar-sim') {
+      /* LB-C-05: terminar-sim só a partir de confirmar-fim — directo
+         da base (ou de outro estado) não fecha a batalha. */
+      if (estado !== 'confirmar-fim') { say('Primeiro prime <b>Terminar</b> para confirmar.'); return; }
+      terminarBatalha(); return;
     }
     if (acao === 'ataque-basico') {
       /* O teste DELA rola NA HORA, de verdade (T1.4 §1.1): a face é
@@ -992,7 +1149,7 @@
          (face e total, os mesmos da frase) entra no registo. */
       supRegistar('accao', { acao: 'ataque-basico', actor: PROPRIA, alvo, face, total });
       estado = 'rolagem'; renderAcoes();
-      say(`${c.arma} de <b>Ong</b> contra <b>${nomeCena(alvo)}</b> · <b>1d6+${bonusTeste(c)} → ${face} + ${bonusTeste(c)} = ${total}</b> · o Mestre confirma se acertou.`);
+      say(`${c.arma} de <b>Ong</b> contra <b>${nomeCena(alvo)}</b> · <b>1d6+${bonusTeste(c)} → ${face} + ${bonusTeste(c)} = ${total}</b> · prime <b>Confirmar</b> para saberes se acertou.`);
       return;
     }
     if (acao === 'transformacao') {
@@ -1025,6 +1182,7 @@
         if (livre < t.custo) { say(`Alma livre não chega — a Transformação custa ${t.custo} PA.`); return; }
         paGasto += t.custo;
         transformada = true;
+        atualizarChipVida();           // M-015: o débito de PA reflecte-se já no chip (antes nem a chamada existia neste caminho)
         atacou = true;                 // transformar consome a acção do turno
         say(`<b>Transformação</b> · a <b>Ong</b> transformou-se — gastou <b>${t.custo} PA</b> (alma livre: ${livre - t.custo}). O Chicote passa a 8d6+34.`);
         return;
@@ -1033,7 +1191,7 @@
       // O alcance revalida-se com o alcance real da arma dela (6).
       if (!alvo || distanciaAte(alvo) > COMBATE_TEST.ong.alcance) {
         estado = 'base'; renderAcoes();
-        say('O alvo está longe demais — aproxima-te com <b>Mover</b> e tenta outra vez.');
+        say(fraseForaDeAlcance(alvo, 'confirmar'));
         return;
       }
       atacou = true;                   // a acção gasta-se, acerte ou erre
@@ -1050,11 +1208,12 @@
         const epocaFalha = supEpoca;
         await apresentarConfronto(PROPRIA, alvoDoGolpe, false);   // R1: a falha da Ong NÃO é ataque contado (sem evento «ataque») — a apresentação dela não entra em nenhum dos contadores
         if (supEpoca !== epocaFalha || supCongelado) { continuarAposApresentacao = false; return; }   // R1-Priv: o Continuar diferido morre com a linha do tempo abandonada
-        say(`<b>Falha</b> · ${pend.nome} não atinge ${ALVO_NOME[alvoDoGolpe] || nomeCena(alvoDoGolpe)}.`);
+        say(`<b>Falha</b> · ${pend.nome} não atinge ${ALVO_NOME[alvoDoGolpe] || nomeCena(alvoDoGolpe)} · o dano <b>${formulaDanoOng()}</b> não se rola.`);   // M-004: a fórmula DELA vê-se também na falha (sem rolagem inventada)
         if (continuarAposApresentacao) { continuarAposApresentacao = false; tratarAcao('continuar'); }
         return;
       }
-      const r = rolarExpressao(expressaoOng());
+      const exprGolpe = expressaoOng();
+      const r = rolarExpressao(exprGolpe);
       /* Supervisor: parcelas = total — se não bater, a batalha
          congela e a resolução ABORTA neste tick (sem dano). */
       if (!supConferirSoma(r.parcelas, r.total, PROPRIA)) return;
@@ -1070,8 +1229,15 @@
       if (supEpoca !== epocaAcerto || supCongelado) { continuarAposApresentacao = false; return; }   // R1-Priv: idem
       mostrarImpacto(alvoDoGolpe);
       const total = numerosDano ? mostrarDano(alvoDoGolpe, r.parcelas) : null;
-      say(`<b>Acerto</b> · ${pend.nome} atinge ${ALVO_NOME[alvoDoGolpe] || nomeCena(alvoDoGolpe)}.` +
-        (total != null ? ' As parcelas do dano saem da figura em números.' : ''));
+      /* M-004: a frase do resultado exibe a FÓRMULA do dano dela
+         (R06), como a frase da rolagem já exibia a do teste. Com os
+         números de dano ligados, junta a decomposição (faces +
+         bónus = total, os mesmos valores dos flutuantes); desligados,
+         fica só a fórmula — nenhum número de dano aparece, como manda
+         a opção. A fórmula é da acção DELA: nenhum dado de figura
+         alheia entra nesta frase. */
+      say(`<b>Acerto</b> · ${pend.nome} atinge ${ALVO_NOME[alvoDoGolpe] || nomeCena(alvoDoGolpe)} · dano <b>${formulaDanoOng(exprGolpe)}</b>` +
+        (total != null ? ` → ${r.parcelas.map(p => p.valor).join(' + ')} = <b>${total}</b>.` : '.'));
       if (continuarAposApresentacao) { continuarAposApresentacao = false; tratarAcao('continuar'); }
       return;
     }
@@ -1130,6 +1296,7 @@
             <div><span>DESLOCAMENTO</span><b>${f.desloc}</b></div>
             <div><span>INICIATIVA</span><b>${f.ini}</b></div>
             <div><span>ATAQUE</span><b>${f.ataque}</b></div>
+            <div><span>DANO · CHICOTE</span><b>${formulaDanoOng()}</b></div>
           </div>
         </div>
         <h2>Atributos</h2>
@@ -1182,6 +1349,11 @@
     // Passo de seta em curso: o toque não cancela o passo (E-T13L-2).
     if (estado === 'mover' && (passoEmCurso || view.getState().moving)) { say('Espera — ainda está a andar.'); return; }
     if (estado === 'movendo') { say(`Espera — <b>${nomeCena(selecionada)}</b> ainda está a andar.`); return; }
+    /* M-010: com um resultado por ler (estado 'resultado' ou gesto
+       do golpe ainda a decorrer), o chip também não destrói a saída:
+       responde com a frase de espera e a ficha fica para depois do
+       Continuar. */
+    if (estado === 'resultado' || apresentacaoEmCurso) { say('Prime <b>Continuar</b> para seguir.'); return; }
     if (estado === 'mover') limparAjudaMover();
     estado = 'base'; ataquePendente = null;
     selecionar(PROPRIA); abrirFicha(PROPRIA); renderAcoes();
@@ -1206,6 +1378,15 @@
     // (a cena cancelaria a fila do passo sem o moveend dele e o
     // desconto da reserva desalinhava).
     if (estado === 'mover' && (passoEmCurso || view.getState().moving)) { say('Espera — ainda está a andar.'); return; }
+    /* M-010: enquanto houver um resultado por ler — estado
+       'resultado' (antes OU depois do gesto) ou apresentação do
+       golpe ainda em curso — o toque NÃO troca de alvo, NÃO repõe o
+       estado e NÃO apaga o ataquePendente: responde com a frase de
+       espera que o toque no chão já usava neste estado, e o
+       Continuar e a frase do golpe sobrevivem. (Antes, o ramo de
+       figura repunha estado='base' e ataquePendente=null também a
+       partir de 'resultado' — era assim que a saída se destruía.) */
+    if (estado === 'resultado' || apresentacaoEmCurso) { say('Prime <b>Continuar</b> para seguir.'); return; }
     const hit = view.hitTest(clientX, clientY);
     if (estado === 'movendo') {
       say(`Espera — <b>${nomeCena(selecionada)}</b> ainda está a andar.`);
@@ -1221,7 +1402,7 @@
           say('<b>Ong</b> já está aqui — toca numa casa acesa para andar.');
           return;
         }
-        if (estado === 'atacar' || estado === 'rolagem' || estado === 'consumivel' || estado === 'resultado') {
+        if (estado === 'atacar' || estado === 'rolagem' || estado === 'consumivel' || estado === 'confirmar-fim') {
           estado = 'base'; ataquePendente = null; renderAcoes();
         }
         abrirFicha(PROPRIA);
@@ -1235,7 +1416,7 @@
          aberto repõe-se à base, com a faixa a acompanhar. */
       alvo = hit.unitId;
       if (estado === 'mover') sairMover();
-      else if (estado === 'atacar' || estado === 'rolagem' || estado === 'consumivel' || estado === 'resultado') {
+      else if (estado === 'atacar' || estado === 'rolagem' || estado === 'consumivel' || estado === 'confirmar-fim') {
         estado = 'base'; ataquePendente = null; renderAcoes();
       }
       abrirFicha(hit.unitId);
@@ -1321,7 +1502,20 @@
       const ctx = (contextoIA && contextoIA.id === u.id && contextoIA.destino
         && u.posicao.x === contextoIA.destino.x && u.posicao.y === contextoIA.destino.y)
         ? consumirContextoIA(u.id) : null;
-      if (!ctx) return;
+      if (!ctx) {
+        /* M-009: chegada TARDIA depois da guarda de 5 s — a vez já
+           fechou (sem ataque, e continua sem ataque: a guarda não
+           foi redesenhada), mas a chegada já não se engole em
+           silêncio: nomeia-se, para a história do ecrã bater com a
+           figura que a mesa vê pousada. A marca consome-se aqui —
+           uma chegada, uma frase. */
+        if (guardaExpiradaIA && guardaExpiradaIA.id === u.id) {
+          guardaExpiradaIA = null;
+          say(`<b>${nomeCena(u.id)}</b> chegou — tarde demais para atacar nesta vez.`);
+        }
+        return;
+      }
+      if (guardaExpiradaIA && guardaExpiradaIA.id === u.id) guardaExpiradaIA = null;   // M-009: chegada normal consome a marca velha
       if (u.id !== vezAtual || ctx.seq !== seqTurno) return;   // sequência morta
       const seq = ctx.seq;
       if (distanciaEntre(u.id, PROPRIA) <= ALCANCE_IA_TEST) {
@@ -1473,7 +1667,12 @@
      sempre; havendo alertas do Supervisor, a frase só aponta para
      as configurações — existência e caminho, NUNCA o conteúdo
      (durante o jogo, nada do Supervisor na superfície: A6). */
-  $('btn-alerta').addEventListener('click', () => say(supAlertas.length
+  /* S-001+M-016: o botão de alertas é superfície do Supervisor —
+     só existe no HTML da vista do Mestre (mestre.html). Na vista
+     da Party o elemento não está na página: sem elemento, sem
+     ouvinte, sem superfície. */
+  const btnAlertaEl = $('btn-alerta');
+  if (btnAlertaEl) btnAlertaEl.addEventListener('click', () => say(supAlertas.length
     ? 'Alertas: vê nas configurações (⚙).'
     : 'Alertas: <b>nenhum</b> por agora.'));
 
@@ -1568,21 +1767,37 @@
   let autoJaMoveu = false;     // no máximo UM movimento automático por vez dela
   let autoAtaqueEmCurso = false;   // a gaveta de ataque foi aberta pelo controlador
 
-  const linhaAuto = document.createElement('div');
-  linhaAuto.className = 'cfgrow';
-  const rotuloAuto = document.createElement('span');
-  rotuloAuto.className = 'cl';
-  rotuloAuto.textContent = 'Modo automático';
-  const botaoAuto = document.createElement('button');
-  botaoAuto.type = 'button';
-  botaoAuto.id = 'tog-auto';
-  botaoAuto.className = 'tog';
-  botaoAuto.textContent = 'Desligado';
-  botaoAuto.setAttribute('aria-pressed', 'false');
-  linhaAuto.appendChild(rotuloAuto);
-  linhaAuto.appendChild(botaoAuto);
-  cfgEl.insertBefore(linhaAuto, $('stats'));
-  botaoAuto.addEventListener('click', () => definirModoAutomatico(!modoAutomatico));
+  /* Volta S-001, V-02 (sentença §1, S1C-02): o Automático é
+   * ferramenta de teste/supervisão do Mestre (X4/§7.4, inventário
+   * A3) — a linha, o botão #tog-auto e o seu ouvinte só NASCEM
+   * dentro de if (MODO_MESTRE), na mesma posição relativa do ⚙
+   * (antes de #stats, antes da Velocidade na ordem de inserção),
+   * por isso no Mestre a ordem e o aspecto do ⚙ não mudam e na
+   * Party o controlo não existe. O controlador interno
+   * (passoAutomatico/agendarPassoAuto/definirModoAutomatico e as
+   * suas variáveis) fica na closure, inerte na Party: aí
+   * modoAutomatico nasce false e não existe caminho alcançável
+   * que o ligue — sem DOM, sem global, sem persistência — e
+   * nenhum caminho executado na Party toca no botão inexistente
+   * (botaoAuto fica null e os seus usos são guardados). */
+  let botaoAuto = null;
+  if (MODO_MESTRE) {
+    const linhaAuto = document.createElement('div');
+    linhaAuto.className = 'cfgrow';
+    const rotuloAuto = document.createElement('span');
+    rotuloAuto.className = 'cl';
+    rotuloAuto.textContent = 'Modo automático';
+    botaoAuto = document.createElement('button');
+    botaoAuto.type = 'button';
+    botaoAuto.id = 'tog-auto';
+    botaoAuto.className = 'tog';
+    botaoAuto.textContent = 'Desligado';
+    botaoAuto.setAttribute('aria-pressed', 'false');
+    linhaAuto.appendChild(rotuloAuto);
+    linhaAuto.appendChild(botaoAuto);
+    cfgEl.insertBefore(linhaAuto, $('stats'));
+    botaoAuto.addEventListener('click', () => definirModoAutomatico(!modoAutomatico));
+  }
 
   /* ---------- Controlo de velocidade (tranche T1.6) ----------
    * Linha «Velocidade» criada aqui (o index.html é sagrado),
@@ -1629,9 +1844,11 @@
     modoAutomatico = !!ligado;
     geracaoAuto++;                       // pendente de outra geração nunca corre
     if (relogioAuto) { clearTimeout(relogioAuto); relogioAuto = null; }
-    botaoAuto.classList.toggle('on', modoAutomatico);
-    botaoAuto.textContent = modoAutomatico ? 'Ligado' : 'Desligado';
-    botaoAuto.setAttribute('aria-pressed', String(modoAutomatico));
+    if (botaoAuto) {   // V-02: na Party o botão não existe — nunca tocar nele nem lançar por ele faltar
+      botaoAuto.classList.toggle('on', modoAutomatico);
+      botaoAuto.textContent = modoAutomatico ? 'Ligado' : 'Desligado';
+      botaoAuto.setAttribute('aria-pressed', String(modoAutomatico));
+    }
     if (modoAutomatico) agendarPassoAuto();
   }
   function agendarPassoAuto() {
@@ -1687,6 +1904,7 @@
     if (estado === 'resultado') { tratarAcao('continuar'); agendarPassoAuto(); return; }
     if (estado === 'mover') { tratarAcao('cancelar'); agendarPassoAuto(); return; }
     if (estado === 'consumivel') { tratarAcao('voltar'); agendarPassoAuto(); return; }
+    if (estado === 'confirmar-fim') { tratarAcao('voltar'); agendarPassoAuto(); return; }   // M-014: o automático nunca termina a batalha sozinho — a confirmação é gesto da mesa
     if (estado === 'atacar') {
       if (!autoAtaqueEmCurso) { tratarAcao('voltar'); agendarPassoAuto(); return; }
       autoAtaqueEmCurso = false;
@@ -1764,6 +1982,12 @@
   const supPilha = [];          // pontos de retorno: { turno, estado }
   const supAmostrasFps = [];    // fluidez via 'stats' da vista (amostras ≤1/s)
   let supStatsUltimo = 0, supStatsUltimaAmostra = 0;
+  /* S-001+M-016: elementos da superfície de bastidores — criados
+     SÓ no bloco do Mestre, mais abaixo; na Party ficam null e
+     todas as escritas neles são guardadas (a camada interna do
+     Supervisor — validação, invariantes, snapshots — continua a
+     correr igual nas duas vistas; o que muda é só a superfície). */
+  let alertasSupEl = null, preSupEl = null, supUltimoEl = null, dicasSupEl = null;
 
   function supRegistar(tipo, dados) {
     /* Timestamp em TODOS os eventos (pós-críticos T1.5): sem ele,
@@ -1886,8 +2110,10 @@
     if (razao) supCongelar(razao);
   }
   /* Congelar: pára continuações e relógios, terminal estável com
-   * Recomeçar — a Ong NÃO caiu (sem fimDeBatalha, sem setVivo) e
-   * nada disto se anuncia na superfície de jogo. */
+   * Recomeçar — a Ong NÃO caiu (sem fimDeBatalha, sem setVivo). A
+   * razão nunca se anuncia na superfície de jogo: no Mestre vive
+   * em #sup-alertas; na Party o gelo diz só a frase honesta do
+   * V-04 (sentença §4), sem a razão e sem vocabulário de sistema. */
   function supCongelar(razao) {
     if (supCongelado) return;
     supCongelado = true;
@@ -1900,6 +2126,18 @@
        registo marca onde a batalha parou e porquê. */
     supRegistar('fim', { actor: PROPRIA, congelamento: true, razao });
     supRenderAlertas();
+    if (!MODO_MESTRE) {
+      /* Volta S-001, V-04 (sentença §4, S1C-03): só na Party, o gelo
+         diz-se NA HORA, pelo say() existente — frase honesta e
+         distinta do fim natural, sem a razão (que nunca aparece na
+         Party: nem na frase, nem no DOM, nem em título de botão) e
+         sem vocabulário de sistema. O único algarismo é o nº de
+         ordem deste alerta na sessão (supAlertas.length depois do
+         registo), para o Mestre cruzar com o registo da sua cópia.
+         Emite-se uma vez: a guarda supCongelado já o garante. No
+         Mestre nada muda — a razão continua visível em #sup-alertas. */
+      say(`A batalha parou por um erro do jogo — prime <b>Recomeçar</b>. Se puderes, diz ao Mestre que parou no erro nº ${supAlertas.length}.`);
+    }
     geracaoAuto++;
     if (relogioAuto) { clearTimeout(relogioAuto); relogioAuto = null; }
     seqTurno++;                          // continuações da IA morrem
@@ -1940,11 +2178,18 @@
     supRegistar('turno', { vezSnap: estadoSnap.vez });
   }
   function supRestaurar() {
+    /* S-001+M-016: «Voltar ao último estado bom» é ferramenta do
+       Mestre. Fora da vista do Mestre recusa à entrada — estado
+       intacto, nada restaura — mesmo que algum chamador exista. */
+    if (!MODO_MESTRE) {
+      supRegistar('restauro', { ok: false, razao: 'Restauro só na vista do Mestre' });
+      return;
+    }
     if (supPilha.length < 2) {
       supRegistar('restauro', { ok: false, razao: 'Sem turno anterior guardado' });
       /* EXP-R2: o clique sem estado anterior responde DENTRO das
          configurações (linha #sup-ultimo) — sem say() novo. */
-      supUltimoEl.textContent = 'Ainda não há um estado anterior guardado.';
+      if (supUltimoEl) supUltimoEl.textContent = 'Ainda não há um estado anterior guardado.';
       return;
     }
     const idx = supPilha.length - 2;             // o turno anterior ao actual
@@ -1986,7 +2231,7 @@
     supRegistar('restauro', { ok: true, rodadaSnap: snap.rodada, vezSnap: snap.vez });
     /* EXP-R2: confirmação do voltar DENTRO das configurações
        (linha #sup-ultimo) — sem say() novo. */
-    supUltimoEl.textContent = `Voltado ao turno anterior — rodada ${snap.rodada}, vez de ${nomeCena(snap.vez)}.`;
+    if (supUltimoEl) supUltimoEl.textContent = `Voltado ao turno anterior — rodada ${snap.rodada}, vez de ${nomeCena(snap.vez)}.`;
     if (snap.vez === PROPRIA) {
       iniciarVez(PROPRIA);
       say(`É a vez da <b>Ong</b> (rodada ${rodada}).`);
@@ -1996,46 +2241,57 @@
     supConferirInvariantes('restauro');
   }
 
-  /* ---------- Supervisor: superfície do Mestre (só #cfgpop) ---------- */
-  const linhaSupA = document.createElement('div');
-  linhaSupA.className = 'cfgrow';
-  const rotuloSupA = document.createElement('span');
-  rotuloSupA.className = 'cl';
-  rotuloSupA.textContent = 'Supervisor do Comestre';
-  const botaoVoltarSup = document.createElement('button');
-  botaoVoltarSup.type = 'button';
-  botaoVoltarSup.id = 'sup-voltar';
-  botaoVoltarSup.className = 'tog';
-  botaoVoltarSup.textContent = 'Voltar ao último estado bom';
-  linhaSupA.appendChild(rotuloSupA);
-  linhaSupA.appendChild(botaoVoltarSup);
-  cfgEl.insertBefore(linhaSupA, $('stats'));
-  const linhaSupB = document.createElement('div');
-  linhaSupB.className = 'cfgrow';
-  const rotuloSupB = document.createElement('span');
-  rotuloSupB.className = 'cl';
-  rotuloSupB.textContent = 'Registo da batalha';
-  const botaoExportarSup = document.createElement('button');
-  botaoExportarSup.type = 'button';
-  botaoExportarSup.id = 'sup-exportar';
-  botaoExportarSup.className = 'tog';
-  botaoExportarSup.textContent = 'Exportar registo';
-  linhaSupB.appendChild(rotuloSupB);
-  linhaSupB.appendChild(botaoExportarSup);
-  cfgEl.insertBefore(linhaSupB, $('stats'));
-  const alertasSupEl = document.createElement('div');
-  alertasSupEl.id = 'sup-alertas';
-  cfgEl.insertBefore(alertasSupEl, $('stats'));
-  const preSupEl = document.createElement('pre');
-  preSupEl.id = 'sup-json';
-  cfgEl.insertBefore(preSupEl, $('stats'));
-  /* EXP-R2: linha de estado própria da secção do Supervisor —
-     o retorno visível do «Voltar» e do «Exportar», só dentro
-     das configurações. */
-  const supUltimoEl = document.createElement('div');
-  supUltimoEl.id = 'sup-ultimo';
-  cfgEl.insertBefore(supUltimoEl, $('stats'));
+  /* ---------- Supervisor: superfície do Mestre (só #cfgpop) ----------
+   * S-001+M-016: esta superfície inteira só é CRIADA na vista do
+   * Mestre (MODO_MESTRE). Na vista da Party nenhum destes elementos
+   * entra no DOM, nenhum ouvinte é registado e supExportar recusa
+   * à entrada — o registo (com o dano por golpe dos monstros e o
+   * danoPorActor) nunca é gerado a partir da página da jogadora,
+   * nem por toque nem por consola. */
+  if (MODO_MESTRE) {
+    const linhaSupA = document.createElement('div');
+    linhaSupA.className = 'cfgrow';
+    const rotuloSupA = document.createElement('span');
+    rotuloSupA.className = 'cl';
+    rotuloSupA.textContent = 'Supervisor do Comestre';
+    const botaoVoltarSup = document.createElement('button');
+    botaoVoltarSup.type = 'button';
+    botaoVoltarSup.id = 'sup-voltar';
+    botaoVoltarSup.className = 'tog';
+    botaoVoltarSup.textContent = 'Voltar ao último estado bom';
+    linhaSupA.appendChild(rotuloSupA);
+    linhaSupA.appendChild(botaoVoltarSup);
+    cfgEl.insertBefore(linhaSupA, $('stats'));
+    const linhaSupB = document.createElement('div');
+    linhaSupB.className = 'cfgrow';
+    const rotuloSupB = document.createElement('span');
+    rotuloSupB.className = 'cl';
+    rotuloSupB.textContent = 'Registo da batalha';
+    const botaoExportarSup = document.createElement('button');
+    botaoExportarSup.type = 'button';
+    botaoExportarSup.id = 'sup-exportar';
+    botaoExportarSup.className = 'tog';
+    botaoExportarSup.textContent = 'Exportar registo';
+    linhaSupB.appendChild(rotuloSupB);
+    linhaSupB.appendChild(botaoExportarSup);
+    cfgEl.insertBefore(linhaSupB, $('stats'));
+    alertasSupEl = document.createElement('div');
+    alertasSupEl.id = 'sup-alertas';
+    cfgEl.insertBefore(alertasSupEl, $('stats'));
+    preSupEl = document.createElement('pre');
+    preSupEl.id = 'sup-json';
+    cfgEl.insertBefore(preSupEl, $('stats'));
+    /* EXP-R2: linha de estado própria da secção do Supervisor —
+       o retorno visível do «Voltar» e do «Exportar», só dentro
+       das configurações. */
+    supUltimoEl = document.createElement('div');
+    supUltimoEl.id = 'sup-ultimo';
+    cfgEl.insertBefore(supUltimoEl, $('stats'));
+    botaoVoltarSup.addEventListener('click', () => supRestaurar());
+    botaoExportarSup.addEventListener('click', () => supExportar());
+  }
   function supRenderAlertas() {
+    if (!alertasSupEl) return;   // Party: sem superfície, nada a pintar (o alerta fica no registo interno)
     alertasSupEl.innerHTML = '';
     for (const a of supAlertas) {
       const d = document.createElement('div');
@@ -2044,6 +2300,9 @@
     }
   }
   function supExportar() {
+    /* S-001+M-016: o export NUNCA nasce na vista da Party — nem
+       por toque (o botão não existe lá) nem por invocação forçada. */
+    if (!MODO_MESTRE || !preSupEl) return;
     let dicasCrit = [], analisesCrit = {};
     try { dicasCrit = supCritDicasExport(); analisesCrit = supCritAnalises(); } catch (_) { supCritErrosCamada++; }
     preSupEl.textContent = JSON.stringify({
@@ -2055,10 +2314,8 @@
       dicas: dicasCrit,          // T1.7: anotações do Supervisor-Crítico
       analises: analisesCrit     // T1.7: resumos numéricos da camada de padrões
     }, null, 1);
-    supUltimoEl.textContent = 'Registo exportado abaixo.';   // EXP-R2
+    if (supUltimoEl) supUltimoEl.textContent = 'Registo exportado abaixo.';   // EXP-R2
   }
-  botaoVoltarSup.addEventListener('click', () => supRestaurar());
-  botaoExportarSup.addEventListener('click', () => supExportar());
 
   /* ---------- Supervisor-Crítico (tranche T1.7) ----------
    * Camada PASSIVA de padrões, anotações e análises sobre o
@@ -2132,38 +2389,45 @@
   };
   view.ready.then(() => { supCrit.tReady = performance.now(); }, () => {});
 
-  /* ---------- superfície do Crítico (só #cfgpop, antes de #stats) ---------- */
-  const linhaCrit = document.createElement('div');
-  linhaCrit.className = 'cfgrow';
-  const rotuloCrit = document.createElement('span');
-  rotuloCrit.className = 'cl';
-  rotuloCrit.textContent = 'Dicas do Supervisor';
-  /* Correcções T1.7 (R-EXP-4a): o botão «Limpar histórico» NÃO apaga
-     dicas — a explicação vai no <small> do rótulo, no padrão das
-     linhas «Ajuda do grid»/«Números de dano». */
-  const smallCrit = document.createElement('small');
-  smallCrit.textContent = 'o histórico guarda só as contagens entre batalhas; as dicas desta batalha não se apagam';
-  rotuloCrit.appendChild(smallCrit);
-  const botaoLimparCrit = document.createElement('button');
-  botaoLimparCrit.type = 'button';
-  botaoLimparCrit.id = 'sup-limpar-analises';
-  botaoLimparCrit.className = 'tog';
-  botaoLimparCrit.textContent = 'Limpar histórico de análises';
-  linhaCrit.appendChild(rotuloCrit);
-  linhaCrit.appendChild(botaoLimparCrit);
-  cfgEl.insertBefore(linhaCrit, $('stats'));
-  const dicasSupEl = document.createElement('div');
-  dicasSupEl.id = 'sup-dicas';
-  cfgEl.insertBefore(dicasSupEl, $('stats'));
-  botaoLimparCrit.addEventListener('click', () => {
-    supCritAgg = supCritAggVazio();      // limpa SÓ o agregado entre batalhas
-    supCritAggGuardar();
-    supCrit.padroesBatalha.clear();
-    supUltimoEl.textContent = 'Histórico de análises limpo.';
-  });
+  /* ---------- superfície do Crítico (só #cfgpop, antes de #stats) ----------
+   * S-001+M-016: como o resto dos bastidores, esta superfície só é
+   * CRIADA na vista do Mestre. Na Party, dicasSupEl fica null e
+   * supCritRender não pinta nada (a camada interna continua a
+   * observar — é passiva e invisível — mas não tem superfície). */
+  if (MODO_MESTRE) {
+    const linhaCrit = document.createElement('div');
+    linhaCrit.className = 'cfgrow';
+    const rotuloCrit = document.createElement('span');
+    rotuloCrit.className = 'cl';
+    rotuloCrit.textContent = 'Dicas do Supervisor';
+    /* Correcções T1.7 (R-EXP-4a): o botão «Limpar histórico» NÃO apaga
+       dicas — a explicação vai no <small> do rótulo, no padrão das
+       linhas «Ajuda do grid»/«Números de dano». */
+    const smallCrit = document.createElement('small');
+    smallCrit.textContent = 'o histórico guarda só as contagens entre batalhas; as dicas desta batalha não se apagam';
+    rotuloCrit.appendChild(smallCrit);
+    const botaoLimparCrit = document.createElement('button');
+    botaoLimparCrit.type = 'button';
+    botaoLimparCrit.id = 'sup-limpar-analises';
+    botaoLimparCrit.className = 'tog';
+    botaoLimparCrit.textContent = 'Limpar histórico de análises';
+    linhaCrit.appendChild(rotuloCrit);
+    linhaCrit.appendChild(botaoLimparCrit);
+    cfgEl.insertBefore(linhaCrit, $('stats'));
+    dicasSupEl = document.createElement('div');
+    dicasSupEl.id = 'sup-dicas';
+    cfgEl.insertBefore(dicasSupEl, $('stats'));
+    botaoLimparCrit.addEventListener('click', () => {
+      supCritAgg = supCritAggVazio();      // limpa SÓ o agregado entre batalhas
+      supCritAggGuardar();
+      supCrit.padroesBatalha.clear();
+      if (supUltimoEl) supUltimoEl.textContent = 'Histórico de análises limpo.';
+    });
+  }
   const SUPCRIT_CATS = [['mecanica', 'Mecânica'], ['visual', 'Artes e visual'],
     ['maquina', 'Máquina'], ['animacao', 'Animações'], ['jogabilidade', 'Jogabilidade']];
   function supCritRender() {
+    if (!dicasSupEl) return;   // S-001+M-016: Party não tem superfície do Crítico — nada a pintar
     /* Correcções T1.7 (R-EXP-6b): a reconstrução preserva a posição
        de leitura — uma emissão a meio da leitura não pode fazer a
        lista saltar para o topo. */
@@ -2435,19 +2699,23 @@
     }
     if (ev.tipo === 'fim' && !ev.congelamento) {
       supCritFecharTurno(ev.ts);
-      supCritAvaliar(ev.rodada, true);
-      supCritSomarAgregado(ev.rodada);
+      /* LB-C-06: fim declarado (origem:'terminar') fecha a batalha
+         sem somar queda nem avaliar padrões de queda — a batalha
+         conta, a queda não. Só o fim natural soma queda e corre M5. */
+      const fimDeclarado = ev.origem === 'terminar';
+      supCritAvaliar(ev.rodada, true, fimDeclarado);
+      supCritSomarAgregado(ev.rodada, !fimDeclarado);
     }
   }
   function supCritAutoSemDestino() {
     if (!supCritDesligado) supCrit.acc.autoSemDestino++;
   }
-  function supCritSomarAgregado(rodadaQueda) {
+  function supCritSomarAgregado(rodadaQueda, contarQueda = true) {
     if (supCrit.agregadoSomado) return;
     supCrit.agregadoSomado = true;
     const acc = supCrit.acc, agg = supCritAgg;
     agg.batalhas++;
-    agg.quedas[rodadaQueda] = (agg.quedas[rodadaQueda] || 0) + 1;
+    if (contarQueda) agg.quedas[rodadaQueda] = (agg.quedas[rodadaQueda] || 0) + 1;
     for (const [k, v] of acc.uso) agg.usoCasas[k] = (agg.usoCasas[k] || 0) + v;
     for (const a of acc.ataquesOngAuto) agg.alvosAuto[a.alvo] = (agg.alvosAuto[a.alvo] || 0) + 1;
     for (const [k, v] of acc.deslize) agg.deslize[k] = (agg.deslize[k] || 0) + v;
@@ -2541,7 +2809,7 @@
   }
 
   /* ---------- motores de padrões (duas cadências) ---------- */
-  function supCritAvaliar(r, fim) {
+  function supCritAvaliar(r, fim, fimDeclarado = false) {
     if (supCritDesligado) return;
     /* Correcções T1.7: os catch dos motores contam em
        analises.errosCamada (F10.7) — engolidos, mas visíveis. */
@@ -2559,7 +2827,9 @@
          Nenhum outro motor depende da cadência de rodada do M4:
          ele só lê danoPorActor/ataquesOngAuto, que ninguém consome. */
       try { supCritAvalM4(r); } catch (_) { supCritErrosCamada++; }
-      try { supCritAvalM5(r); } catch (_) { supCritErrosCamada++; }
+      /* LB-C-06: no fim declarado, M5 corre sem o padrão de queda —
+         o dano-concentrado (não é padrão de queda) continua a avaliar. */
+      try { supCritAvalM5(r, !fimDeclarado); } catch (_) { supCritErrosCamada++; }
       try { supCritAvalA3(r); } catch (_) { supCritErrosCamada++; }   // estrutural: uma vez, com o total final
     }
   }
@@ -2722,8 +2992,8 @@
       });
     }
   }
-  function supCritAvalM5(r) {
-    if (r <= 1 || r > 5) {
+  function supCritAvalM5(r, avaliarQueda = true) {
+    if (avaliarQueda && (r <= 1 || r > 5)) {
       supCritEmitir({
         categoria: 'mecanica', padrao: 'queda-fora-da-janela', actor: PROPRIA, rodada: r, vez: PROPRIA, actualizar: true,
         medida: r, limiar: r <= 1 ? 2 : 5, prioridade: 2,

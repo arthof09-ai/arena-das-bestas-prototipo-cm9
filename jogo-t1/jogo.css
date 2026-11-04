@@ -98,6 +98,14 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 #sup-dicas .sup-dica{margin-bottom:6px;padding-bottom:6px;
   border-bottom:1px dashed rgba(201,162,39,.25)}
 
+/* ---------- selo «TESTE — resolvedor local» (spec §4.3 / M-006) ----------
+   Permanente e discreto, centrado no topo; pointer-events:none para
+   nunca roubar um toque ao campo. */
+#selo-teste{position:fixed;top:max(10px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);
+  z-index:26;pointer-events:none;white-space:nowrap;font-size:10px;font-weight:700;letter-spacing:.14em;
+  color:var(--pergaminho-fraco);background:rgba(16,12,8,.55);border:1px solid var(--linha-fraca);
+  border-radius:999px;padding:4px 10px}
+
 /* ---------- ficha fechada: chip flutuante (só a própria) ---------- */
 #fichachip{position:fixed;left:12px;bottom:68px;width:182px;z-index:20;text-align:left;
   background:var(--painel);border:1px solid var(--linha);border-radius:11px;padding:8px 10px 9px}
@@ -225,7 +233,11 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
   .actions.compacta .btn .gi{font-size:14px}
   .actions.compacta .btn .gl{font-size:10px;line-height:1.15}
   /* Em Atacar/Rolagem a vez sai da faixa: a mensagem fica com o espaço. */
-  #faixa[data-estado="atacar"] .turn,#faixa[data-estado="rolagem"] .turn{display:none}
+  /* LB-C-01/02: o mesmo na base e em confirmar-fim, em retrato — o
+     indicador de vez sai e a mensagem volta a ≥120 px (na base ela
+     já diz de quem é a vez; o 5.º botão não rouba área à mensagem).
+     Sem isto, a frase de abertura e o prompt de confirmação cortam. */
+  #faixa[data-estado="base"] .turn,#faixa[data-estado="atacar"] .turn,#faixa[data-estado="rolagem"] .turn,#faixa[data-estado="confirmar-fim"] .turn{display:none}
   #fichachip{width:162px;left:10px;bottom:66px}
   #ficha{width:25%;min-width:0;max-width:none;padding:8px 7px}
   #ficha h1{font-size:14px}

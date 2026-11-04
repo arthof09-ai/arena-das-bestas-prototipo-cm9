@@ -23,7 +23,9 @@
   <div id="cantos" aria-label="Cantos de apresentação">
     <button id="btn-config" class="cornerbtn" aria-label="Configurações rápidas" aria-expanded="false" title="Configurações rápidas">⚙</button>
     <button id="btn-cheia" class="cornerbtn quadrado" aria-label="Tela cheia" title="Tela cheia">⛶</button>
-    <button id="btn-alerta" class="cornerbtn" aria-label="Alertas" title="Alertas">!</button>
+    <!-- S-001+M-016: o botão de alertas (!) é superfície do Supervisor —
+         vive só na vista do Mestre (mestre.html). Nesta página da
+         jogadora ele não existe. -->
   </div>
 
   <!-- Pop-up de configurações rápidas: aperta, aparece; escolhe; aperta, some. -->
@@ -63,12 +65,18 @@
     <p id="stats" class="stats">— FPS</p>
   </section>
 
-  <!-- Ficha fechada: pop-up flutuante da própria personagem (só dados dela). -->
+  <!-- Selo da fronteira do protótipo (spec §4.3 / M-006): permanente,
+       discreto, sem capturar toques (pointer-events:none no CSS). -->
+  <div id="selo-teste" role="note">TESTE — resolvedor local</div>
+
+  <!-- Ficha fechada: pop-up flutuante da própria personagem (só dados dela).
+       M-015: os valores iniciais já nascem certos (Vida 99/99, Alma livre 91)
+       e jogo.js (atualizarChip) reescreve rótulo e barras a cada mudança. -->
   <button id="fichachip" type="button" aria-label="Abrir a ficha da Ong">
     <span class="fh"><span class="fname">ONG</span><span class="fopen">FICHA ▸</span></span>
-    <span class="bl"><span>VIDA</span><span>ALMA · PA 7</span></span>
-    <span class="bar vida"><i style="width:75%"></i></span>
-    <span class="bar alma"><i style="width:70%"></i></span>
+    <span class="bl"><span>VIDA</span><span id="chip-alma-rotulo">ALMA · PA 91</span></span>
+    <span class="bar vida"><i style="width:100%"></i></span>
+    <span class="bar alma"><i style="width:100%"></i></span>
   </button>
 
   <!-- Ficha aberta: coluna lateral de 25% (conteúdo gerado por jogo.js). -->
