@@ -32,10 +32,16 @@
   const AREA = { cols: 10, rows: 7, origin: { x: 0, y: 0 } };
   const ELENCO = [
     { id: 'orc',     nome: 'Orc',             modelo: 'modelos/orc-t1.glb', x: 3, y: 3, alturaMetros: 2.4,  vivo: true },
-    { id: 'ong',     nome: 'Ong',             modelo: 'modelos/ong-rogue.glb',     x: 6, y: 2, alturaMetros: 1.75, vivo: true, animacoes: { idle: 'Idle_A', andar: 'Walking_A' } },
-    { id: 'capanga', nome: 'Capanga 1',       modelo: 'modelos/capanga-knight.glb', x: 7, y: 4, alturaMetros: 1.8,  vivo: true, animacoes: { idle: 'Idle_A', andar: 'Walking_A' } },
+    { id: 'ong',     nome: 'Ong',             modelo: 'modelos/ong-rogue.glb',     x: 6, y: 2, alturaMetros: 1.75, vivo: true, animacoes: { idle: 'Idle_A', andar: 'Walking_A', ataque: 'Melee_Unarmed_Attack_Punch_A', reacao: 'Hit_A' } },
+    { id: 'capanga', nome: 'Capanga 1',       modelo: 'modelos/capanga-knight.glb', x: 7, y: 4, alturaMetros: 1.8,  vivo: true, animacoes: { idle: 'Idle_A', andar: 'Walking_A', ataque: 'Melee_Unarmed_Attack_Punch_A', reacao: 'Hit_A' } },
     { id: 'lobo',    nome: 'Lobo da Caverna', modelo: 'marcador-lobo',     x: 2, y: 5, alturaMetros: 0.9,  vivo: true }
   ];
+  /* Tranche T-D (contrato apresentarAtaque): Ong e Capanga declaram
+     também ataque/reacao com os clipes que os GLB viajantes JÁ trazem
+     (parse registado no DIFF-API §5: Punch 1,167 s e Hit_A 0,667 s
+     dentro dos dois ficheiros). Orc e Lobo NÃO declaram nada: sem
+     clipe, a cena degrada sozinha para avanço/recuo (ramo sem-clipe
+     do contrato §5) — nenhum gesto inventado na casca. */
   /* Reservas internas de movimento dos MONSTROS, em casas (T1.3):
      governam só a IA básica nas vezes deles — internas, nunca
      exibidas, lidas apenas pela IA. A Ong NÃO está aqui: a reserva
@@ -243,6 +249,14 @@
   let alvo = null;              // última figura não-própria tocada (ou nenhuma)
   let atacou = false;           // uso de atacar da vez dela (atacar ×1; a Transformação também o consome)
   let ataquePendente = null;    // rolagem dela entre o clique e o Confirmar (T1.4 §1: o resultado NÃO se revela antes)
+  let apresentacaoEmCurso = false;   // T-D: uma apresentação de confronto da cena está a decorrer (o fluxo espera por ela)
+  let continuarAposApresentacao = false;   // T-D: um «Continuar» premido durante o gesto executa-se quando ele fecha
+  /* T-D/R1: o contador de ataques COM apresentação já NÃO vive aqui:
+     passou para dentro do acumulador do Crítico (acc.ataquesComApresentacao,
+     junto de acc.ataquesTotais) — os dois contadores da medida
+     «ataque-sem-gesto» nascem e morrem juntos, no mesmo segmento
+     (correcção R1 do julgamento de Fidelidade da T-D: antes eram
+     universos diferentes e o 0 saía do clamp, não da contagem). */
   let estado = 'base';        // base | atacar | consumivel | mover | movendo | rolagem | resultado | vez-ia | fim
   /* Máquina de turnos (T1.3): a vez roda por ORDEM. vezAtual,
      indiceVez e rodada só mudam em passarVez()/iniciarVezIA() e no
@@ -587,6 +601,65 @@
 
   /* ---------- máquina de turnos (T1.3 §1) ---------- */
   const aguardar = ms => new Promise(res => setTimeout(res, ritmo(ms)));
+  /* ---------- apresentação do confronto (tranche T-D) ----------
+   * Único chamador de view.apresentarAtaque na casca. O contrato
+   * (CONTRATO-APRESENTAR-ATAQUE §§1–2, 6): a cena recebe SÓ dois ids
+   * — nenhum dado de acerto, dano ou ficha atravessa a chamada; a
+   * validação é SÍNCRONA e inteira antes de qualquer efeito, com o
+   * erro como throw de RangeError (aqui apanhado à volta da chamada,
+   * como a demo faz); a Promise nunca rejeita depois de aceite e o
+   * fluxo que chama ESPERA por ela antes de prosseguir. A
+   * apresentação é cosmética: não decide nem altera resultado
+   * nenhum — se a cena a recusar (throw), a resolução do jogo
+   * prossegue exactamente igual, só sem gesto (ramo defensivo: no
+   * fluxo legal o Supervisor e os invariantes já garantem duas
+   * figuras vivas em casas distintas). Duração: o orçamento de
+   * 0,70 s vive DENTRO da cena (ficheiro sagrado) e NÃO escala com
+   * a velocidade visual — é a lacuna do mixer declarada no
+   * DIFF-API §4.4: os clipes correm à velocidade própria (1×) em
+   * todas as velocidades da casca; o que escala, como sempre, são
+   * os ritmos DA CASCA à volta (pausas via aguardar/ritmo, anel e
+   * flutuantes). */
+  /* Regista UM ataque apresentado no acumulador do Crítico — o
+     MESMO acumulador que conta os ataques totais (acc): os dois
+     contadores vivem no mesmo universo (mesma batalha/segmento,
+     mesmo reinício no restauro) e a diferença entre eles é a
+     medida do padrão «ataque-sem-gesto» (correcção R1). */
+  function registarAtaqueApresentado() {
+    try { if (!supCritDesligado) supCrit.acc.ataquesComApresentacao++; }
+    catch (_) { supCritErrosCamada++; }
+  }
+  /* `contado` diz se este confronto é de um ataque que entra em
+     acc.ataquesTotais (evento «ataque» registado): acertos/falhas
+     da IA e acerto da Ong entram; a FALHA da Ong não entra (não
+     gera esse evento — semântica pré-T-D preservada), logo a
+     apresentação dela também não conta como «apresentada».
+     Apresentações disparadas fora da casca (consola,
+     window.mapa3d) nunca passam por aqui: não contam em
+     universo nenhum da dica. E «apresentado» exige o gesto a
+     ARRANCAR: observa-se a fase da apresentação da cena
+     (getStats().presentation.phase) enquanto ela corre — só a
+     fase 'gesture' DESTE par conta; apresentação resolvida por
+     cancelamento/preempção antes do gesto não conta (R1
+     Fidelidade + R2 Privacidade). */
+  function apresentarConfronto(atacante, alvo, contado) {
+    let promessa;
+    try { promessa = view.apresentarAtaque(atacante, alvo); }
+    catch (_) { return Promise.resolve(false); }   // throw síncrono do contrato: sem gesto, sem tocar na resolução
+    apresentacaoEmCurso = true;
+    const accEntrada = supCrit.acc;   // §13 (resíduo R1-Fidelidade): o acumulador DESTE segmento, capturado à entrada — um restauro a meio do gesto troca supCrit.acc e a promessa abandonada não pode registar no segmento novo
+    let gestoArrancou = false;
+    const vigia = setInterval(() => {
+      try {
+        const pres = typeof view.getStats === 'function' ? view.getStats().presentation : null;
+        if (pres && pres.attacker === atacante && pres.target === alvo && pres.phase === 'gesture')
+          gestoArrancou = true;
+      } catch (_) {}
+    }, 25);
+    return Promise.resolve(promessa).then(
+      () => { clearInterval(vigia); apresentacaoEmCurso = false; if (contado && gestoArrancou && supCrit.acc === accEntrada) registarAtaqueApresentado(); return true; },
+      () => { clearInterval(vigia); apresentacaoEmCurso = false; return false; });   // o contrato diz que nunca rejeita; o ramo fica por defesa
+  }
   function fraseEsperaVez() {
     say(batalhaFim
       ? 'A batalha acabou — prime <b>Recomeçar</b>.'
@@ -689,8 +762,10 @@
       if (seqTurno !== seq || batalhaFim) { if (contextoIA && contextoIA.seq === seq) contextoIA = null; return; }
       if (!contextoIA || contextoIA.id !== id || contextoIA.seq !== seq) return;
       contextoIA = null;
-      atacarIA(id, seq);
-      if (!batalhaFim) fimDaVezIA(seq);      // se ela caiu, não há vez seguinte
+      /* T-D: atacarIA passou a assíncrono (espera a apresentação do
+         confronto); a vez só fecha quando a resolução acabar — se
+         ela caiu, não há vez seguinte. */
+      atacarIA(id, seq).then(() => { if (!batalhaFim) fimDaVezIA(seq); });
     });
   }
   /* Consumo único da conclusão do movimento (G-13.3(d)): quem chega
@@ -752,7 +827,7 @@
      frase do momento e como delta do Perdido da ficha dela
      (fronteira EM-P3: agregado por monstro é proibido). Sem
      flutuantes do monstro: o golpe marca-se com o impacto. */
-  function atacarIA(id, seq) {
+  async function atacarIA(id, seq) {
     const c = COMBATE_TEST[id];
     /* Supervisor: o ataque da IA também é validado antes — sem
        alcance, não acontece (a vez fecha pelo caminho normal). */
@@ -769,16 +844,30 @@
          entra no registo — actor, alvo e falha (sem Defesas nem
          constantes internas). */
       supRegistar('accao', { acao: 'ataque', actor: id, alvo: PROPRIA, acerto: false });
+      /* T-D: a tentativa VÊ-SE — a apresentação é do confronto, não
+         do acerto (a cena nem recebe o resultado). A frase da falha
+         só sai quando o gesto fecha. Se a época/vez mudou durante o
+         gesto (restauro ou gelo), a resolução pertence à linha do
+         tempo abandonada e não se aplica. */
+      const epocaFalhaIA = supEpoca;
+      await apresentarConfronto(id, PROPRIA, true);   // R1: ataque contado no total (evento «ataque» registado acima)
+      if (seqTurno !== seq || batalhaFim || supCongelado || supEpoca !== epocaFalhaIA) { continuarAposApresentacao = false; return; }   // R1-Priv: o Continuar diferido morre com a linha do tempo abandonada
       say(`<b>${nomeCena(id)}</b> ${verbos.falha} a <b>Ong</b> e falhou.`);
       return;
     }
-    mostrarImpacto(PROPRIA);
     const rIA = rolarExpressao(c.dano);
     /* Supervisor: parcelas = total — se não bater, a batalha
        congela e a resolução ABORTA neste tick (sem sofrerDano). */
     if (!supConferirSoma(rIA.parcelas, rIA.total, id)) return;
     const total = rIA.total;
     supRegistar('accao', { acao: 'ataque', actor: id, alvo: PROPRIA, acerto: true, dano: total });
+    /* T-D: validação do Supervisor completa → o gesto apresenta-se
+       e SÓ DEPOIS o golpe marca (anel) e o dano se aplica — os
+       números da resolução não mudam, só ganham o gesto antes. */
+    const epocaAcertoIA = supEpoca;
+    await apresentarConfronto(id, PROPRIA, true);   // R1: ataque contado no total (evento «ataque» registado acima)
+    if (seqTurno !== seq || batalhaFim || supCongelado || supEpoca !== epocaAcertoIA) { continuarAposApresentacao = false; return; }   // R1-Priv: idem
+    mostrarImpacto(PROPRIA);
     const caiu = sofrerDano(total);
     if (caiu) return;                        // fimDeBatalha já disse a frase final
     say(`<b>${nomeCena(id)}</b> ${verbos.acerto} a <b>Ong</b> — ela perdeu <b>${total}</b> de vida.`);
@@ -802,6 +891,7 @@
     /* Supervisor (pós-críticos T1.5): evento TERMINAL do fim
        natural — o registo passa a provar que a batalha acabou. */
     supRegistar('fim', { actor: PROPRIA, danoSofrido });
+    continuarAposApresentacao = false;   // R1-Priv: terminal — nenhum Continuar diferido sobrevive ao fim
     batalhaFim = true;
     seqTurno++;                              // invalida continuações pendentes
     if (contextoIA) consumirContextoIA(contextoIA.id);
@@ -815,7 +905,7 @@
   /* Handler nomeado (T1.5): o clique da faixa e o controlador do
      Modo automático chamam a MESMA função — o pipeline legal é um
      só; o automático não duplica resolução nenhuma. */
-  function tratarAcao(acao) {
+  async function tratarAcao(acao) {
     const u = unidade(selecionada);
     /* Supervisor: batalha congelada — só o Recomeçar AGE; as
        outras acções não mutam nada, mas respondem com a frase do
@@ -831,6 +921,13 @@
        'fim', a acção recomecar NUNCA é bloqueada. */
     if (acao === 'recomecar') { location.reload(); return; }
     if (vezAtual !== PROPRIA || batalhaFim) { fraseEsperaVez(); return; }
+    /* R1-Priv: «Continuar» premido DURANTE o gesto não é ainda uma
+       acção executada — fica só a bandeira, SEM registo no
+       Supervisor; o evento regista-se uma única vez, à execução
+       (quando a continuação do Confirmar o chama de volta, já sem
+       apresentação a correr). Sem isto, um clique durante o gesto
+       despejava o evento duas vezes no export. */
+    if (acao === 'continuar' && apresentacaoEmCurso) { continuarAposApresentacao = true; return; }
     /* Supervisor do Comestre (T1.5): TODA a acção é validada ANTES
        de acontecer. Bloqueio registado no Supervisor; nos bloqueios
        "moles" o caminho existente continua e recusa com a frase de
@@ -941,23 +1038,50 @@
       }
       atacou = true;                   // a acção gasta-se, acerte ou erre
       estado = 'resultado'; renderAcoes();
+      /* T-D: o alvo DESTE golpe fixa-se antes do gesto — um toque
+         durante a apresentação pode marcar outro alvo para a acção
+         seguinte, nunca para o golpe já confirmado. */
+      const alvoDoGolpe = alvo;
       if (!pend.acerta) {
-        // Falha: sem impacto, sem flutuantes, sem dano.
-        say(`<b>Falha</b> · ${pend.nome} não atinge ${ALVO_NOME[alvo] || nomeCena(alvo)}.`);
+        // Falha: sem impacto, sem flutuantes, sem dano — mas a
+        // tentativa VÊ-SE: a apresentação é do confronto, não do
+        // acerto (a cena nem recebe o resultado). A frase da falha
+        // só sai quando o gesto fecha.
+        const epocaFalha = supEpoca;
+        await apresentarConfronto(PROPRIA, alvoDoGolpe, false);   // R1: a falha da Ong NÃO é ataque contado (sem evento «ataque») — a apresentação dela não entra em nenhum dos contadores
+        if (supEpoca !== epocaFalha || supCongelado) { continuarAposApresentacao = false; return; }   // R1-Priv: o Continuar diferido morre com a linha do tempo abandonada
+        say(`<b>Falha</b> · ${pend.nome} não atinge ${ALVO_NOME[alvoDoGolpe] || nomeCena(alvoDoGolpe)}.`);
+        if (continuarAposApresentacao) { continuarAposApresentacao = false; tratarAcao('continuar'); }
         return;
       }
-      mostrarImpacto(alvo);
       const r = rolarExpressao(expressaoOng());
       /* Supervisor: parcelas = total — se não bater, a batalha
          congela e a resolução ABORTA neste tick (sem dano). */
       if (!supConferirSoma(r.parcelas, r.total, PROPRIA)) return;
-      supRegistar('accao', { acao: 'ataque', actor: PROPRIA, alvo, acerto: true, dano: r.total });
-      const total = numerosDano ? mostrarDano(alvo, r.parcelas) : null;
-      say(`<b>Acerto</b> · ${pend.nome} atinge ${ALVO_NOME[alvo] || nomeCena(alvo)}.` +
+      supRegistar('accao', { acao: 'ataque', actor: PROPRIA, alvo: alvoDoGolpe, acerto: true, dano: r.total });
+      /* T-D: validação do Supervisor completa → o gesto
+         apresenta-se e SÓ DEPOIS o golpe marca (anel, flutuantes,
+         frase). Rolagem, soma, registo e números são os de sempre:
+         a apresentação não toca em resultado nenhum. Se a época
+         mudou durante o gesto (restauro ou gelo), esta resolução
+         pertence à linha do tempo abandonada e não se aplica. */
+      const epocaAcerto = supEpoca;
+      await apresentarConfronto(PROPRIA, alvoDoGolpe, true);   // R1: ataque contado no total (evento «ataque» registado acima)
+      if (supEpoca !== epocaAcerto || supCongelado) { continuarAposApresentacao = false; return; }   // R1-Priv: idem
+      mostrarImpacto(alvoDoGolpe);
+      const total = numerosDano ? mostrarDano(alvoDoGolpe, r.parcelas) : null;
+      say(`<b>Acerto</b> · ${pend.nome} atinge ${ALVO_NOME[alvoDoGolpe] || nomeCena(alvoDoGolpe)}.` +
         (total != null ? ' As parcelas do dano saem da figura em números.' : ''));
+      if (continuarAposApresentacao) { continuarAposApresentacao = false; tratarAcao('continuar'); }
       return;
     }
     if (acao === 'continuar') {
+      /* T-D: premido durante o gesto, o Continuar não se perde nem
+         interrompe a apresentação — executa-se quando ela fechar
+         (a continuação do Confirmar chama-o de volta). R1-Priv: a
+         intercepção à entrada de tratarAcao já trata esse caso
+         (bandeira sem registo); esta guarda fica como defesa. */
+      if (apresentacaoEmCurso) { continuarAposApresentacao = true; return; }
       estado = 'base'; renderAcoes();
       say(atacou
         ? 'A <b>Ong</b> já atacou nesta vez — prime <b>Encerrar</b> para fechar a vez dela.'
@@ -1554,6 +1678,7 @@
    * só reagenda a verificação e a decisão fica manual. */
   function passoAutomatico() {
     if (!modoAutomatico || supCongelado || batalhaFim || vezAtual !== PROPRIA) return;
+    if (apresentacaoEmCurso) { agendarPassoAuto(); return; }   // T-D: o gesto manda — o passo espera e reagenda (a apresentação da cena NÃO escala com a velocidade: a 3× o passo de 283 ms chegaria a meio dos 0,70 s)
     if (estado === 'movendo') return;    // a animação manda: o moveend retoma
     if (estado === 'rolagem') {
       if (ataquePendente && ataquePendente.tipo === 'transformacao') { agendarPassoAuto(); return; }
@@ -1766,6 +1891,7 @@
   function supCongelar(razao) {
     if (supCongelado) return;
     supCongelado = true;
+    continuarAposApresentacao = false;   // R1-Priv: o Continuar diferido morre no gelo — não atravessa épocas
     supEpoca++;                          // guarda de época: moveend tardio dela não acerta contas
     supDesarmarGuardaMovimentoOng();
     supAlertas.push({ rodada, vez: vezAtual, razao });
@@ -1849,6 +1975,7 @@
     alvo = snap.alvo;
     rodada = snap.rodada; indiceVez = snap.indiceVez;
     ataquePendente = null; custoPendente = null; caminhoPendente = null;
+    continuarAposApresentacao = false;   // R1-Priv: o Continuar diferido morre no restauro — pertencia à linha do tempo abandonada
     passoEmCurso = false; parado = false;
     const ongSnap = snap.unidades.find(u => u.id === PROPRIA);
     if (ongSnap && ongSnap.vivo) batalhaFim = false;
@@ -1989,7 +2116,7 @@
       danoPorActor: new Map(), danoPorRodada: new Map(), danoTotal: 0,
       recusas: new Map(), runChave: null, runN: 0, runMax: new Map(), lacunas: [],
       turnos: [], esperas: [], ongVazias: 0, ongDesperdicadas: 0, monstroSemAgir: new Map(),
-      deslize: new Map(), movidos: new Map(), naoMedidos: 0, ataquesTotais: 0, ultimoAtaqueActor: null,
+      deslize: new Map(), movidos: new Map(), naoMedidos: 0, ataquesTotais: 0, ataquesComApresentacao: 0, ultimoAtaqueActor: null,   // R1: totais e apresentados no MESMO acumulador — nascem e reiniciam juntos (segmento)
       autoSemAproximar: 0, autoSemDestino: 0, ultimoActo
     };
   }
@@ -2867,12 +2994,22 @@
     /* Estrutural e de batalha inteira: actor null de propósito —
        a anotação é da batalha, não de uma figura (a âncora da vez
        é a da última figura que atacou). */
-    if (acc.ataquesTotais >= 1) supCritEmitir({
+    /* T-D: a medida deixou de ser «todos» por construção — conta
+       só os ataques SEM apresentação da cena. R1 (correcção do
+       julgamento de Fidelidade): os dois contadores vivem no
+       MESMO acumulador (acc.ataquesTotais / acc.ataquesComApresentacao
+       — mesmo segmento, mesmo reinício) e «apresentado» só conta
+       quando a apresentação arranca o gesto por um ataque contado
+       no total (ver apresentarConfronto). O max(0,…) fica só como
+       guarda de sanidade: por construção apresentados ≤ totais,
+       e o valor nasce da contagem, não do clamp. */
+    const semGesto = Math.max(0, acc.ataquesTotais - acc.ataquesComApresentacao);
+    if (semGesto >= 1) supCritEmitir({
       categoria: 'animacao', padrao: 'ataque-sem-gesto', actor: null,
       ambito: 'batalha',   // R-EXP-5: a âncora é a batalha, não a última figura que atacou
       rodada: r, vez: acc.ultimoAtaqueActor || PROPRIA, actualizar: true,
-      medida: acc.ataquesTotais, limiar: 1, prioridade: 1,
-      texto: `Os ataques não têm gesto: a figura não levanta o braço nem a pata; só aparece o anel do golpe. Em ${acc.ataquesTotais} ataques, foram ${acc.ataquesTotais} sem gesto.`
+      medida: semGesto, limiar: 1, prioridade: 1,
+      texto: `Os ataques não têm gesto: a figura não levanta o braço nem a pata; só aparece o anel do golpe. Em ${acc.ataquesTotais} ataques, foram ${semGesto} sem gesto.`
     });
   }
   function supCritAvalJ1(r) {
@@ -2978,7 +3115,7 @@
         deslizePorActor: Object.fromEntries(acc.deslize),
         casasAndadas: Object.fromEntries(acc.movidos),
         segmentosNaoMedidos: acc.naoMedidos,
-        ataques: acc.ataquesTotais, ataquesSemGesto: acc.ataquesTotais,
+        ataques: acc.ataquesTotais, ataquesComApresentacao: acc.ataquesComApresentacao, ataquesSemGesto: Math.max(0, acc.ataquesTotais - acc.ataquesComApresentacao),   // R1: par emparelhado no mesmo acumulador; semGesto nasce da contagem (o max é só guarda)
         clipsPorModelo: Object.fromEntries([...supCrit.clips].map(([k, v]) => [k, v.slice()]))
       },
       carregamento: {
