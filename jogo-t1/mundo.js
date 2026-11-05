@@ -91,7 +91,7 @@ window.CampoWorld = function (T, scene, area) {
         const a=rnd()*Math.PI*2, r=Math.sqrt(rnd())*1.1;
         part(ico, i%4 ? wood : embers, [Math.cos(a)*r,.035,Math.sin(a)*r], [.05+rnd()*.18,.035,.06+rnd()*.14], [0,a,0]).castShadow=false;
     }
-    const hearth = new T.PointLight(0xff6724,1.7,5,2); hearth.position.set(0,.45,0); scene.add(hearth);
+    const hearth = new T.PointLight(0xff6724,6.0,8,2); hearth.position.set(0,.45,0); scene.add(hearth);
     const stones = [], grass = [], branches = [], trunks = [];
     for (let i = 0; i < 480; i++) {
         const x = (rnd() - .5) * radius * 3, z = (rnd() - .5) * radius * 3, s = .025 + rnd() * .12;
@@ -139,7 +139,7 @@ window.CampoWorld = function (T, scene, area) {
         const flame = part(ico, new T.MeshBasicMaterial({ color: C(0xff631d), toneMapped: false }), [0, 1.65, 0], [.25, .65, .24], [0, 0, .14], g);
         flame.castShadow = false;
         part(ico, new T.MeshBasicMaterial({ color: C(0xffdf8e), toneMapped: false }), [0, 1.43, .12], [.14, .3, .15], [0, 0, 0], g).castShadow = false;
-        const light = new T.PointLight(0xff792b, 2.8, 9, 2);
+        const light = new T.PointLight(0xff792b, 7.5, 11, 2);
         light.position.set(x, y + 1.8, z);
         scene.add(light);
         fires.push({ flame, light });
@@ -150,7 +150,7 @@ window.CampoWorld = function (T, scene, area) {
                 const f = Math.sin(time * 9 + i) * .1 + Math.sin(time * 17) * .06;
                 flame.scale.y = .65 + f;
                 flame.rotation.y = time * .4;
-                light.intensity = 2.8 + f * 3;
+                light.intensity = 7.5 + f * 3;
             });
         }, quality(low) {
             batches.forEach(({ mesh, count }) => mesh.count = low ? Math.ceil(count * .45) : count);

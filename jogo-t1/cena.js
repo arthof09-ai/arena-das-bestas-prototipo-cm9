@@ -47,7 +47,7 @@
             const renderer = new T.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
             renderer.outputEncoding = T.sRGBEncoding;
             renderer.toneMapping = T.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 1.05;
+            renderer.toneMappingExposure = 0.92;
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = T.PCFSoftShadowMap;
             renderer.shadowMap.autoUpdate = false;
@@ -59,8 +59,8 @@
             const scene = new T.Scene();
             scene.background = C(0x353b48);
             scene.fog = new T.Fog(C(0x353b48), 130, 270);
-            scene.add(new T.HemisphereLight(0x96b4df, 0x222632, .62));
-            const sun = new T.DirectionalLight(0xffb16b, 2.1);
+            scene.add(new T.HemisphereLight(0x96b4df, 0x222632, .40));
+            const sun = new T.DirectionalLight(0xffb16b, 1.35);
             sun.position.set(-24, 12, -18);
             sun.castShadow = true;
             sun.shadow.mapSize.set(512, 512);
