@@ -12,15 +12,23 @@
  * jogadora — só a Ong é controlável; as outras figuras são alvo e
  * cartão de vista. E os acertos da Ong mostram números de dano por
  * parcela, com interruptor no pop-up ⚙ — ver NOTAS-T1.md, secção T1.2.
- * Tranches T1.4+T1.3 fundidas (03/11): o combate corre no SISTEMA
- * DELE (teste de 1d6 + bónus de teste contra uma Defesa interna
- * nunca exibida; dano = a expressão de dados da ficha; a
- * Transformação custa PA e debita de verdade) e a batalha tem
+ * Tranches T1.4+T1.3 fundidas (03/11): o combate corria no SISTEMA
+ * DELE provisório (teste de 1d6 + bónus de teste contra uma Defesa
+ * interna nunca exibida; dano = a expressão de dados da ficha; a
+ * Transformação custa PA e debita de verdade) — sistema substituído
+ * pela tranche VLAB, ver o parágrafo seguinte — e a batalha tem
  * TURNOS: a vez roda por uma ordem fixa TEST, os monstros agem nas
  * vezes deles por uma IA básica da casca (no jogo de verdade manda
  * o H10 — diferença declarada nas NOTAS) e o movimento dela é uma
  * reserva em metros da ficha dela, gasta por toque ou pelas setas
- * do teclado. Ver NOTAS-T1.md, secção "Tranches T1.4+T1.3". */
+ * do teclado. Ver NOTAS-T1.md, secção "Tranches T1.4+T1.3".
+ * Tranche VLAB (04/11): a resolução de combate passa para o motor
+ * pinado vlab-completo.js (VLAB + DMG) — acerto por superação da
+ * CA, crítico que força o acerto, falha crítica com a tabela de
+ * desgraças dele, testes de morte M3, ataques de oportunidade,
+ * Desvincular e Correr validados pelo motor; as substituições e
+ * os resíduos nomeados vivem no bloco «combate VLAB» e nas NOTAS,
+ * secção "Tranche VLAB". */
 (() => {
   'use strict';
 
@@ -63,6 +71,30 @@
     } catch (_) {}
   }
 
+  /* Integração LEVEL UP (passo 0): captura a referência ao motor
+     de progressão e apaga-a do global JÁ — mesmo que a cena falhe a
+     arrancar (WebGL indisponível), a página nunca fica com o motor
+     acessível na consola. As leituras fazem-se mais abaixo, pela
+     referência capturada (bloco «progressão lida»). */
+  const LU_MOTOR = (typeof LevelUp !== 'undefined' && LevelUp
+    && typeof LevelUp.lerProgressao === 'function') ? LevelUp : null;
+  if (typeof window !== 'undefined') window.LevelUp = undefined;
+  /* Integração VLAB (passo 0, mesmo padrão): captura os motores de
+     combate/dano do ficheiro pinado vlab-completo.js (SHA-256
+     28cb67b7…a7855; frente VLAB, contrato v1.1 + emendas v1.2) e
+     apaga-os do global JÁ. A resolução de combate desta casca passa
+     a ser a deles (bloco «combate VLAB»); nada fica acessível na
+     consola — na vista da Party, consola incluída. NUANCE DO
+     BUNDLE (achado A1 do Crítico 2): o VLAB procura o DMG por
+     window.Dmg A CADA chamada (obterCalcularDano), por isso a
+     página repõe window.Dmg só durante cada chamada síncrona ao
+     motor (vlabComDmg, no bloco «combate VLAB») e volta a apagá-lo
+     — em repouso, a consola continua sem acesso aos dois motores. */
+  const VLAB_MOTOR = (typeof window !== 'undefined' && window.Vlab
+    && typeof window.Vlab.resolverAtaque === 'function') ? window.Vlab : null;
+  const DMG_MOTOR = (typeof window !== 'undefined' && window.Dmg
+    && typeof window.Dmg.calcularDano === 'function') ? window.Dmg : null;
+  if (typeof window !== 'undefined') { window.Vlab = undefined; window.Dmg = undefined; }
   const $ = id => document.getElementById(id);
   const mapaEl = $('mapa'), msgTxt = $('mensagem-txt'), acoesEl = $('acoes');
   const fichaEl = $('ficha'), chipEl = $('fichachip'), cfgEl = $('cfgpop');
@@ -176,13 +208,29 @@
 
   /* ---------- combate no sistema dele (tranche T1.4) ----------
    * Fonte única: TEST_CHARACTERS via engine criarEstado, conferida
-   * contra F-MECANICAS §1.1 — o resolvedor local de TESTE, com a
-   * compressão D3 co-assinada e declarada provisória. NÃO é o VLAB
-   * (a ABI de ataque do VLAB está indisponível, Gate E em HOLD até
-   * 05/11): nada aqui se chama oficial nem homologado.
+   * contra F-MECANICAS §1.1. A TABELA continua a ser a fonte dos
+   * dados de combate desta casca, mas a RESOLUÇÃO já não é o
+   * resolvedor local provisório da T1.4: desde a tranche VLAB, quem
+   * resolve é o motor pinado (vlab-completo.js — VLAB + DMG), pelo
+   * adaptador do bloco «combate VLAB». Substituições nomeadas:
+   * (i) o limiar de acerto dela deixa de ser a Defesa comprimida
+   * round(CA/3)+3 e passa a ser a CA da ficha (superar, contrato
+   * VLAB Parte A); (ii) o teste do Chicote deixa de ser a derivação
+   * 1d6+bónusTeste e passa a ser a expressão da ficha (4d6+INT,
+   * encomenda §1.4); (iii) o dano deixa de rolar localmente e vem
+   * do DMG (parcelas por tipo); (iv) o Chicote passa a custar o PA
+   * da técnica (8 PA, encomenda §1.4). O que FICA da derivação
+   * F-MECANICAS, declarado: o teste dos MONSTROS (1d6+bónusTeste
+   * contra a Defesa derivada dela, via defesaAplicavel do contrato)
+   * — as fichas das bestas não trazem teste de ataque em fonte
+   * nenhuma (censo do corpus: «teste de ataque ausente»), e inventar
+   * o par expressão×CA deles violaria a regra de não-invenção; a
+   * lacuna fica nomeada no relatório da tranche VLAB.
    * COMBATE_TEST guarda, por figura, SÓ os campos que o combate usa
    * (ca, atkQtd, atkFaces, atkBonus, arma, dano, alcance). Vida e PA
    * de monstro NÃO entram — a ficha do monstro não mora nesta tabela.
+   * (A Vida do elenco inimigo mora em VIDA_TEST, mais abaixo —
+   * COMPLETAMENTO A01, com a fonte de cada valor lavrada lá.)
    * As linhas dos monstros e as Defesas derivadas são RESÍDUO
    * DECLARADO, classe (b) — família dos resíduos aceites pelo Mestre
    * (PA exactamente calculável, 02/11 14:21; vida fixável por evento
@@ -222,24 +270,45 @@
   for (const id of ['orc', 'capanga', 'lobo'])
     DEFESA_TEST[id] = Math.round(COMBATE_TEST[id].ca / 3) + 3;
 
-  /* Decompõe uma expressão da gramática da ficha (NdM[+B]) em
-   * parcelas: cada dado rola e sai com a sua face (classe 'dados',
-   * rótulo 'dado') e o termo constante sai como parcela própria
-   * (classe 'bonus', rótulo 'bónus') — o +B da expressão da arma, sem
-   * nome de atributo nenhum. É a peça única de rolagem de dano da
-   * casca: serve os flutuantes dela e o total interno da IA.
-   * Parcelas nomeadas de técnica (classe 'tecnica') entrariam aqui
-   * se uma ficha as declarasse; a dela não declara nenhuma nesta
-   * tranche (tecnica: null na fonte) — nenhuma nasce. */
-  function rolarExpressao(expr) {
-    const parcelas = [];
-    for (let i = 0; i < expr.qtd; i++)
-      parcelas.push({ classe: 'dados', rotulo: 'dado', valor: 1 + Math.floor(Math.random() * expr.faces) });
-    if (expr.bonus) parcelas.push({ classe: 'bonus', rotulo: 'bónus', valor: expr.bonus });
-    let total = 0;
-    for (const p of parcelas) total += p.valor;
-    return { parcelas, total };
+  /* Vida do elenco inimigo (COMPLETAMENTO A01, 04/11/2026 —
+     condição de fecho da tranche, sentença do juiz em
+     JULGAMENTO-JUIZ-T1.md (b)): cada valor é a vidaTotal LIDA na
+     ficha que o Motor de Fichas produziu (corpus congelado em
+     ~/workspace/motor-fichas/corpus/casos/), com a identidade da
+     figura conferida contra COMBATE_TEST (CA e dano têm de bater
+     — é assim que se sabe que a ficha é DESTA figura):
+       orc     26 — ORC TEST N01 (C1-orc-n01.json; fixture
+                 TEST_CHARACTERS.md §1.3, «Vida natural 26»;
+                 CA 33 e dano 4d6+0 = COMBATE_TEST.orc).
+       capanga 210 — Capanga 1 (C4-capanga-r199.json; fixture
+                 TEST_CHARACTERS.md §3, caso VLAB R199, «Vida
+                 máxima 210»; dano 2d6+25 = COMBATE_TEST.capanga;
+                 rank Prata 3 = FONTES_RANK.capanga).
+       lobo    270 — Lobo da Caverna, Prata 1: a ficha ORIGINAL
+                 dizia 240 (C5-lobo-duas-fontes.json: bestiário E
+                 página de caso R199 concordantes), mas a auditoria
+                 AUDITORIA-FICHA-LOBO.md provou que 240 DESVIA da
+                 régua de criação de bestas (Regra 5: 30 + 6×(20+CON
+                 20) = 270; o Espectro vizinho tem o mesmo −30). Por
+                 ORDEM DO MESTRE (04/11/2026 19:37) a ficha foi
+                 RECRIADA no Notion com a régua aplicada — Vida 270,
+                 bancada LIBERA e readback verde às 19:44 (registo:
+                 FICHA-LOBO-RECRIADA.md). O valor ligado é o da
+                 ficha recriada: 270. CA 34 e Patada 1d6+24 =
+                 COMBATE_TEST.lobo (identidade inalterada).
+     Como COMBATE_TEST/DEFESA_TEST: resíduo TEST declarado, de
+     exibição ZERO — a Vida de um monstro nunca aparece em frase,
+     ficha, cartão, flutuante, recibo público ou registo
+     exportável para a Party; vive só no estado interno e nas
+     saídas soDoMestre do motor (portão H-3 intacto). */
+  const VIDA_TEST = { orc: 26, capanga: 210, lobo: 270 };
+  function vlabVidaMonstro(id) {
+    return Math.max(0, VIDA_TEST[id] - (ESTADO_VLAB[id].danoSofrido | 0));
   }
+
+  /* (A antiga peça local de rolagem de dano da casca saiu na
+   * tranche VLAB: o dano rola dentro do DMG, por parcelas de tipo —
+   * ver o bloco «combate VLAB». Não fica nenhum resolvedor local.) */
   /* A expressão de dano dela no estado actual (normal/transformada). */
   function expressaoOng() {
     const c = COMBATE_TEST.ong;
@@ -296,13 +365,14 @@
        vida 99, alma 91 (0 comprometido), CA 30. O "perdido" e o "PA
        livre" NÃO são literais: compõem-se em abrirFicha a partir de
        danoSofrido e paGasto (tempo de corrida). O campo de ataque
-       mostra a fórmula executada (1d6+10 — derivação nas NOTAS);
+       mostra a fórmula executada (4d6+19 — a expressão da ficha,
+       4d6+INT com INT 19; encomenda §1.4; desde a tranche VLAB);
        campo de CD não existe: é gramática estranha ao sistema dele.
        Atributos: INT 19 é da fonte; os restantes ficam como exibição
        TEST sem fonte no elenco (declarado nas NOTAS). */
     ong: { completa: true, nome: 'ONG', sub: 'Espiritualista · Água',
       vida: { total: 99 }, alma: { total: 91, comprometido: 0 },
-      ca: 30, desloc: '9 m', ini: '+4', ataque: 'Teste 1d6+10',
+      ca: 30, desloc: '9 m', ini: '+4', ataque: 'Teste 4d6+19',
       attrs: [['FOR', 12], ['DES', 16], ['CON', 13], ['INT', 19], ['SAB', 15], ['CAR', 10]],
       tecnicas: [['Transformação', '40 PA']] }
   };
@@ -328,6 +398,651 @@
       aparencia: 'Um lobo grande, de quatro patas, com o pelo escuro em tons de cinzento-carvão. Tem uma cicatriz sobre o olho esquerdo, branco e cego, a ponta da orelha direita cortada e a pata dianteira esquerda branca.',
       frase: 'Mesmo de longe, reconhece-se pela cicatriz e pela pata branca.' }
   };
+
+  /* ---------- progressão lida (integração LEVEL UP — V1: só leitura) ----------
+   * Recado da frente LEVEL UP (03/11/2026 23:16, ordem do Mestre):
+   * leitura de classificacao / rank / dadoProgressao, âmbito V1 da
+   * encomenda do jogo. Homologação B (decisão dele, 03/11 23:08):
+   * leitura + contrato + Regra 2 canónicos; o resto continua TEST.
+   * O motor é o levelup.js DESTA pasta, byte a byte o pinado da
+   * frente (v2.1, SHA-256 f0b61973…a247; bateria dele 123/123 PASS;
+   * leituras byte-idênticas à v1 em 11/11 — prova desta frente): o dado
+   * de progressão DERIVA-SE pela tabela do próprio motor via
+   * lerProgressao — nenhuma tabela copiada à mão neste ficheiro.
+   * Consumo só pela interface pública (lerProgressao): a versão
+   * futura do motor (limiares FA, regras novas de subida) troca-se
+   * por re-pin + baterias, sem refazer este bloco.
+   * ÂMBITO FECHADO: não se aplica progressão (aplicarProgressao em
+   * combate fica fora da V1), não se escreve em ficha nenhuma, e
+   * NENHUM resultado destas leituras é mostrado em ecrã nenhum
+   * nesta tranche — nem o da própria.
+   * FONTES_RANK: os textos de rank de cada figura, tal como estão
+   * escritos nas fontes dela (só os três rótulos que o motor lê;
+   * proveniência completa — fixture TEST_CHARACTERS/casos R199 e
+   * corpus do Motor de Fichas C1–C5 — nas NOTAS e no relatório da
+   * tranche; aqui fica o essencial por figura):
+   *  - ong «Prata 2» e capanga «Prata 3»: fonte única, leitura
+   *    «lido» no corpus (C3/C4).
+   *  - lobo: duas fontes reais (bestiário C5-BEST + fixture C5-
+   *    R199) — ver CONFLITOS_RANK_DECLARADOS, abaixo.
+   *  - orc {}: nenhuma fonte fixa o Orc DESTA batalha num estágio
+   *    da matriz de 25 (C1/C2 são outros estágios) — declarar um
+   *    seria inventar; a leitura é o erro nomeado.
+   * ERROS NOMEADOS, nunca silenciosos, sempre envelopes
+   * { valor, estado, prov } — nunca número solto:
+   * UNRESOLVED_RANK_CONFLICT (sem inferência, safe_to_apply=false),
+   * FONTE_RANK_ILEGIVEL, FICHA_SEM_RANK_LEGIVEL e, se o motor
+   * faltar, MOTOR_LEVELUP_INDISPONIVEL.
+   * EXPOSIÇÃO NOMEADA (não escondida): nesta casca de TESTE, os
+   * textos de FONTES_RANK e o ficheiro do motor são servidos no
+   * fonte da página — como os resíduos TEST já declarados da casca
+   * (COMBATE_TEST/DEFESA_TEST). A fronteira D6 da frente LEVEL UP
+   * declara envelopes de progressão material só-do-Mestre: tratar
+   * esta exposição como resíduo TEST visível é EXCEPÇÃO a essa
+   * fronteira e exige palavra expressa registada; sem ela, esta
+   * tranche NÃO se publica (estado nas NOTAS/relatório). O que a
+   * página em execução nunca faz: mostrar, registar em DOM/
+   * Supervisor/localStorage ou ligar a window qualquer leitura. */
+  const FONTES_RANK = {
+    ong:     { rotuloRank: 'Prata 2' },
+    capanga: { rotuloRank: 'Prata 3' },
+    lobo:    { rotuloRank: 'prata 1 (2d6)', titulo: 'Prata 1' },
+    orc:     {}
+  };
+  /* Conflitos de rank DECLARADOS pelas próprias fontes (não são
+     divergência de valores detectada: os textos do Lobo concordam
+     no valor escrito). A fixture R199 regista divergência entre o
+     corpo da ficha e a hierarquia do bestiário e manda manter o
+     conflito visível, sem correcção automática (corpus C5-R199; o
+     Motor de Fichas lê esse caso como rank estado «divergente»).
+     Alimentado com os textos crus, o motor devolve
+     FONTE_RANK_ILEGIVEL para o bloco do bestiário — etiqueta que
+     as fontes não sustentam (não declaram o texto ilegível;
+     declaram-no EM CONFLITO). A integração adopta o estado de
+     conflito do contrato: envelopes «divergente»,
+     UNRESOLVED_RANK_CONFLICT, safe_to_apply=false, NENHUM valor
+     inferido; a leitura crua do motor fica registada nas NOTAS. */
+  const CONFLITOS_RANK_DECLARADOS = {
+    lobo: [
+      { fonte: 'bestiário — bloco de rank (C5-BEST)', textoBruto: 'prata 1 (2d6)' },
+      { fonte: 'bestiário — título da subpágina de rank (C5-BEST)', textoBruto: 'Prata 1' },
+      { fonte: 'fixture R199 (C5-R199)', textoBruto: 'Prata 1 no corpo da ficha — a fonte regista divergência com a hierarquia do bestiário e manda manter o conflito visível, sem correção automática' }
+    ]
+  };
+  function envelopeDivergente(fontes) {
+    const prov = { fontes: JSON.parse(JSON.stringify(fontes)) };
+    return { valor: null, estado: 'divergente', prov };
+  }
+  const PROGRESSAO_LIDA = {};
+  for (const u of ELENCO) {
+    if (LU_MOTOR) {
+      const l = LU_MOTOR.lerProgressao(
+        { id: u.id, fontesRank: FONTES_RANK[u.id] || {} });
+      PROGRESSAO_LIDA[u.id] = { classificacao: l.classificacao,
+        rank: l.rank, dadoProgressao: l.dadoProgressao, erro: l.erro };
+    } else {
+      const novoEnv = () => ({ valor: null, estado: 'nao-lido', prov: { fontes: [] } });
+      PROGRESSAO_LIDA[u.id] = { classificacao: novoEnv(), rank: novoEnv(),
+        dadoProgressao: novoEnv(),
+        erro: { codigo: 'MOTOR_LEVELUP_INDISPONIVEL', safe_to_apply_rank_rules: false } };
+    }
+    const conf = CONFLITOS_RANK_DECLARADOS[u.id];
+    if (conf) {
+      PROGRESSAO_LIDA[u.id] = {
+        classificacao: envelopeDivergente(conf),
+        rank: envelopeDivergente(conf),
+        dadoProgressao: envelopeDivergente(conf),
+        erro: { codigo: 'UNRESOLVED_RANK_CONFLICT',
+          fontesEmConflito: JSON.parse(JSON.stringify(conf)),
+          safe_to_apply_rank_rules: false,
+          declaradoPor: 'fixture R199 (corpus C5-R199)' }
+      };
+    }
+  }
+  /* A FichaJogo da própria passa a carregar os três campos lidos
+     (envelopes completos, com estado e proveniência). */
+  if (FICHAS[PROPRIA]) {
+    FICHAS[PROPRIA].classificacao = PROGRESSAO_LIDA[PROPRIA].classificacao;
+    FICHAS[PROPRIA].rank = PROGRESSAO_LIDA[PROPRIA].rank;
+    FICHAS[PROPRIA].dadoProgressao = PROGRESSAO_LIDA[PROPRIA].dadoProgressao;
+  }
+
+  /* ---------- combate VLAB (integração do motor pinado) ----------
+   * Adaptador entre a casca e o motor vlab-completo.js (VLAB +
+   * DMG, contrato v1.1 + emendas v1.2 da frente VLAB). TODA a
+   * resolução de combate passa por aqui: a casca monta as entradas
+   * com os dados dela, chama o motor e consome as saídas separando
+   * o que é público do que é só-do-Mestre.
+   * PRIVACIDADE (inviolável): os números de Vida/Alma e os estados
+   * das bestas/NPCs vivem SÓ no campo soDoMestre das saídas e no
+   * estado interno ESTADO_VLAB desta vista — nunca em frase, ficha,
+   * cartão, flutuante ou registo exportável para a Party.
+   * COMPLETAMENTO A01 (04/11/2026): a Vida deste elenco ficou
+   * fixada com fonte (VIDA_TEST, acima) e o adaptador passou a
+   * enviar vidaActual/vidaTotal dos monstros — só para dentro do
+   * motor; o dano que sofrem acumula-se no campo interno
+   * danoSofrido de ESTADO_VLAB e a queda deles consome-se do
+   * foraDeCombate do motor (vlabAplicarAlvoDepois). Com os três
+   * fora de combate, a batalha fecha no terminal de VITÓRIA de
+   * fimDeBatalha (doutrina §1.7 ganha o segundo terminal; o da
+   * derrota mantém-se intacto). */
+  const ESTADO_VLAB = {};
+  for (const u of ELENCO) ESTADO_VLAB[u.id] = {
+    danoSofrido: 0,           // A01: dano acumulado dos MONSTROS (a dela vive na variável da casca); a Vida corrente deriva-se em vlabVidaMonstro
+    estados: [],              // estados mecânicos internos (caido; fraco deriva-se)
+    armaCaida: false,         // desgraça: arma no chão (recuperar = 1 Acção de Movimento)
+    armaQuebrada: false,      // desgraça: arma partida até ser consertada (palavra dele)
+    desvantagemAtaque: 0,     // quebra-corpo: +1 nível de Desvantagem nos ataques, até ao fim do combate
+    deslocMetade: false,      // quebra-corpo: deslocamento a metade, até ao fim do combate
+    reacaoDisponivel: true,   // 1 Reacção por turno (renova na vez da própria figura)
+    estadoMorte: null         // só dela: { fase: 'aMorrer'|'estabilizado', sucessos, falhas }
+  };
+  /* Reacções-limiar declaradas (contrato Parte B): a página só
+     declara uma reacção quando tem TODOS os componentes na ficha —
+     Defender = 6 + CON + Armadura + Fortitude (bancada C1). Neste
+     elenco nenhuma ficha da casca traz Armadura+Fortitude, por isso
+     a tabela nasce vazia e nenhum ataque leva reacção-limiar: lacuna
+     de dados nomeada, nunca um valor inventado. Entradas futuras:
+     { tipo:'Defender', con, armadura, fortitude, origem } ou
+     { tipo:'Esquivar', valor, origem } — o construtor em
+     vlabFichaAlvo monta a reacção (Defender passa pela fórmula).
+     A mecânica do limiar está provada nos casos do MOTOR (K6 da
+     bateria da tranche); a fórmula da página corre quando houver
+     dados — declaração corrigida pós-Crítico 1 (achado 5). */
+  const REACCOES_DECLARADAS = {};
+  function vlabValorDefender(con, armadura, fortitude) {
+    return 6 + con + armadura + fortitude;
+  }
+  /* Repõe o DMG no global só durante a chamada ao motor (ver o
+     passo 0): sem isto, todo o acerto morria em DMG_INDISPONIVEL. */
+  function vlabComDmg(fn) {
+    if (typeof window === 'undefined' || !DMG_MOTOR) return fn();
+    window.Dmg = DMG_MOTOR;
+    try { return fn(); }
+    finally { window.Dmg = undefined; }
+  }
+  /* ---------- PORTÃO RECIBO-POR-ALVO (H-3, bancada de
+     integradores, juiz volta 1 §4.1) ----------
+     O bundle compõe publico.recibo com a Defesa do alvo
+     (valor + nome da regra) e com a expressão/faces/bónus do
+     atacante, e o anexo define publico como «visível» — sem
+     filtro, qualquer superfície da Party que um dia imprima o
+     recibo imprime números de outrem. A filtração vive AQUI,
+     na camada de integração (o bundle não se edita): cada
+     adaptador devolve a saída com publico.recibo já filtrado
+     por alvo e o recibo completo movido para
+     soDoMestre.reciboCompleto (só renderizável em vista do
+     Mestre — nesta casca, nunca sai do objecto em memória:
+     nem say(), nem ficha, nem o registo exportado o contêm).
+     Os recibos PÚBLICOS (filtrados) ficam em RECIBOS_PUBLICOS
+     e o Supervisor exporta-os: é a costura de prova do portão
+     (bateria VL6 + bateria-recibo + sonda-recibo). */
+  const RECIBOS_PUBLICOS = [];
+  function vlabRegistarReciboPublico(tipo, de, para, recibo) {
+    RECIBOS_PUBLICOS.push({ tipo, de: de || null, para: para || null, recibo });
+    while (RECIBOS_PUBLICOS.length > 24) RECIBOS_PUBLICOS.shift();
+  }
+  function vlabFiltrarReciboAtaque(s, atacanteId, alvoId) {
+    if (!s || s.erro || !s.publico || typeof s.publico.recibo !== 'string') return s;
+    if (!s.soDoMestre) s.soDoMestre = {};
+    s.soDoMestre.reciboCompleto = s.publico.recibo;   // (c): completo só em soDoMestre
+    const resultado = String(s.resultado || '').toUpperCase();
+    let danoTxt = '';
+    if ((s.resultado === 'acerta' || s.resultado === 'critico') && s.danoAplicado) {
+      danoTxt = ` · dano ${s.totalEfectivo}`
+        + (s.rdAplicada ? ` (bruto ${s.danoAplicado.total}, RD ${s.rdAplicada})` : '')
+        + (s.danoAplicado.parcelas && s.danoAplicado.parcelas[0] && s.danoAplicado.parcelas[0].tipo
+          ? ` (${s.danoAplicado.parcelas.map(p => p.tipo).join('+')})` : '');
+    }
+    if (atacanteId === PROPRIA) {
+      /* (a) o alvo é OUTRO: a expressão/faces/total DELA ficam
+         (desenho aprovado da rolagem dela); a Defesa do alvo —
+         valor e nome-valor da regra — sai por completo. */
+      const rol = s.rolagem;
+      const conjuntos = rol && Array.isArray(rol.conjuntosDeFaces)
+        ? rol.conjuntosDeFaces.map(c => `[${c.join(',')}]`).join(' | ') : '';
+      s.publico = { recibo: `${rol ? rol.expressao : ''} → ${conjuntos} = ${rol ? rol.total : ''} → ${resultado}${danoTxt}` };
+    } else if (alvoId === PROPRIA) {
+      /* (b) o atacante é OUTRO: sem expressão, sem faces e sem
+         bónus dele; ficam o resultado e o dano sobre ELA (é o
+         número dela, já narrado na frase do golpe). */
+      s.publico = { recibo: `ataque de ${nomeCena(atacanteId)} contra a Ong → ${resultado}${danoTxt}` };
+    } else {
+      s.publico = { recibo: `ataque → ${resultado}${danoTxt}` };
+    }
+    vlabRegistarReciboPublico('ataque', atacanteId, alvoId, s.publico.recibo);
+    return s;
+  }
+  function vlabFiltrarReciboSalvaguarda(s) {
+    if (!s || s.erro || !s.publico || typeof s.publico.recibo !== 'string') return s;
+    if (!s.soDoMestre) s.soDoMestre = {};
+    s.soDoMestre.reciboCompleto = s.publico.recibo;
+    /* Sem CD (número do conjurador), sem total do teste do
+       alvo e sem total da reflexão: fica o desfecho e o dano
+       efectivo, que a ficção já narra. */
+    s.publico = { recibo: (s.reflexao && s.reflexao.superou)
+      ? `reflexão → REFLETE metade${s.danoReflectidoPendente ? ` (${s.danoReflectidoPendente.valor})` : ''}`
+      : `salvaguarda → ${s.resistiu ? 'RESISTE' : 'não resiste'}${s.totalEfectivo !== null && s.totalEfectivo !== undefined ? ` · dano efectivo ${s.totalEfectivo}` : ''}` };
+    vlabRegistarReciboPublico('salvaguarda', null, null, s.publico.recibo);
+    return s;
+  }
+  function vlabFiltrarReciboCura(s, nomeOrigem) {
+    if (!s || s.erro || !s.publico || typeof s.publico.recibo !== 'string') return s;
+    if (!s.soDoMestre) s.soDoMestre = {};
+    s.soDoMestre.reciboCompleto = s.publico.recibo;
+    /* Sem expressão nem faces de quem cura (números de outrem
+       quando quem cura não é a própria): fica a origem. O
+       total da cura já vivia só em soDoMestre no bundle. */
+    s.publico = { recibo: `cura (origem: ${nomeOrigem || '—'})` };
+    vlabRegistarReciboPublico('cura', null, null, s.publico.recibo);
+    return s;
+  }
+  const vlabSemente = () => (Math.floor(Math.random() * 4294967296) >>> 0);
+  const vlabVerificacao = () => [1 + Math.floor(Math.random() * 6),
+    1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
+  function vlabExprAtaque(id) {
+    if (id === PROPRIA) return transformada ? '4d6+25' : '4d6+19';   // 4d6+INT (INT 19; transformada 25)
+    const c = COMBATE_TEST[id];
+    return `${c.atkQtd}d${c.atkFaces}+${bonusTeste(c)}`;              // derivação TEST declarada (ver cabeçalho)
+  }
+  function vlabExprDanoStr(id) {
+    const e = id === PROPRIA ? expressaoOng() : COMBATE_TEST[id].dano;
+    return `${e.qtd}d${e.faces}${e.bonus ? '+' + e.bonus : ''}`;
+  }
+  function vlabVidaOng() { return Math.max(0, FICHAS.ong.vida.total - danoSofrido); }
+  function vlabOngFraca() { return vlabVidaOng() > 0 && vlabVidaOng() * 10 < FICHAS.ong.vida.total; }
+  function vlabEstadosDe(id) {
+    const st = ESTADO_VLAB[id].estados.slice();
+    if (id === PROPRIA && vlabOngFraca() && !st.includes('fraco')) st.push('fraco');
+    /* A01: Fraco (Regra 7) também se deriva para os monstros, da
+       Vida interna deles — mesma régua dos 10% que a dela. */
+    if (id !== PROPRIA && VIDA_TEST[id] != null) {
+      const v = vlabVidaMonstro(id);
+      if (v > 0 && v * 10 < VIDA_TEST[id] && !st.includes('fraco')) st.push('fraco');
+    }
+    return st;
+  }
+  function vlabFichaAtacante(id) {
+    const f = {
+      testes: { ataque: vlabExprAtaque(id) },
+      paLivre: id === PROPRIA
+        ? FICHAS.ong.alma.total - FICHAS.ong.alma.comprometido - paGasto : 0,
+      estado: vlabEstadosDe(id),
+      armaCaida: ESTADO_VLAB[id].armaCaida,
+      armaQuebrada: ESTADO_VLAB[id].armaQuebrada
+    };
+    if (id === PROPRIA) {
+      f.vidaActual = vlabVidaOng();
+      f.vidaTotal = FICHAS.ong.vida.total;
+      f.testesDeMorteDesignado = true;   // personagem designada (contrato M3): a corrida é dela
+    } else if (VIDA_TEST[id] != null) {
+      /* A01: o monstro como ATACANTE também declara a Vida —
+         a desgraça «acerta-se» do motor aplica-lhe o dano próprio
+         (com o tecto de 1 de Vida: nunca o mata). O valor viaja
+         para dentro do motor; nunca sai em superfície da Party. */
+      f.vidaActual = vlabVidaMonstro(id);
+      f.vidaTotal = VIDA_TEST[id];
+    }
+    return f;
+  }
+  function vlabFichaAlvo(id) {
+    const f = {
+      ca: id === PROPRIA
+        ? (transformada ? COMBATE_TEST.ong.transformacao.caNova : COMBATE_TEST.ong.ca)
+        : COMBATE_TEST[id].ca,
+      estado: vlabEstadosDe(id),
+      rd: { geral: 0, porTipo: {} }
+    };
+    const decl = REACCOES_DECLARADAS[id];
+    if (decl) f.reacaoDefensiva = decl.tipo === 'Defender'
+      ? { tipo: 'Defender', valor: vlabValorDefender(decl.con, decl.armadura, decl.fortitude), origem: decl.origem }
+      : { tipo: decl.tipo, valor: decl.valor, origem: decl.origem };
+    if (id === PROPRIA) {
+      f.vidaActual = vlabVidaOng();
+      f.vidaTotal = FICHAS.ong.vida.total;
+      f.testesDeMorteDesignado = true;
+      if (ESTADO_VLAB.ong.estadoMorte) f.estadoMorte = ESTADO_VLAB.ong.estadoMorte;
+    } else if (VIDA_TEST[id] != null) {
+      /* A01: o monstro como ALVO declara a Vida (só para dentro
+         do motor) — é dela que o motor deriva o foraDeCombate. */
+      f.vidaActual = vlabVidaMonstro(id);
+      f.vidaTotal = VIDA_TEST[id];
+    }
+    return f;
+  }
+  /* Alvo DELA usa defesaAplicavel: o par teste×Defesa dos monstros é
+     a derivação TEST declarada no cabeçalho (não há par de ficha).
+     EXCEPÇÃO DA REGRA B0 (achado 1 do Crítico 1): contra um Ataque
+     de Oportunidade o motor RECUSA qualquer alvo com defesaAplicavel
+     ou reacaoDefensiva declaradas (o alvo não pode reagir — declarar
+     é erro nomeado e o golpe nunca resolvia). Nesse caso o limiar
+     TEST do par vai no campo ca, sem reacção nenhuma. */
+  function vlabFichaAlvoDela(paraOportunidade) {
+    const f = vlabFichaAlvo(PROPRIA);
+    if (paraOportunidade) {
+      delete f.reacaoDefensiva;
+      f.ca = defesaDe(PROPRIA);
+      return f;
+    }
+    delete f.ca;
+    f.defesaAplicavel = { valor: defesaDe(PROPRIA), nomeDaRegra: 'Defesa (derivação F-MECANICAS §1.1/D3 desta casca)', origem: 'par TEST declarado — as fichas das bestas não trazem teste de ataque' };
+    return f;
+  }
+  function vlabFlanqueandoSobre(alvoId, atacanteId) {
+    const a = unidade(atacanteId), t = unidade(alvoId);
+    if (!a || !t) return false;
+    const dx = a.posicao.x - t.posicao.x, dy = a.posicao.y - t.posicao.y;
+    return ELENCO.some(u => {
+      if (u.id === atacanteId || u.id === alvoId) return false;
+      const v = unidade(u.id);
+      return v && distanciaEntre(u.id, alvoId) === 1
+        && v.posicao.x - t.posicao.x === -dx && v.posicao.y - t.posicao.y === -dy;
+    });
+  }
+  /* A chamada única ao motor. opts: { modoDesgraca, semente,
+     verificacao, ataqueDeOportunidade, desgracaEscolhida,
+     confirmacaoDeProposta } — o resto deriva-se do estado. */
+  function vlabResolverAtaqueCompleto(atacanteId, alvoId, opts) {
+    opts = opts || {};
+    if (!VLAB_MOTOR) return { erro: { codigo: 'MOTOR_VLAB_INDISPONIVEL', detalhe: 'vlab-completo.js não carregou' } };
+    const c = COMBATE_TEST[atacanteId];
+    const tecnica = atacanteId === PROPRIA
+      ? { nome: c.arma, custoPA: 8, expressaoAtaque: vlabExprAtaque(atacanteId),
+          expressaoDano: vlabExprDanoStr(atacanteId), tipo: 'agua', magia: false, usaArma: true }
+      : { nome: c.arma, custoPA: 0, expressaoAtaque: vlabExprAtaque(atacanteId),
+          expressaoDano: vlabExprDanoStr(atacanteId), usaArma: true };
+    const alvoFicha = (alvoId === PROPRIA && atacanteId !== PROPRIA)
+      ? vlabFichaAlvoDela(opts.ataqueDeOportunidade === true) : vlabFichaAlvo(alvoId);
+    const contexto = {
+      semente: opts.semente != null ? opts.semente : vlabSemente(),
+      verificacaoCritico: opts.verificacao || vlabVerificacao(),
+      modoDesgraca: opts.modoDesgraca || 'sorte',
+      aliadosAoAlcance: [],   // batalha a solo: sem aliados de nenhum dos lados nesta casca
+      niveisDesvantagem: ESTADO_VLAB[atacanteId].desvantagemAtaque || 0
+    };
+    if (opts.ataqueDeOportunidade) {
+      contexto.ataqueDeOportunidade = true;
+      contexto.niveisVantagem = 1;   // Regra 3: ataque de oportunidade = ataque normal com Vantagem
+    }
+    if (atacanteId !== PROPRIA && alvoId === PROPRIA && vlabFlanqueandoSobre(PROPRIA, atacanteId))
+      contexto.flanqueando = true;
+    if (opts.desgracaEscolhida) contexto.desgracaEscolhida = opts.desgracaEscolhida;
+    if (opts.confirmacaoDeProposta) contexto.confirmacaoDeProposta = opts.confirmacaoDeProposta;
+    /* Arma caída de um monstro: apanhá-la gasta o movimento dele —
+       quem chama declara a recuperação e a bandeira limpa-se aqui. */
+    if (atacanteId !== PROPRIA && ESTADO_VLAB[atacanteId].armaCaida) {
+      contexto.armaRecuperada = true;
+      ESTADO_VLAB[atacanteId].armaCaida = false;
+    }
+    return vlabFiltrarReciboAtaque(vlabComDmg(() => VLAB_MOTOR.resolverAtaque({
+      atacante: vlabFichaAtacante(atacanteId), alvo: alvoFicha, tecnica, contexto })), atacanteId, alvoId);
+  }
+  /* Consome o lado do ATACANTE de uma saída (desgraças e bandeiras).
+     Devolve a info da falha crítica (ou null). */
+  function vlabAplicarAtacanteDepois(id, saida) {
+    const sm = saida.soDoMestre || {};
+    const dep = sm.atacanteDepois;
+    if (dep) {
+      if (dep.armaCaida) ESTADO_VLAB[id].armaCaida = true;
+      if (dep.armaQuebrada) ESTADO_VLAB[id].armaQuebrada = true;
+      for (const e of dep.estadosNovos || [])
+        if (!ESTADO_VLAB[id].estados.includes(e)) ESTADO_VLAB[id].estados.push(e);
+      if (id === PROPRIA && Number.isFinite(dep.vidaActual)) {
+        danoSofrido = FICHAS.ong.vida.total - dep.vidaActual;   // acerta-se: o motor já aplicou o tecto (nunca mata)
+        atualizarChipVida();
+      } else if (id !== PROPRIA && VIDA_TEST[id] != null && Number.isFinite(dep.vidaActual)) {
+        /* A01: o dano próprio do monstro (desgraça «acerta-se»)
+           acumula-se na Vida interna dele — o motor aplicou o
+           tecto de 1 de Vida, por isso nunca nasce uma queda aqui. */
+        ESTADO_VLAB[id].danoSofrido = VIDA_TEST[id] - dep.vidaActual;
+      }
+    }
+    if (sm.falhaCritica && sm.falhaCritica.efeitoMecanico
+        && sm.falhaCritica.efeitoMecanico.tipo === 'quebraCorporal') {
+      ESTADO_VLAB[id].desvantagemAtaque = 1;
+      ESTADO_VLAB[id].deslocMetade = true;
+    }
+    return sm.falhaCritica || null;
+  }
+  /* Consome o lado do ALVO de uma saída. Para os monstros: estados
+     internos e Vida interna, em silêncio total — e, desde o
+     COMPLETAMENTO A01, a QUEDA: o foraDeCombate do motor tomba a
+     figura na cena (setVivo) e devolve 'caiu'. Para ela: Vida,
+     corrida de morte. Devolve 'morreu' | 'aMorrer' | 'caiu' | null. */
+  function vlabAplicarAlvoDepois(id, saida) {
+    const dep = (saida.soDoMestre || {}).alvoDepois;
+    if (!dep) return null;
+    if (id !== PROPRIA) {
+      for (const e of dep.estadosNovos || [])
+        if (!ESTADO_VLAB[id].estados.includes(e)) ESTADO_VLAB[id].estados.push(e);
+      for (const e of dep.estadosRemovidos || [])
+        ESTADO_VLAB[id].estados = ESTADO_VLAB[id].estados.filter(x => x !== e);
+      if (VIDA_TEST[id] != null && Number.isFinite(dep.vidaActual))
+        ESTADO_VLAB[id].danoSofrido = VIDA_TEST[id] - dep.vidaActual;
+      const caiu = VIDA_TEST[id] != null
+        && (dep.vidaActual === 0 || (dep.estadosNovos || []).includes('foraDeCombate'));
+      if (caiu) {
+        /* A queda VÊ-SE pela máquina de morte da cena quando ela
+           existe; na cena sagrada do vivo cai no setVivo de sempre
+           (o mesmo caminho do restauro de figura morta). */
+        try {
+          const pm = view.apresentarMorte(id);
+          if (pm && pm.catch) pm.catch(() => {});
+        } catch (_) { view.setVivo(id, false); }
+        return 'caiu';
+      }
+      return null;
+    }
+    if (Number.isFinite(dep.vidaActual)) {
+      danoSofrido = FICHAS.ong.vida.total - dep.vidaActual;
+      atualizarChipVida();
+    }
+    if (dep.estadoMorte) ESTADO_VLAB.ong.estadoMorte = dep.estadoMorte;
+    if (dep.morteAdjudicada) return 'morreu';
+    if (dep.estadoMorte && dep.estadoMorte.fase === 'aMorrer'
+        && vlabVidaOng() <= 0) return 'aMorrer';
+    return null;
+  }
+  /* Terminal de VITÓRIA (A01): os três monstros fora de combate
+     na cena (a vista é a verdade da queda, como na rotação de vez
+     e nos alvos vivos FID-R2). */
+  function vlabTodosMonstrosForaDeCombate() {
+    return ELENCO.every(u => u.id === PROPRIA
+      || (unidade(u.id) || {}).vivo === false);
+  }
+  /* Frase de ficção de uma desgraça (sem números de ninguém). */
+  function vlabFraseDesgraca(id, fc) {
+    const nome = id === PROPRIA ? 'a <b>Ong</b>' : `<b>${nomeCena(id)}</b>`;
+    const arma = COMBATE_TEST[id].arma;
+    switch (fc && fc.desgraca && fc.desgraca.id) {
+      case 'cai': return `${nome} foi ao chão com o golpe falhado.`;
+      case 'arma-cai': return `A arma (${arma}) caiu-lhe da mão.`;
+      case 'arma-quebra': return `A arma (${arma}) partiu-se — fica inutilizável até ser consertada.`;
+      case 'acerta-se': return `${nome} atingiu-se a si ${id === PROPRIA ? 'própria' : 'próprio'} com o próprio golpe.`;
+      case 'quebra-corpo': return `${nome} partiu algo no corpo — os golpes dela ficam prejudicados e anda metade até ao fim do combate.`.replace('dela', id === PROPRIA ? 'dela' : 'dele');
+      case 'acerta-amigo': return `O golpe atingiu um aliado sem querer.`;
+      default: return `O golpe correu mal.`;
+    }
+  }
+  /* ---------- testes de morte dela (M3 do Mestre) ----------
+   * CD = CON dela + k da classificação LIDA (motor LEVEL UP):
+   * a expressão de Fortitude na forma canónica da bancada da morte
+   * (dados da classificação + CON). O relógio é a viragem da ronda:
+   * 1 teste por ronda, quando a vez voltaria a ela. Os contadores
+   * (sucessos/falhas) vivem em ESTADO_VLAB e no registo do
+   * Supervisor (a ferramenta do Mestre nesta casca) — nunca em
+   * frase, ficha ou flutuante da Party. */
+  const VLAB_CHAVE_CLASSIFICACAO = { 'Bronze': 'bronze', 'Prata': 'prata', 'Ouro': 'ouro', 'Ouro Negro': 'ouroNegro', 'Lendário': 'lendario' };
+  function vlabMoribundo() {
+    const cls = PROGRESSAO_LIDA.ong && PROGRESSAO_LIDA.ong.classificacao;
+    const dado = PROGRESSAO_LIDA.ong && PROGRESSAO_LIDA.ong.dadoProgressao;
+    const con = (FICHAS.ong.attrs.find(a => a[0] === 'CON') || [])[1];
+    if (!cls || cls.estado !== 'lido' || !dado || !dado.valor || !dado.valor.texto
+        || !VLAB_CHAVE_CLASSIFICACAO[cls.valor] || !Number.isFinite(con))
+      return null;
+    return {
+      testesDeMorteDesignado: true,
+      estadoMorte: ESTADO_VLAB.ong.estadoMorte,
+      constituicao: con,
+      classificacao: VLAB_CHAVE_CLASSIFICACAO[cls.valor],
+      testes: { fortitude: `${dado.valor.texto}+${con}` }
+    };
+  }
+  function vlabRelogioMorte() {
+    const em = ESTADO_VLAB.ong.estadoMorte;
+    if (!em || em.fase !== 'aMorrer') return null;
+    const moribundo = vlabMoribundo();
+    if (!VLAB_MOTOR || !moribundo) {
+      supRegistar('bloqueada', { acao: 'teste-de-morte', actor: PROPRIA,
+        razao: !VLAB_MOTOR ? 'MOTOR_VLAB_INDISPONIVEL' : 'PROGRESSAO_ILEGIVEL_PARA_TESTE_DE_MORTE' });
+      fimDeBatalha('indeterminado');
+      return null;
+    }
+    const s = VLAB_MOTOR.resolverTesteDeMorte({ moribundo, contexto: { semente: vlabSemente() } });
+    if (s.erro) {
+      supRegistar('bloqueada', { acao: 'teste-de-morte', actor: PROPRIA, razao: s.erro.codigo });
+      fimDeBatalha('indeterminado');
+      return null;
+    }
+    ESTADO_VLAB.ong.estadoMorte = s.estadoMorte;
+    supRegistar('accao', { acao: 'teste-de-morte', actor: PROPRIA,
+      sucessos: s.estadoMorte.sucessos, falhas: s.estadoMorte.falhas, desfecho: s.desfecho });
+    if (s.desfecho === 'estabilizado') { fimDeBatalha('estabilizada'); return null; }
+    if (s.desfecho === 'morreu') { fimDeBatalha('morte'); return null; }
+    return s.sucesso
+      ? 'A <b>Ong</b>, caída, aguenta-se — continua a respirar.'
+      : 'A <b>Ong</b>, caída, piora visivelmente.';
+  }
+  function entrarAMorrer() {
+    view.setVivo(PROPRIA, false);
+    estado = 'a-morrer';
+    atualizarVez(); renderAcoes();
+    say('A <b>Ong</b> caiu — a batalha continua à volta dela.');
+  }
+  /* ---------- salvaguarda e cura (adaptadores) ----------
+   * Ligados e exercidos nos casos da tranche; nesta batalha de
+   * teste nenhuma técnica do elenco declara teste de salvaguarda
+   * (nomeTeste) nem efeito de cura — os caminhos vivos são o ataque
+   * e os testes de morte. Quem um dia declarar, resolve por aqui,
+   * nunca por um resolvedor local novo. */
+  function vlabResolverSalvaguarda(entrada) {
+    if (!VLAB_MOTOR) return { erro: { codigo: 'MOTOR_VLAB_INDISPONIVEL' } };
+    return vlabFiltrarReciboSalvaguarda(vlabComDmg(() => VLAB_MOTOR.resolverSalvaguarda(entrada)));
+  }
+  function vlabAplicarCura(entrada) {
+    if (!VLAB_MOTOR) return { erro: { codigo: 'MOTOR_VLAB_INDISPONIVEL' } };
+    return vlabFiltrarReciboCura(VLAB_MOTOR.aplicarCura(entrada),
+      entrada && entrada.origem ? entrada.origem.nome : null);
+  }
+  /* ---------- movimento com regras (Parte C do contrato) ----------
+   * Deslocamento base dela nesta vez: 9 m, a metade se estiver
+   * Fraca (Regra 7) ou com o corpo partido (desgraça). */
+  function vlabDeslocBaseOng() {
+    let base = DESLOCAMENTO_ONG_M;
+    if (vlabOngFraca()) base /= 2;
+    if (ESTADO_VLAB.ong.deslocMetade) base /= 2;
+    return base;
+  }
+  let partidaPendente = null;   // { de, adjacentes:[ids], desvincular } capturado à partida dela
+  let correrUsado = false;      // Correr já gasto nesta vez
+  const opcoesMovimento = { desvincular: false };   // intenção declarada no modo Mover
+  let avisoInicioVez = null;    // frase extra ao abrir a vez dela (ex.: levantar-se)
+  function vlabCapturarPartida(caminho) {
+    const u = unidade(PROPRIA);
+    if (!u) { partidaPendente = null; return; }
+    const partida = { x: u.posicao.x, y: u.posicao.y };
+    const adjacentes = ELENCO.filter(e => e.id !== PROPRIA
+      && (unidade(e.id) || {}).vivo !== false   // A01: um monstro caído não golpeia de oportunidade
+      && distanciaEntre(e.id, PROPRIA) === 1).map(e => e.id);
+    /* Meio do caminho (contrato Parte C; achado 3 do Crítico 1):
+       inimigos cuja zona ela atravessa E abandona durante o
+       percurso também provocam ataque de oportunidade — e o
+       Desvincular NÃO os cobre (cobre só os adjacentes no momento
+       do uso). A zona é a adjacência ortogonal (grade 4-direcções);
+       há provocação quando uma casa do caminho é adjacente ao
+       inimigo e a casa seguinte já não é. */
+    let meioCaminho = [];
+    if (Array.isArray(caminho) && caminho.length) {
+      const casas = [partida, ...caminho];
+      meioCaminho = ELENCO.filter(e => e.id !== PROPRIA && !adjacentes.includes(e.id))
+        .filter(e => {
+          const m = unidade(e.id); if (!m || m.vivo === false) return false;   // A01: idem — morto não provoca
+          const adj = c => Math.abs(c.x - m.posicao.x) + Math.abs(c.y - m.posicao.y) === 1;
+          for (let i = 0; i < casas.length - 1; i++)
+            if (adj(casas[i]) && !adj(casas[i + 1])) return true;
+          return false;
+        }).map(e => e.id);
+    }
+    partidaPendente = { de: partida, adjacentes, meioCaminho, desvincular: opcoesMovimento.desvincular };
+    opcoesMovimento.desvincular = false;   // a intenção consome-se na partida
+  }
+  /* Saída de adjacência dela: valida no motor e resolve os ataques
+     de oportunidade que nascerem, um a um, pelo mesmo resolver.
+     Devolve a frase composta (ou null se nada houver a dizer). */
+  function vlabResolverSaidaAdjacencia(partiu) {
+    if (!VLAB_MOTOR) return null;
+    const mk = ids => ids.map(id => ({
+      id, reacaoDisponivel: ESTADO_VLAB[id].reacaoDisponivel }));
+    const frases = [];
+    /* Grupo A — adjacentes à partida que ela abandonou: o
+       Desvincular pode cobri-los (todos, palavra do Mestre). */
+    let val = VLAB_MOTOR.validarSaidaDeAdjacencia({
+      inimigosAdjacentes: mk(partiu.adjacentes),
+      desvincular: partiu.desvincular ? { gastouAccaoPadrao: !atacou } : undefined });
+    if (val.erro && val.erro.codigo === 'DESVINCULAR_SEM_ACCAO_PADRAO') {
+      frases.push('Ela já usou a acção principal desta vez — não dá para sair com segurança.');
+      val = VLAB_MOTOR.validarSaidaDeAdjacencia({ inimigosAdjacentes: mk(partiu.adjacentes) });
+    }
+    if (val.erro) {
+      supRegistar('bloqueada', { acao: 'saida-adjacencia', actor: PROPRIA, razao: val.erro.codigo });
+      return frases.length ? frases.join(' ') : null;
+    }
+    /* Grupo B — encontrados e abandonados a meio do caminho:
+       atacam na mesma e o Desvincular não os cobre (contrato). */
+    let ataquesB = [];
+    if (partiu.meioCaminho && partiu.meioCaminho.length) {
+      const valB = VLAB_MOTOR.validarSaidaDeAdjacencia({ inimigosAdjacentes: mk(partiu.meioCaminho) });
+      if (valB.erro) supRegistar('bloqueada', { acao: 'saida-adjacencia', actor: PROPRIA, razao: valB.erro.codigo });
+      else ataquesB = valB.ataquesDeOportunidade;
+    }
+    const ataques = [...val.ataquesDeOportunidade, ...ataquesB];
+    if (partiu.desvincular && val.cobertosPorDesvincular.length) {
+      atacou = true;   // a Acção Padrão gastou-se no Desvincular
+      if (!ataques.length)
+        return 'A <b>Ong</b> afastou-se com segurança — nenhum inimigo a golpeia ao sair.';
+      frases.push('A <b>Ong</b> afastou-se com segurança de quem tinha ao lado ao partir.');
+    }
+    for (const aoo of ataques) {
+      const s = vlabResolverAtaqueCompleto(aoo.inimigoId, PROPRIA, { ataqueDeOportunidade: true });
+      if (s.erro) {
+        /* Erro nomeado = nada foi aplicado (regra de ouro): a
+           Reacção NÃO se consome e o jogador ouve que algo falhou
+           (achados 1 dos Críticos 1 e 3: nada de silêncio). */
+        supRegistar('bloqueada', { acao: 'ataque', actor: aoo.inimigoId, razao: s.erro.codigo });
+        frases.push('Um golpe de oportunidade não se resolveu.');
+        continue;
+      }
+      ESTADO_VLAB[aoo.inimigoId].reacaoDisponivel = false;   // a Reacção consome-se só com a resolução feita
+      const nome = `<b>${nomeCena(aoo.inimigoId)}</b>`;
+      if (s.resultado === 'acerta' || s.resultado === 'critico') {
+        mostrarImpacto(PROPRIA);
+        supRegistar('accao', { acao: 'ataque', actor: aoo.inimigoId, alvo: PROPRIA, acerto: true, dano: s.totalEfectivo, oportunidade: true });
+        const desfecho = vlabAplicarAlvoDepois(PROPRIA, s);
+        frases.push(`${nome} golpeia-a de oportunidade ao sair — ela perdeu <b>${s.totalEfectivo}</b> de vida.`);
+        if (desfecho === 'morreu') { fimDeBatalha('morte'); break; }
+        if (desfecho === 'aMorrer') { entrarAMorrer(); break; }
+      } else if (s.resultado === 'falhaCritica') {
+        vlabAplicarAtacanteDepois(aoo.inimigoId, s);
+        frases.push(`${nome} tenta golpeá-la de oportunidade e falha. ` +
+          vlabFraseDesgraca(aoo.inimigoId, (s.soDoMestre || {}).falhaCritica));
+      } else {
+        supRegistar('accao', { acao: 'ataque', actor: aoo.inimigoId, alvo: PROPRIA, acerto: false, oportunidade: true });
+        frases.push(`${nome} tenta golpeá-la de oportunidade e falha.`);
+      }
+      if (batalhaFim) break;
+    }
+    return frases.length ? frases.join(' ') : null;
+  }
 
   /* ---------- estado da casca ---------- */
   let selecionada = PROPRIA;   // constante nesta vista: a figura activa é sempre a Ong
@@ -406,11 +1121,12 @@
         B('encerrar', '✓', rp ? 'Fim' : 'Encerrar', 'ghost') +
         B('terminar', '✕', rp ? 'Term.' : 'Terminar', 'ghost');
     } else if (estado === 'atacar') {
-      // A gaveta tem o básico dela (o Chicote, 0 PA) e a única técnica
-      // com fonte nesta tranche: a Transformação, com o custo no rótulo.
+      // A gaveta tem o básico dela (o Chicote, 8 PA desde a tranche
+      // VLAB) e a única técnica com fonte nesta tranche: a
+      // Transformação — os dois com o custo no rótulo.
       acoesEl.innerHTML =
         B('voltar', '←', 'Voltar', 'ghost') +
-        B('ataque-basico', '⚔', rp ? 'Chicote' : COMBATE_TEST.ong.arma, 'primary') +
+        B('ataque-basico', '⚔', `${rp ? 'Chicote' : COMBATE_TEST.ong.arma} <span class="pa">8 PA</span>`, 'primary') +
         B('transformacao', '✦', `Transformação <span class="pa">${COMBATE_TEST.ong.transformacao.custo} PA</span>`);
     } else if (estado === 'vez-ia') {
       // Vez de um monstro: o miolo é um TEXTO de estado, não um botão
@@ -425,7 +1141,19 @@
     } else if (estado === 'consumivel') {
       acoesEl.innerHTML = B('voltar', '←', 'Voltar', 'ghost');
     } else if (estado === 'mover') {
-      acoesEl.innerHTML = B('cancelar', '✕', 'Cancelar', 'ghost');
+      /* Tranche VLAB (Parte C do contrato): dentro do modo Mover
+         vivem as duas declarações de movimento com custo — Sair com
+         segurança (Desvincular) e Correr. NÃO são botões da barra
+         base (a barra continua Atacar/Mover/Consumível): são opções
+         do próprio modo, como o Parar do 'movendo'. */
+      acoesEl.innerHTML =
+        B('cancelar', '✕', 'Cancelar', 'ghost') +
+        B('desvincular', '↩', opcoesMovimento.desvincular ? 'Sair c/ segurança ✓' : 'Sair c/ segurança') +
+        B('correr', '»', correrUsado ? 'A correr ✓' : 'Correr');
+    } else if (estado === 'a-morrer') {
+      // Ela caiu e está a morrer (M3): sem acções — a corrida corre
+      // na viragem das rondas. O miolo é texto de estado, não botão.
+      acoesEl.innerHTML = 'A Ong está caída…';
     } else if (estado === 'movendo') {
       acoesEl.innerHTML = B('parar', '■', 'Parar', 'ghost');
     } else if (estado === 'rolagem') {
@@ -603,8 +1331,8 @@
     lancarFlutuante(el, id, 0, 0, 480, 'impacto');
   }
   function mostrarDano(id, parcelas) {
-    /* Com a expressão real dela são 10 flutuantes (8 dados + bónus +
-       total): o desfasamento e a dispersão apertam para a sequência
+    /* Desde a tranche VLAB as parcelas são as do DMG (uma por tipo
+       de dano) + o total por cima: o desfasamento e a dispersão apertam para a sequência
        caber legível em ≈2 s e a 390 px de largura (aceite A9 da
        T1.4) — e o tick, abaixo, prende a posição ao ecrã. */
     let atraso = 40, total = 0;
@@ -658,7 +1386,7 @@
     if (!u) return;
     if (estado === 'movendo' || view.getState().moving) { say('Espera — a figura ainda está a andar.'); return; }
     if (reservaMovimento < CASA_M) {
-      say(`A <b>Ong</b> andou os ${fmtM(DESLOCAMENTO_ONG_M)} desta vez — prime <b>Atacar</b> ou <b>Encerrar</b>.`);
+      say(`A <b>Ong</b> andou o que podia andar nesta vez — prime <b>Atacar</b> ou <b>Encerrar</b>.`);
       return;
     }
     alcance = calcularAlcance();
@@ -668,6 +1396,7 @@
     say(fraseRestante());
   }
   function sairMover() {
+    opcoesMovimento.desvincular = false;   // pós-Crítico 3 (achado 6): a intenção de Desvincular não sobrevive à saída do modo Mover
     estado = 'base'; alcance = new Map();
     view.showMovement([]); view.showHover(null);
     renderAcoes();
@@ -679,7 +1408,7 @@
   /* Reserva esgotada: o modo Mover fecha sozinho para a base. */
   function esgotarReserva() {
     sairMover();
-    say(`A <b>Ong</b> andou os ${fmtM(DESLOCAMENTO_ONG_M)} desta vez — prime <b>Atacar</b> ou <b>Encerrar</b>.`);
+    say(`A <b>Ong</b> andou o que podia andar nesta vez — prime <b>Atacar</b> ou <b>Encerrar</b>.`);
   }
   /* Um passo de seta (§3.4): uma casa na direcção da GRELHA (nunca
      da câmera), pela mesma API e pelo mesmo adaptador do toque.
@@ -703,6 +1432,7 @@
       v.id !== PROPRIA && v.posicao.x === nx && v.posicao.y === ny);
     if (ocupada) { supRegistar('bloqueada', { acao: 'mover', actor: PROPRIA, razao: 'Casa ocupada' }); say('Essa casa está ocupada.'); return; }
     passoEmCurso = true;
+    vlabCapturarPartida([{ x: u.posicao.x, y: u.posicao.y }, { x: nx, y: ny }]);   // tranche VLAB: adjacências à partida + meio do caminho
     supPartidaMovimentoOng({ x: nx, y: ny }, 1,
       [{ x: u.posicao.x, y: u.posicao.y }, { x: nx, y: ny }]);   // T1.7: caminho da seta = [actual, seguinte]
     view.move(PROPRIA, casaVista({ x: nx, y: ny }), {
@@ -796,7 +1526,18 @@
   function iniciarVez(id) {
     vezAtual = id;
     atacou = false;
-    reservaMovimento = DESLOCAMENTO_ONG_M;   // a reserva nasce cheia, não acumula
+    /* Tranche VLAB: a reserva nasce da base efectiva (Regra 7 —
+       Fraca anda metade; corpo partido, metade). Levantar-se do
+       Caído (desgraça de falha crítica) gasta o movimento da vez. */
+    correrUsado = false;
+    opcoesMovimento.desvincular = false;
+    avisoInicioVez = null;
+    reservaMovimento = vlabDeslocBaseOng();   // a reserva nasce cheia, não acumula
+    if (ESTADO_VLAB.ong.estados.includes('caido')) {
+      ESTADO_VLAB.ong.estados = ESTADO_VLAB.ong.estados.filter(e => e !== 'caido');
+      reservaMovimento = 0;
+      avisoInicioVez = 'A <b>Ong</b> levanta-se — isso gasta o movimento desta vez.';
+    }
     ataquePendente = null;
     estado = 'base';
     atualizarVez(); renderAcoes();
@@ -806,16 +1547,46 @@
     supSnapshot();                    // Supervisor: ponto de retorno deste turno
   }
   /* Único sítio onde a vez muda (com iniciarVezIA e o arranque). */
+  /* A01: avança a rotação até à próxima figura COM vez — a Ong
+     (a vez dela trata-se nos ramos próprios, incl. aMorrer) ou um
+     monstro vivo. Monstro fora de combate não tem vez: não anda,
+     não ataca, não reage. Devolve false se a rotação se esgotou
+     em figuras mortas (inalcançável em batalha aberta: com os
+     três mortos, o terminal de vitória já fechou a batalha). */
+  function avancarParaFiguraComVez() {
+    for (let n = 0; n < ordem.length; n++) {
+      indiceVez = (indiceVez + 1) % ordem.length;
+      if (indiceVez === 0) rodada++;
+      const id = ordem[indiceVez];
+      if (id === PROPRIA || (unidade(id) || {}).vivo !== false) return true;
+    }
+    return false;
+  }
   function passarVez() {
     try { supCritAntesDePassarVez(); } catch (_) { supCritErrosCamada++; }   // T1.7: fecha a vez nos acumuladores (passivo)
     seqTurno++;                       // invalida qualquer sequência antiga
-    indiceVez = (indiceVez + 1) % ordem.length;
-    if (indiceVez === 0) rodada++;
+    avancarParaFiguraComVez();
     ataquePendente = null;
     const seguinte = ordem[indiceVez];
     if (seguinte === PROPRIA) {
+      /* Testes de morte (M3): a viragem da ronda é o relógio da
+         corrida — com ela aMorrer, a «vez» dela é o teste da ronda,
+         não uma acção; resolvido o teste, a vez passa ao seguinte. */
+      if (ESTADO_VLAB.ong.estadoMorte && ESTADO_VLAB.ong.estadoMorte.fase === 'aMorrer') {
+        const fraseMorte = vlabRelogioMorte();
+        if (batalhaFim) return;
+        /* A01: também aqui a vez seguinte é a do próximo monstro
+           VIVO — um morto não abre vez nem com ela aMorrer. */
+        avancarParaFiguraComVez();
+        if (ordem[indiceVez] === PROPRIA) return;   // sem monstro vivo com vez (defensivo; o terminal trata)
+        iniciarVezIA(ordem[indiceVez], true);
+        if (fraseMorte) say(fraseMorte + ` Vez de <b>${nomeCena(ordem[indiceVez])}</b>.`);
+        return;
+      }
       iniciarVez(PROPRIA);
-      say(`É a vez da <b>Ong</b> (rodada ${rodada}).`);
+      say(avisoInicioVez
+        ? `${avisoInicioVez} É a vez da <b>Ong</b> (rodada ${rodada}).`
+        : `É a vez da <b>Ong</b> (rodada ${rodada}).`);
     } else {
       // Depois da vez dela, o anúncio da vez seguinte traz a frase
       // do Encerrar (§1.4) — as duas contam-se numa linha só.
@@ -832,6 +1603,7 @@
   function iniciarVezIA(id, aposOng) {
     vezAtual = id;
     estado = 'vez-ia';
+    ESTADO_VLAB[id].reacaoDisponivel = true;   // a Reacção renova na vez da própria figura
     if (fichaAberta) fecharFicha();          // D-13.12: a vez dele apresenta-se em ecrã limpo
     atualizarVez(); renderAcoes();
     say(aposOng
@@ -955,27 +1727,41 @@
     if (distActual !== undefined && melhor.d >= distActual) return null;
     return melhor.destino;
   }
-  /* O ataque da IA (§2.3 com a resolução da T1.4 §4): o teste e o
-     dano rolam-se INTERNAMENTE, no sistema dele — 1d6 + bónus de
-     teste contra a Defesa DELA, dano = a expressão da ficha dele
-     por rolarExpressao, usado só como total. Mostra-se apenas o
-     resultado narrado e, no acerto, o total que ELA perdeu — na
-     frase do momento e como delta do Perdido da ficha dela
-     (fronteira EM-P3: agregado por monstro é proibido). Sem
-     flutuantes do monstro: o golpe marca-se com o impacto. */
+  /* O ataque da IA (§2.3; desde a tranche VLAB resolve o motor
+     pinado, pelo adaptador): o teste e o dano rolam-se DENTRO do
+     motor — o par teste×Defesa dela é a derivação TEST declarada
+     (vlabFichaAlvoDela), o dano vem do DMG e aplica-se à Vida dela
+     pelo soDoMestre do motor (vlabAplicarAlvoDepois escreve
+     danoSofrido — a ficha e a barra do chip lêem daí, como antes).
+     Mostra-se apenas o resultado narrado e, no acerto, o total que
+     ELA perdeu (fronteira EM-P3: agregado por monstro é proibido).
+     Sem flutuantes do monstro: o golpe marca-se com o impacto. A
+     falha crítica de um monstro também produz a desgraça dele
+     (tabela do Mestre, dentro do motor). */
   async function atacarIA(id, seq) {
-    const c = COMBATE_TEST[id];
     /* Supervisor: o ataque da IA também é validado antes — sem
        alcance, não acontece (a vez fecha pelo caminho normal). */
     if (distanciaEntre(id, PROPRIA) > ALCANCE_IA_TEST) {
       supRegistar('bloqueada', { acao: 'ataque', actor: id, razao: 'Monstro fora de alcance da Ong' });
       return;
     }
-    let teste = 0;
-    for (let i = 0; i < c.atkQtd; i++) teste += 1 + Math.floor(Math.random() * c.atkFaces);
-    const acerta = teste + bonusTeste(c) >= defesaDe(PROPRIA);
     const verbos = FRASES_IA[id];
-    if (!acerta) {
+    const s = vlabResolverAtaqueCompleto(id, PROPRIA, { modoDesgraca: 'sorte' });
+    if (s.erro) {
+      supRegistar('bloqueada', { acao: 'ataque', actor: id, razao: s.erro.codigo });
+      if (s.erro.codigo === 'ARMA_QUEBRADA')
+        say(`<b>${nomeCena(id)}</b> não consegue atacar — a arma dele está partida.`);
+      return;
+    }
+    if (s.resultado === 'falhaCritica') {
+      const fc = vlabAplicarAtacanteDepois(id, s);
+      supRegistar('accao', { acao: 'ataque', actor: id, alvo: PROPRIA, acerto: false, falhaCritica: fc ? fc.desgraca.id : null });
+      if (s.desgracaPendente)
+        supRegistar('accao', { acao: 'desgraca-pendente', actor: id, tipo: s.desgracaPendente.tipo, aplicada: false, motivo: 'desgraça pendente não aplicada nesta casca (sem aliados ao alcance — contexto da batalha a solo)' });
+      say(`<b>${nomeCena(id)}</b> ${verbos.falha} a <b>Ong</b> e falhou. ` + vlabFraseDesgraca(id, fc));
+      return;
+    }
+    if (s.resultado === 'erra') {
       /* Supervisor (pós-críticos T1.5): o ataque LEGAL do monstro
          entra no registo — actor, alvo e falha (sem Defesas nem
          constantes internas). */
@@ -992,30 +1778,22 @@
       say(`<b>${nomeCena(id)}</b> ${verbos.falha} a <b>Ong</b> e falhou.`);
       return;
     }
-    const rIA = rolarExpressao(c.dano);
-    /* Supervisor: parcelas = total — se não bater, a batalha
-       congela e a resolução ABORTA neste tick (sem sofrerDano). */
-    if (!supConferirSoma(rIA.parcelas, rIA.total, id)) return;
-    const total = rIA.total;
+    /* Supervisor: parcelas = total — se não bater, a resolução
+       ABORTA neste tick (sem aplicar dano). */
+    if (!supConferirSoma(s.danoAplicado.parcelas.map(p => ({ valor: p.subtotal })), s.danoAplicado.total, id)) return;
+    const total = s.totalEfectivo;
     supRegistar('accao', { acao: 'ataque', actor: id, alvo: PROPRIA, acerto: true, dano: total });
     /* T-D: validação do Supervisor completa → o gesto apresenta-se
-       e SÓ DEPOIS o golpe marca (anel) e o dano se aplica — os
-       números da resolução não mudam, só ganham o gesto antes. */
+       e SÓ DEPOIS o golpe marca (anel) e o dano do motor se aplica —
+       os números da resolução VLAB não mudam, só ganham o gesto antes. */
     const epocaAcertoIA = supEpoca;
     await apresentarConfronto(id, PROPRIA, true);   // R1: ataque contado no total (evento «ataque» registado acima)
     if (seqTurno !== seq || batalhaFim || supCongelado || supEpoca !== epocaAcertoIA) { continuarAposApresentacao = false; return; }   // R1-Priv: idem
     mostrarImpacto(PROPRIA);
-    const caiu = sofrerDano(total);
-    if (caiu) return;                        // fimDeBatalha já disse a frase final
+    const desfecho = vlabAplicarAlvoDepois(PROPRIA, s);
+    if (desfecho === 'morreu') { fimDeBatalha('morte'); return; }
+    if (desfecho === 'aMorrer') { entrarAMorrer(); return; }
     say(`<b>${nomeCena(id)}</b> ${verbos.acerto} a <b>Ong</b> — ela perdeu <b>${total}</b> de vida.`);
-  }
-  /* Soma o dano a danoSofrido (a ficha e a barra do chip lêem daqui)
-     e verifica a queda. Devolve true se ela caiu. */
-  function sofrerDano(total) {
-    danoSofrido += total;
-    atualizarChipVida();
-    if (danoSofrido >= FICHAS.ong.vida.total) { fimDeBatalha(); return true; }
-    return false;
   }
   /* M-015: o chip reflecte SEMPRE a figura dela, nas duas barras e no
      rótulo da Alma — os valores compõem-se das mesmas fórmulas da
@@ -1036,12 +1814,20 @@
     const rotuloAlma = chipEl.querySelector('#chip-alma-rotulo');
     if (rotuloAlma) rotuloAlma.textContent = `ALMA · PA ${almaLivre}`;
   }
-  /* Fim de batalha (§1.7): nesta vista os monstros não têm vida —
-     a batalha só termina se a Ong cair. A máquina pára onde está. */
-  function fimDeBatalha() {
+  /* Fim de batalha (§1.7): DOIS terminais adjudicados — a queda
+     dela (morte/estabilização/queda, como sempre) e, desde o
+     COMPLETAMENTO A01, a VITÓRIA: todos os monstros fora de
+     combate. A máquina pára onde está. */
+  function fimDeBatalha(causa) {
     /* Supervisor (pós-críticos T1.5): evento TERMINAL do fim
-       natural — o registo passa a provar que a batalha acabou. */
-    supRegistar('fim', { actor: PROPRIA, danoSofrido });
+       natural — o registo passa a provar que a batalha acabou.
+       Tranche VLAB: a causa distingue a morte adjudicada pelo
+       motor (testes de morte M3), a estabilização na corrida e o
+       fecho indeterminado (motor/progressão ilegível — nomeado no
+       registo, nunca disfarçado). Sem causa, o comportamento e a
+       frase são os de sempre. */
+    supRegistar('fim', { actor: PROPRIA, danoSofrido,
+      causa: causa || 'queda', morteAdjudicada: causa === 'morte' });
     continuarAposApresentacao = false;   // R1-Priv: terminal — nenhum Continuar diferido sobrevive ao fim
     batalhaFim = true;
     seqTurno++;                              // invalida continuações pendentes
@@ -1050,14 +1836,22 @@
        da cena (Death_A -> pose persistente) quando ela existe —
        nunca pela prancha do setVivo; na cena sagrada do vivo, que
        não expõe apresentarMorte, o catch degrada para o setVivo de
-       sempre: mesmo resultado visível hoje, caminho T-D pronto. */
-    try {
-      const pm = view.apresentarMorte(PROPRIA);
-      if (pm && pm.catch) pm.catch(() => {});
-    } catch (_) { view.setVivo(PROPRIA, false); }
+       sempre: mesmo resultado visível hoje, caminho T-D pronto.
+       A01: na VITÓRIA ela NÃO cai — nenhuma apresentação de morte
+       dela corre; quem caiu foram os monstros, um a um. */
+    if (causa !== 'vitoria') {
+      try {
+        const pm = view.apresentarMorte(PROPRIA);
+        if (pm && pm.catch) pm.catch(() => {});
+      } catch (_) { view.setVivo(PROPRIA, false); }
+    }
     estado = 'fim';
     atualizarVez(); renderAcoes();
-    say('A <b>Ong</b> caiu — fim desta batalha. Prime <b>Recomeçar</b> para jogar outra vez.');
+    say(causa === 'vitoria'
+      ? 'Os inimigos caíram todos — <b>vitória</b> da <b>Ong</b> nesta batalha. Prime <b>Recomeçar</b> para jogar outra vez.'
+      : causa === 'estabilizada'
+      ? 'A <b>Ong</b> caiu, mas estabilizou — fim desta batalha. Prime <b>Recomeçar</b> para jogar outra vez.'
+      : 'A <b>Ong</b> caiu — fim desta batalha. Prime <b>Recomeçar</b> para jogar outra vez.');
   }
   /* Terminar a batalha (M-014): a saída que a especificação reserva
      à mesa — fecha o encontro a meio, SEM a Ong cair (sem setVivo):
@@ -1116,6 +1910,43 @@
     }
     if (acao === 'voltar') { estado = 'base'; ataquePendente = null; renderAcoes(); say('É a vez da <b>Ong</b>.'); return; }
     if (acao === 'mover') { entrarMover(); return; }
+    if (acao === 'desvincular') {
+      /* Declaração do modo Mover (Parte C): a intenção regista-se
+         e consome-se na próxima partida dela (vlabCapturarPartida);
+         a validação e o custo são do motor, à saída. */
+      if (estado !== 'mover' && estado !== 'movendo') return;
+      opcoesMovimento.desvincular = !opcoesMovimento.desvincular;
+      renderAcoes();
+      say(opcoesMovimento.desvincular
+        ? 'Ao sair de junto de um inimigo, a <b>Ong</b> afasta-se com segurança — protege-a de <b>todos</b> os inimigos ao lado (gasta a acção principal ao sair).'
+        : 'Sair com segurança desligado — ao afastar-se de um inimigo, ela fica exposta ao golpe de oportunidade dele.');
+      return;
+    }
+    if (acao === 'correr') {
+      /* Correr (Parte C): a validação e o novo limite são do motor
+         (validarCorrer); a página só apresenta e aplica o orçamento. */
+      if (estado !== 'mover' && estado !== 'movendo') return;
+      if (!VLAB_MOTOR) { say('O motor de combate não respondeu — tenta outra vez.'); return; }
+      if (correrUsado) { say('Ela já está a correr nesta vez.'); return; }
+      const base = vlabDeslocBaseOng();
+      const val = VLAB_MOTOR.validarCorrer({ deslocamentoBase: base, acaoPadraoDisponivel: !atacou });
+      if (val.erro) {
+        supRegistar('bloqueada', { acao: 'correr', actor: PROPRIA, razao: val.erro.codigo });
+        say(val.erro.codigo === 'CORRER_SEM_ACCAO_PADRAO'
+          ? 'Correr gasta a acção principal — ela já a usou nesta vez.'
+          : 'Não dá para correr agora.');
+        return;
+      }
+      if (reservaMovimento < base) { say('Correr decide-se antes de começar a andar.'); return; }
+      reservaMovimento = val.deslocamentoMaximo;
+      correrUsado = true;
+      atacou = true;                 // a Acção Padrão gastou-se a correr
+      alcance = calcularAlcance();
+      desenharAlcance();
+      renderAcoes();
+      say(`A <b>Ong</b> corre — pode andar até <b>${fmtM(reservaMovimento)}</b> nesta vez (gastou a acção principal).`);
+      return;
+    }
     if (acao === 'cancelar') {
       const restavam = fmtM(reservaMovimento);
       sairMover();
@@ -1171,22 +2002,58 @@
       terminarBatalha(); return;
     }
     if (acao === 'ataque-basico') {
-      /* O teste DELA rola NA HORA, de verdade (T1.4 §1.1): a face é
-         sorteada (1–6, uniforme) e somada ao bónus de teste dela; o
+      /* O teste DELA rola NA HORA, de verdade — desde a tranche
+         VLAB, DENTRO do motor pinado (T1.4 §1.1 mantém-se: o
          resultado guarda-se em ataquePendente e NÃO se revela antes
-         do Confirmar. A frase mostra só a fórmula e a rolagem DELA
-         — a Defesa do alvo nunca aparece (lei anti-metagame), e sem
-         o limiar ela não consegue saber se acertou. */
+         do Confirmar). A frase mostra só a fórmula e a rolagem DELA
+         — a CA do alvo nunca aparece (lei anti-metagame), e sem o
+         limiar ela não consegue saber se acertou. A desgraça de uma
+         eventual falha crítica pede-se em modo «proposta» (H10): o
+         motor devolve-a SEM aplicar; aplicar é o Confirmar, com
+         segunda chamada ao motor (escolha = a proposta, troca
+         registada se um dia houver). */
       const c = COMBATE_TEST.ong;
-      let face = 0;
-      for (let i = 0; i < c.atkQtd; i++) face += 1 + Math.floor(Math.random() * c.atkFaces);
-      const total = face + bonusTeste(c);
-      ataquePendente = { tipo: 'chicote', nome: c.arma, face, total, acerta: total >= defesaDe(alvo) };
+      if (ESTADO_VLAB.ong.armaQuebrada) {
+        say(`O ${c.arma} está partido — só volta a servir depois de consertado.`);
+        return;
+      }
+      if (ESTADO_VLAB.ong.armaCaida) {
+        /* Apanhar a arma = 1 Acção de Movimento (motor, desgraças
+           J3): consome-se o movimento desta vez, sem ataque. */
+        ESTADO_VLAB.ong.armaCaida = false;
+        reservaMovimento = 0;
+        say(`A <b>Ong</b> apanha o ${c.arma} do chão — isso gasta o movimento desta vez.`);
+        return;
+      }
+      const semente = vlabSemente();
+      const verificacao = vlabVerificacao();
+      const s = vlabResolverAtaqueCompleto(PROPRIA, alvo, {
+        modoDesgraca: 'proposta', semente, verificacao });
+      if (s.erro) {
+        supRegistar('bloqueada', { acao: 'ataque-basico', actor: PROPRIA, alvo, razao: s.erro.codigo });
+        if (s.erro.codigo === 'PA_INSUFICIENTE') {
+          const livre = FICHAS.ong.alma.total - FICHAS.ong.alma.comprometido - paGasto;
+          say(`Alma livre não chega — o ${c.arma} custa <b>8 PA</b> e a livre dela é ${livre}.`);
+        } else {
+          say('O ataque não se resolveu — tenta outra vez.');
+        }
+        return;
+      }
+      ataquePendente = { tipo: 'chicote', nome: c.arma, vlab: s, semente, verificacao };
       /* Supervisor (pós-críticos T1.5): a rolagem PÚBLICA dela
-         (face e total, os mesmos da frase) entra no registo. */
-      supRegistar('accao', { acao: 'ataque-basico', actor: PROPRIA, alvo, face, total });
+         (faces escolhidas e total, os mesmos da frase) entra no
+         registo. */
+      const rol = s.rolagem;
+      const idxEsc = Math.max(0, rol.resultados.indexOf(rol.escolhido));
+      const facesEsc = rol.conjuntosDeFaces[idxEsc] || rol.conjuntosDeFaces[0];
+      supRegistar('accao', { acao: 'ataque-basico', actor: PROPRIA, alvo, faces: facesEsc, total: rol.total });
       estado = 'rolagem'; renderAcoes();
-      say(`${c.arma} de <b>Ong</b> contra <b>${nomeCena(alvo)}</b> · <b>1d6+${bonusTeste(c)} → ${face} + ${bonusTeste(c)} = ${total}</b> · prime <b>Confirmar</b> para saberes se acertou.`);
+      let soma = facesEsc.join(' + ') + ' + ' + rol.bonus;
+      if (rol.ajusteVantagemDesvantagem > 0) soma += ' + ' + rol.ajusteVantagemDesvantagem;
+      if (rol.ajusteVantagemDesvantagem < 0) soma += ' − ' + (-rol.ajusteVantagemDesvantagem);
+      const notaVD = rol.niveisLiquidos !== 0
+        ? ` · (${rol.niveisLiquidos > 0 ? 'a melhor' : 'a pior'} de ${rol.conjuntosDeFaces.length} rolagens — ${rol.niveisLiquidos > 0 ? 'Vantagem' : 'Desvantagem'})` : '';
+      say(`${c.arma} de <b>Ong</b> contra <b>${nomeCena(alvo)}</b> · <b>${rol.expressao} → ${soma} = ${rol.total}</b>${notaVD} · o Mestre confirma se acertou.`);
       return;
     }
     if (acao === 'transformacao') {
@@ -1224,7 +2091,7 @@
         say(`<b>Transformação</b> · a <b>Ong</b> transformou-se — gastou <b>${t.custo} PA</b> (alma livre: ${livre - t.custo}). O Chicote passa a 8d6+34.`);
         return;
       }
-      // Chicote: o Confirmar REVELA a resolução já computada (D-14.2).
+      // Chicote: o Confirmar REVELA a resolução do motor (D-14.2).
       // O alcance revalida-se com o alcance real da arma dela (6).
       if (!alvo || distanciaAte(alvo) > COMBATE_TEST.ong.alcance) {
         estado = 'base'; renderAcoes();
@@ -1237,44 +2104,90 @@
          durante a apresentação pode marcar outro alvo para a acção
          seguinte, nunca para o golpe já confirmado. */
       const alvoDoGolpe = alvo;
-      if (!pend.acerta) {
+      let s = pend.vlab;
+      /* Falha crítica em modo «proposta»: o Confirmar do Mestre
+         APLICA a desgraça — segunda chamada ao motor, mesma semente
+         e mesma verificação de crítico, escolha = a proposta (H10:
+         a IA propôs, o Mestre autorizou). */
+      const fcProp = s.soDoMestre && s.soDoMestre.falhaCritica;
+      if (fcProp && fcProp.requerConfirmacao) {
+        const s2 = vlabResolverAtaqueCompleto(PROPRIA, alvo, {
+          modoDesgraca: 'escolha', semente: pend.semente, verificacao: pend.verificacao,
+          desgracaEscolhida: fcProp.desgraca.id,
+          confirmacaoDeProposta: { proposta: fcProp.desgraca.id } });
+        /* Pós-Crítico 3 (achado 4): se a segunda chamada falhar, o
+           Confirmar ABORTA — nunca se continua com a saída da
+           proposta (que não aplica efeito nenhum): sem PA cobrado,
+           sem frase de desgraça, erro nomeado no registo. */
+        if (s2.erro) {
+          supRegistar('bloqueada', { acao: 'ataque', actor: PROPRIA, alvo, razao: s2.erro.codigo });
+          say('O ataque não se resolveu — tenta outra vez.');
+          return;
+        }
+        s = s2;
+      }
+      if (s.erro) {
+        supRegistar('bloqueada', { acao: 'ataque', actor: PROPRIA, alvo, razao: s.erro.codigo });
+        say('O ataque não se resolveu — tenta outra vez.');
+        return;
+      }
+      /* O custo da técnica paga-se ao resolver (acerte ou erre) —
+         mas só depois das conferências que podem abortar a
+         resolução (pós-Crítico 1, achado 6): no ramo de acerto, o
+         débito vem DEPOIS de supConferirSoma. */
+      if (s.resultado === 'erra') {
+        paGasto += s.pa.custo;
         // Falha: sem impacto, sem flutuantes, sem dano — mas a
-        // tentativa VÊ-SE: a apresentação é do confronto, não do
-        // acerto (a cena nem recebe o resultado). A frase da falha
-        // só sai quando o gesto fecha.
+        // tentativa VÊ-SE (gesto T-D do vivo): a frase da falha só
+        // sai quando o gesto fecha; época mudada ou gelo = a
+        // resolução pertence à linha do tempo abandonada.
         const epocaFalha = supEpoca;
-        await apresentarConfronto(PROPRIA, alvoDoGolpe, false);   // R1: a falha da Ong NÃO é ataque contado (sem evento «ataque») — a apresentação dela não entra em nenhum dos contadores
-        if (supEpoca !== epocaFalha || supCongelado) { continuarAposApresentacao = false; return; }   // R1-Priv: o Continuar diferido morre com a linha do tempo abandonada
-        say(`<b>Falha</b> · ${pend.nome} não atinge ${ALVO_NOME[alvoDoGolpe] || nomeCena(alvoDoGolpe)} · o dano <b>${formulaDanoOng()}</b> não se rola.`);   // M-004: a fórmula DELA vê-se também na falha (sem rolagem inventada)
+        await apresentarConfronto(PROPRIA, alvoDoGolpe, false);   // R1: a falha da Ong NÃO é ataque contado (sem evento «ataque»)
+        if (supEpoca !== epocaFalha || supCongelado) { continuarAposApresentacao = false; return; }   // R1-Priv: idem
+        say(`<b>Falha</b> · ${pend.nome} não atinge ${ALVO_NOME[alvoDoGolpe] || nomeCena(alvoDoGolpe)} · o dano <b>${formulaDanoOng()}</b> não se rola.`);   // M-004 do vivo: a fórmula DELA vê-se também na falha
         if (continuarAposApresentacao) { continuarAposApresentacao = false; tratarAcao('continuar'); }
         return;
       }
-      const exprGolpe = expressaoOng();
-      const r = rolarExpressao(exprGolpe);
+      if (s.resultado === 'falhaCritica') {
+        paGasto += s.pa.custo;
+        const fc = vlabAplicarAtacanteDepois(PROPRIA, s);
+        if (s.desgracaPendente)
+          supRegistar('accao', { acao: 'desgraca-pendente', actor: PROPRIA, tipo: s.desgracaPendente.tipo, aplicada: false, motivo: 'sem aliado ao alcance nesta batalha a solo' });
+        say(`<b>Falha crítica</b> · ${pend.nome} não atinge ${ALVO_NOME[alvoDoGolpe] || nomeCena(alvoDoGolpe)}. ` + vlabFraseDesgraca(PROPRIA, fc));
+        return;
+      }
       /* Supervisor: parcelas = total — se não bater, a batalha
          congela e a resolução ABORTA neste tick (sem dano). */
-      if (!supConferirSoma(r.parcelas, r.total, PROPRIA)) return;
-      supRegistar('accao', { acao: 'ataque', actor: PROPRIA, alvo: alvoDoGolpe, acerto: true, dano: r.total });
+      if (!supConferirSoma(s.danoAplicado.parcelas.map(p => ({ valor: p.subtotal })), s.danoAplicado.total, PROPRIA)) return;
+      paGasto += s.pa.custo;           // conferido e fechado: debita-se o custo da técnica
+      supRegistar('accao', { acao: 'ataque', actor: PROPRIA, alvo: alvoDoGolpe, acerto: true, dano: s.totalEfectivo });
       /* T-D: validação do Supervisor completa → o gesto
          apresenta-se e SÓ DEPOIS o golpe marca (anel, flutuantes,
-         frase). Rolagem, soma, registo e números são os de sempre:
-         a apresentação não toca em resultado nenhum. Se a época
+         frase) e o dano do motor se aplica ao alvo. Se a época
          mudou durante o gesto (restauro ou gelo), esta resolução
          pertence à linha do tempo abandonada e não se aplica. */
       const epocaAcerto = supEpoca;
       await apresentarConfronto(PROPRIA, alvoDoGolpe, true);   // R1: ataque contado no total (evento «ataque» registado acima)
       if (supEpoca !== epocaAcerto || supCongelado) { continuarAposApresentacao = false; return; }   // R1-Priv: idem
       mostrarImpacto(alvoDoGolpe);
-      const total = numerosDano ? mostrarDano(alvoDoGolpe, r.parcelas) : null;
-      /* M-004: a frase do resultado exibe a FÓRMULA do dano dela
-         (R06), como a frase da rolagem já exibia a do teste. Com os
-         números de dano ligados, junta a decomposição (faces +
-         bónus = total, os mesmos valores dos flutuantes); desligados,
-         fica só a fórmula — nenhum número de dano aparece, como manda
-         a opção. A fórmula é da acção DELA: nenhum dado de figura
-         alheia entra nesta frase. */
-      say(`<b>Acerto</b> · ${pend.nome} atinge ${ALVO_NOME[alvoDoGolpe] || nomeCena(alvoDoGolpe)} · dano <b>${formulaDanoOng(exprGolpe)}</b>` +
-        (total != null ? ` → ${r.parcelas.map(p => p.valor).join(' + ')} = <b>${total}</b>.` : '.'));
+      /* A01: o lado do alvo consome-se INTEIRO — Vida interna,
+         estados e, se o golpe o deitou, a queda na cena. A frase
+         narra a queda (ficção visível: a figura tomba no mundo);
+         nenhum número de Vida do monstro aparece, como sempre. */
+      const desfechoAlvo = vlabAplicarAlvoDepois(alvoDoGolpe, s);
+      /* Os flutuantes passam a ser as parcelas do DMG, uma por TIPO
+         de dano (especificação do Mestre), com o total por cima —
+         mostrarDano soma e fecha como antes. */
+      const parcelasTipo = s.danoAplicado.parcelas.map(p => ({
+        classe: p.tipo || 'tecnica', rotulo: p.tipo || 'dano', valor: p.subtotal }));
+      const total = numerosDano ? mostrarDano(alvoDoGolpe, parcelasTipo) : null;
+      say(`<b>${s.resultado === 'critico' ? 'Acerto crítico' : 'Acerto'}</b> · ${pend.nome} atinge ${ALVO_NOME[alvoDoGolpe] || nomeCena(alvoDoGolpe)}.` +
+        (total != null ? ' As parcelas do dano saem da figura em números.' : '') +
+        (desfechoAlvo === 'caiu' ? ` <b>${nomeCena(alvoDoGolpe)}</b> caiu.` : ''));
+      /* A01: com os três fora de combate, o terminal de VITÓRIA
+         fecha a batalha — o Continuar diferido não sobrevive ao
+         fim, como em qualquer outro terminal. */
+      if (vlabTodosMonstrosForaDeCombate()) { fimDeBatalha('vitoria'); return; }
       if (continuarAposApresentacao) { continuarAposApresentacao = false; tratarAcao('continuar'); }
       return;
     }
@@ -1483,6 +2396,7 @@
       caminhoPendente = destino.path;
       view.showMovement([]); view.showHover(null);
       say(`<b>${u ? u.nome : nomeCena(selecionada)}</b> está a andar…`);
+      vlabCapturarPartida(destino.path);   // tranche VLAB: adjacências à partida + meio do caminho
       supPartidaMovimentoOng(destino, destino.passos, destino.path);
       view.move(selecionada, casaVista(destino), {
         path: destino.path.map(casaVista),
@@ -1600,8 +2514,33 @@
           : `<b>Ong</b> chegou. Restam <b>${fmtM(reservaMovimento)}</b> — continua a andar, ou prime <b>Cancelar</b> para voltar às acções.`);
       }
     }
+    /* Tranche VLAB: saída de adjacência — se ela partiu de junto
+       de inimigos e mudou de casa, o motor valida a saída e os
+       ataques de oportunidade resolvem-se aqui, depois das contas
+       do movimento (nunca antes da chegada). */
+    if (partidaPendente) {
+      const partiu = partidaPendente;
+      partidaPendente = null;
+      const mudouDeCasa = u.posicao.x !== partiu.de.x || u.posicao.y !== partiu.de.y;
+      /* Pós-Crítico 3 (achado 3): só há saída de adjacência para os
+         inimigos de quem ela se afastou DE FACTO (distância final
+         > 1). Orbitar ao lado do mesmo inimigo não é sair: sem AoO,
+         sem custo de Desvincular, sem frase de afastamento. */
+      const sairamDaZona = partiu.adjacentes.filter(id => distanciaEntre(id, PROPRIA) > 1);
+      if (mudouDeCasa && sairamDaZona.length) {
+        const fraseSaida = vlabResolverSaidaAdjacencia({ ...partiu, adjacentes: sairamDaZona });
+        if (fraseSaida) say(fraseSaida);
+        /* Pós-Crítico 3 (achado 2): se o golpe de oportunidade a
+           derrubou NA VEZ DELA, a vez entrega-se — sem isto o
+           estado 'a-morrer' não tem botões, os monstros nunca agem
+           e o relógio de morte (que vive em passarVez) nunca anda. */
+        if (!batalhaFim && ESTADO_VLAB.ong.estadoMorte && ESTADO_VLAB.ong.estadoMorte.fase === 'aMorrer')
+          setTimeout(() => { if (!batalhaFim) passarVez(); }, ritmo(600));
+      }
+    }
     if (fichaAberta === u.id) abrirFicha(u.id);   // reabre a ficha/cartão de vista da figura que andou
-    agendarPassoAuto();   // T1.5: o moveend dela retoma o Modo automático (desligado, não agenda passo novo)
+    if (!batalhaFim && !(ESTADO_VLAB.ong.estadoMorte && ESTADO_VLAB.ong.estadoMorte.fase === 'aMorrer'))
+      agendarPassoAuto();   // T1.5: o moveend dela retoma o Modo automático (desligado, não agenda passo novo)
   });
   view.on('camera', () => { sincronizarCamera(); mostrarZoom(); });
   view.on('zoom', () => mostrarZoom());
@@ -1936,6 +2875,13 @@
     if (estado === 'movendo') return;    // a animação manda: o moveend retoma
     if (estado === 'rolagem') {
       if (ataquePendente && ataquePendente.tipo === 'transformacao') { agendarPassoAuto(); return; }
+      /* Tranche VLAB (pós-Crítico 3, achado 1): uma desgraça em modo
+         «proposta» também NUNCA se confirma sozinha — é uma proposta
+         H10 à espera do Mestre, como a Transformação: o automático
+         reagenda e a decisão fica parada para confirmação manual. */
+      const fcPend = ataquePendente && ataquePendente.vlab && ataquePendente.vlab.soDoMestre
+        && ataquePendente.vlab.soDoMestre.falhaCritica;
+      if (fcPend && fcPend.requerConfirmacao) { agendarPassoAuto(); return; }
       tratarAcao('confirmar'); agendarPassoAuto(); return;
     }
     if (estado === 'resultado') { tratarAcao('continuar'); agendarPassoAuto(); return; }
@@ -1981,6 +2927,7 @@
     caminhoPendente = destino.path;
     view.showMovement([]); view.showHover(null);
     say(`<b>${u ? u.nome : nomeCena(selecionada)}</b> está a andar…`);
+    vlabCapturarPartida(destino.path);   // tranche VLAB: adjacências à partida + meio do caminho
     supPartidaMovimentoOng(destino, destino.passos, destino.path);
     view.move(selecionada, casaVista(destino), {
       path: destino.path.map(casaVista),
@@ -2064,6 +3011,7 @@
     if (supCongelado || epoca !== supEpoca) return;
     if (estado !== 'movendo' && !passoEmCurso) return;
     custoPendente = null; caminhoPendente = null; passoEmCurso = false; parado = false;
+    partidaPendente = null;   // pós-Crítico 3 (achado 3): uma partida cuja guarda expirou não resolve AoO tardios
     if (estado === 'movendo') { estado = 'base'; renderAcoes(); }
     supRegistar('guarda', { acao: 'mover', actor: PROPRIA, razao: 'O moveend dela não chegou em 5 s — movimento destravado sem desconto' });
     agendarPassoAuto();   // destravada, o Modo automático pode retomar
@@ -2128,7 +3076,10 @@
     if (FICHAS.ong.alma.total - FICHAS.ong.alma.comprometido - paGasto < 0) return 'Alma livre negativa';
     if (danoSofrido < 0) return 'Dano marcado negativo';
     if (FICHAS.ong.vida.total - danoSofrido > FICHAS.ong.vida.total) return 'Vida acima do máximo';
-    if (reservaMovimento < -1e-9 || reservaMovimento > DESLOCAMENTO_ONG_M + 1e-9)
+    /* Tranche VLAB: o tecto da reserva passa a ser o dobro da base —
+       o Correr dobra o deslocamento (18 m). As metades (Fraca/corpo
+       partido) só baixam a base; o invariante guarda o tecto absoluto. */
+    if (reservaMovimento < -1e-9 || reservaMovimento > 2 * DESLOCAMENTO_ONG_M + 1e-9)
       return 'Reserva de movimento fora dos limites';
     const casas = new Set();
     for (const u of view.getState().units) {
@@ -2202,7 +3153,14 @@
       rodada, indiceVez, vez: vezAtual,
       unidades: view.getState().units.map(u => ({
         id: u.id, x: u.posicao.x, y: u.posicao.y, vivo: u.vivo !== false })),
-      danoSofrido, paGasto, transformada, reservaMovimento, atacou, alvo
+      danoSofrido, paGasto, transformada, reservaMovimento, atacou, alvo,
+      /* Tranche VLAB (pós-Crítico 3, achado 5): o estado do motor
+         (estados, arma caída/quebrada, desvantagem, deslocamento a
+         metade, reacção, corrida de morte) TAMBÉM entra no snapshot
+         — voltar a um turno anterior repõe o combate inteiro, não
+         só a casca clássica. Cópia profunda: o snapshot é um valor,
+         nunca uma referência viva. */
+      vlab: JSON.parse(JSON.stringify(ESTADO_VLAB))
     };
   }
   function supSnapshot() {
@@ -2265,12 +3223,42 @@
     transformada = snap.transformada;
     reservaMovimento = snap.reservaMovimento; atacou = snap.atacou;
     alvo = snap.alvo;
+    /* Pós-Crítico 3 (achado 5): o estado VLAB do snapshot volta
+       com o resto — campo a campo, por unidade. Snapshots antigos
+       (sem o campo) mantêm o estado actual, declarado. As intenções
+       transitórias da vez (partida, correr, desvincular) nascem
+       limpas, como num iniciarVez. */
+    if (snap.vlab) for (const id of Object.keys(ESTADO_VLAB)) {
+      const sv = snap.vlab[id]; if (!sv) continue;
+      const e = ESTADO_VLAB[id];
+      e.danoSofrido = sv.danoSofrido | 0;   // A01: a Vida interna dos monstros volta com o resto do estado
+      e.estados = [...(sv.estados || [])];
+      e.armaCaida = !!sv.armaCaida; e.armaQuebrada = !!sv.armaQuebrada;
+      e.desvantagemAtaque = sv.desvantagemAtaque | 0;
+      e.deslocMetade = !!sv.deslocMetade;
+      e.reacaoDisponivel = sv.reacaoDisponivel !== false;
+      e.estadoMorte = sv.estadoMorte ? { ...sv.estadoMorte } : null;
+    }
+    partidaPendente = null; correrUsado = false; opcoesMovimento.desvincular = false;
     rodada = snap.rodada; indiceVez = snap.indiceVez;
     ataquePendente = null; custoPendente = null; caminhoPendente = null;
     continuarAposApresentacao = false;   // R1-Priv: o Continuar diferido morre no restauro — pertencia à linha do tempo abandonada
     passoEmCurso = false; parado = false;
-    const ongSnap = snap.unidades.find(u => u.id === PROPRIA);
-    if (ongSnap && ongSnap.vivo) batalhaFim = false;
+    /* Caso 12 VLAB (medido na sonda de 04/11): um snapshot só
+       nasce num arranque de vez (iniciarVez/iniciarVezIA), nunca
+       depois do fim — logo todo o snapshot da pilha é um estado
+       NÃO terminal de uma batalha a correr. Com o VLAB, o
+       vivo=false da vista também é o estado intermédio aMorrer
+       (ela caiu, a corrida de morte corre e a batalha continua
+       à volta dela), não só a morte adjudicada. Limpar
+       batalhaFim só com vivo=true deixava o restauro pós-FIM
+       preso no «FIM» sempre que o turno anterior era um turno
+       dela caída (snapshot medido: rodada 2, vez do Orc, Ong
+       aMorrer 0/1, dano 99): o turno restaurado anunciava-se
+       mas a continuação da IA morria na guarda batalhaFim e
+       nenhuma acção retomava. O restauro repõe um estado de
+       batalha viva: batalhaFim limpa-se sempre. */
+    batalhaFim = false;
     supPilha.length = idx + 1;                   // o futuro velho sai da pilha
     supCongelado = false;                        // voltar é também a saída do congelamento
     atualizarChipVida();
@@ -2354,6 +3342,7 @@
     try { dicasCrit = supCritDicasExport(); analisesCrit = supCritAnalises(); } catch (_) { supCritErrosCamada++; }
     preSupEl.textContent = JSON.stringify({
       eventos: supRegisto,
+      recibosPublicos: RECIBOS_PUBLICOS.slice(),   // H-3: só os recibos FILTRADOS (prova do portão); o completo nunca se exporta
       alertas: supAlertas,
       snapshots: supPilha.map(e => e.estado),
       estadoActual: supEstadoCanonico(),
