@@ -124,10 +124,10 @@
      SÓ na demo do Codex — não é personagem do jogo) ---------- */
   const AREA = { cols: 10, rows: 7, origin: { x: 0, y: 0 } };
   const ELENCO = [
-    { id: 'orc',     nome: 'Orc',             modelo: 'modelos/orc-quaternius.glb', x: 3, y: 3, alturaMetros: 3,  vivo: true },
-    { id: 'ong',     nome: 'Ong',             modelo: 'modelos/ong-rogue.glb',     x: 6, y: 2, alturaMetros: 2.188, vivo: true, animacoes: { idle: 'Idle_B', andar: 'Walking_B', ataque: 'Melee_Unarmed_Attack_Punch_A', reacao: 'Hit_B' } },
-    { id: 'capanga', nome: 'Capanga 1',       modelo: 'modelos/capanga-knight.glb', x: 7, y: 4, alturaMetros: 2.25,  vivo: true, animacoes: { idle: 'Idle_B', andar: 'Walking_B', ataque: 'Melee_Unarmed_Attack_Punch_A', reacao: 'Hit_B' } },
-    { id: 'lobo',    nome: 'Lobo da Caverna', modelo: 'marcador-lobo',     x: 2, y: 5, alturaMetros: 1.125,  vivo: true }
+    { id: 'orc',     nome: 'Orc',             modelo: 'modelos/orc-quaternius.glb', x: 3, y: 3, alturaMetros: 3.6,  vivo: true },
+    { id: 'ong',     nome: 'Ong',             modelo: 'modelos/ong-rogue.glb',     x: 6, y: 2, alturaMetros: 2.625, vivo: true, animacoes: { idle: 'Idle_B', andar: 'Walking_B', ataque: 'Melee_Unarmed_Attack_Punch_A', reacao: 'Hit_B' } },
+    { id: 'capanga', nome: 'Capanga 1',       modelo: 'modelos/capanga-knight.glb', x: 7, y: 4, alturaMetros: 2.7,  vivo: true, animacoes: { idle: 'Idle_B', andar: 'Walking_B', ataque: 'Melee_Unarmed_Attack_Punch_A', reacao: 'Hit_B' } },
+    { id: 'lobo',    nome: 'Lobo da Caverna', modelo: 'marcador-lobo',     x: 2, y: 5, alturaMetros: 1.35,  vivo: true }
   ];
   /* Tranche T-D (contrato apresentarAtaque): Ong e Capanga declaram
      também ataque/reacao com os clipes que os GLB viajantes JÁ trazem

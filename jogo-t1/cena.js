@@ -71,7 +71,7 @@
             scene.add(sun);
             const world = CampoWorld(T, scene, area), camera = new T.OrthographicCamera(-10, 10, 10, -10, .1, 1600), target = new T.Vector3(), ray = new T.Raycaster();
             let width = 1, height = 1, selected = null, mode = 'fixa', quality = 'alta', disposed = false, raf, last = performance.now(), fps = 0, fpsAt = last, frames = 0, shadowAt = 0, yaw = 0, pitch = 1.05, viewWidth = 20;
-            const zoom = { fixa: 1, seguir: 1, '360': 1 }, units = new Map(), events = new EventTarget(), times = [];
+            const zoom = { fixa: 1.5, seguir: 1, '360': 1 }, units = new Map(), events = new EventTarget(), times = [];
             let presentation = null;
             const emit = (type, detail) => events.dispatchEvent(new CustomEvent(type, { detail })), publicUnit = u => ({ id: u.id, nome: u.nome, posicao: { x: u.x, y: u.z }, altitude: u.altitude, vivo: u.vivo });
             const requireUnit = id => {
@@ -395,7 +395,7 @@
                 if (mode === 'seguir')
                     return width < height ? 9 : 8.4;
                 if (mode === 'fixa' && width < height)
-                    return Math.max(area.rows * CELL * 1.2, area.cols * CELL * Math.sin(.72) * 1.2 * width / Math.max(150, height - 110));
+                    return Math.max(area.rows * CELL * 1.44, area.cols * CELL * Math.sin(.72) * 1.44 * width / Math.max(150, height - 110));
                 return Math.max(area.cols * CELL * 1.25, area.rows * CELL * Math.sin(1.12) * 1.25 * width / Math.max(150, height - 110));
             }
             function zoomRange() {
