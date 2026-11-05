@@ -425,13 +425,19 @@
                 emit('zoom', { zoom: zoom[mode], ...r });
             }
             function setQualidade(q) {
-                if (!['alta', 'baixa'].includes(q))
+                if (!['alta', 'media', 'baixa'].includes(q))
                     throw new RangeError('Qualidade inválida.');
                 quality = q;
-                renderer.setPixelRatio(Math.min(devicePixelRatio || 1, q === 'alta' ? 2 : 1));
-                renderer.shadowMap.enabled = q === 'alta';
-                sun.castShadow = q === 'alta';
-                world.quality(q === 'baixa');
+                /* Perfis de qualidade (spec P8 — BAIXO/MÉDIO/ALTO):
+                   ALTA = resolução até 2×, sombras, cenário inteiro;
+                   MÉDIA = resolução até 1,5×, sombras ligadas,
+                   cenário a 72%; BAIXA = resolução 1×, sem sombras,
+                   cenário a 45%. A HUD é DOM: nenhum perfil a
+                   encolhe nem lhe muda o contraste. */
+                renderer.setPixelRatio(Math.min(devicePixelRatio || 1, q === 'alta' ? 2 : q === 'media' ? 1.5 : 1));
+                renderer.shadowMap.enabled = q !== 'baixa';
+                sun.castShadow = q !== 'baixa';
+                world.quality(q);
                 resize();
                 renderer.shadowMap.needsUpdate = true;
                 emit('quality', { qualidade: q });

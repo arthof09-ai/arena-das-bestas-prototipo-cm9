@@ -155,13 +155,116 @@
 
   let qualidade = 'alta';
   try { qualidade = localStorage.getItem('hudt1-qualidade') || 'alta'; } catch (_) {}
-  if (qualidade !== 'alta' && qualidade !== 'baixa') qualidade = 'alta';
+  if (qualidade !== 'alta' && qualidade !== 'media' && qualidade !== 'baixa') qualidade = 'alta';
 
   /* Opção "Números de dano" (pop-up ⚙): ligada por omissão, persistida
      como a qualidade. É uma OPÇÃO — mora nas configurações, nunca na
      barra. Desligada, nenhum número de dano aparece (ver mostrarDano). */
   let numerosDano = true;
   try { numerosDano = localStorage.getItem('hudt1-numeros-dano') !== 'desligado'; } catch (_) {}
+
+  /* Opção "Tela vermelha" (C-06/C-07 — palavra do Mestre,
+     04/11/2026 21:23; FORMA GRADUAL: palavra do Mestre,
+     05/11/2026 10:42 — «não quero que seja [só] morrer… quando
+     começar a ficar a 15%, 20% de vida já comece a ficar
+     vermelhinho… com 25% de vida já começa a ficar vermelhinha…
+     e quanto mais perto da morte, mais vai ficando»): as bordas
+     avermelham À MEDIDA que a vida DELA desce, sem números, só
+     no ecrã da dona. É uma OPÇÃO — mora nas configurações
+     (interruptores obrigatórios), nunca na barra; ligada por
+     omissão e persistida como as outras. A camada nasce aqui
+     (o index.html é sagrado); a pele vive em jogo.css
+     (#tela-vermelha) e NÃO muda: a pele da foto da morte é o
+     TECTO — a escala só regula a opacidade até ela, nunca além.
+     Recomeçar é location.reload() — a camada renasce apagada
+     em cada batalha nova. */
+  let telaVermelha = true;
+  try { telaVermelha = localStorage.getItem('hudt1-tela-vermelha') !== 'desligado'; } catch (_) {}
+  /* Interruptor PRÓPRIO do piscar (a mesma palavra dele,
+     05/11/2026 10:42: «também [tem de haver] uma opção de
+     desligar essa questão de ficar piscando»): desligado, o
+     vermelho fica PARADO na intensidade da vida. Ligado por
+     omissão — o piscar faz parte da forma — e persistido à
+     parte do interruptor geral. */
+  let telaVermelhaPiscar = true;
+  try { telaVermelhaPiscar = localStorage.getItem('hudt1-tela-vermelha-piscar') !== 'desligado'; } catch (_) {}
+  let mortePropriaAdjudicada = false;
+  const camadaVermelha = document.createElement('div');
+  camadaVermelha.id = 'tela-vermelha';
+  camadaVermelha.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(camadaVermelha);
+
+  /* A ESCALA GRADUAL (a forma dele, medida no relatório):
+     LIMIAR 0,25 — acima de 25% de vida o efeito é ZERO; a 25%
+     começa em (quase) nada; daí até 0%/morte cresce por uma
+     curva suave (smoothstep do caminho percorrido entre o
+     limiar e zero): ~15% ≈ 0,35 do tecto · ~5% ≈ 0,90 · morte
+     = 1, o tecto inteiro. A intensidade lê a vida DELA
+     (total − danoSofrido, a mesma conta do chip) e segue-a em
+     tempo real nos dois sentidos: desce quando ela perde vida
+     e SOME quando a vida volta a passar dos 25%. A morte
+     adjudicada força o fim da escala (fracção 0) mesmo que a
+     conta da vida diga outra coisa. */
+  const VERMELHA_LIMIAR = 0.25;
+  const vermelhaCurva = t => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
+  function intensidadeVermelha() {
+    if (!telaVermelha) return 0;
+    const total = FICHAS.ong.vida.total;
+    const fraccao = mortePropriaAdjudicada ? 0
+      : Math.max(0, total - danoSofrido) / total;
+    if (fraccao > VERMELHA_LIMIAR) return 0;
+    return vermelhaCurva((VERMELHA_LIMIAR - fraccao) / VERMELHA_LIMIAR);
+  }
+
+  /* O PISCAR (a mesma palavra: «que fique piscando devagarzinho,
+     sem ser muito forte nem epilético»): onda coseno contínua
+     de período 3.200 ms (~0,31 Hz — respiração, não flash) e
+     amplitude 0,18 da intensidade do momento. O factor vive em
+     [1 − 0,18, 1]: o piscar só desce do valor da escala, por
+     isso NUNCA passa do tecto. O nível mostrado persegue a
+     intensidade com suavidade (~0,45 s para fechar a distância)
+     — nenhuma mudança de vida apaga ou acende de golpe. */
+  const VERMELHA_PULSO_PERIODO_MS = 3200;
+  const VERMELHA_PULSO_AMPLITUDE = 0.18;
+  let vermelhaRaf = 0, vermelhaNivel = 0, vermelhaUltimoT = 0;
+  function cicloVermelha(agora) {
+    vermelhaRaf = 0;
+    const base = intensidadeVermelha();
+    const dt = vermelhaUltimoT ? Math.min(100, agora - vermelhaUltimoT) : 16;
+    vermelhaUltimoT = agora;
+    const passo = dt / 450;
+    vermelhaNivel += Math.max(-passo, Math.min(passo, base - vermelhaNivel));
+    if (base <= 0 && vermelhaNivel <= 0.002) {
+      vermelhaNivel = 0;
+      camadaVermelha.style.opacity = '0';
+      camadaVermelha.classList.remove('on');
+      return;
+    }
+    camadaVermelha.classList.add('on');
+    let factor = 1;
+    if (telaVermelhaPiscar) {
+      const fase = (agora % VERMELHA_PULSO_PERIODO_MS) / VERMELHA_PULSO_PERIODO_MS;
+      factor = 1 - VERMELHA_PULSO_AMPLITUDE * (0.5 - 0.5 * Math.cos(2 * Math.PI * fase));
+    }
+    camadaVermelha.style.opacity = String(Math.round(vermelhaNivel * factor * 1000) / 1000);
+    vermelhaRaf = requestAnimationFrame(cicloVermelha);
+  }
+  /* Ponto único de refresco da camada: chamado por
+     atualizarChipVida (toda a mudança de vida dela passa aí —
+     dano, restauro/cura), pelo fimDeBatalha (morte adjudicada),
+     pelo restauro e pelos dois interruptores do ⚙. Fora do
+     limiar e sem nível por desvanecer, a camada fica escondida
+     e o ciclo parado. */
+  function aplicarTelaVermelha() {
+    if (intensidadeVermelha() <= 0 && vermelhaNivel <= 0) {
+      if (vermelhaRaf) { cancelAnimationFrame(vermelhaRaf); vermelhaRaf = 0; }
+      camadaVermelha.style.opacity = '0';
+      camadaVermelha.classList.remove('on');
+      return;
+    }
+    camadaVermelha.classList.add('on');
+    if (!vermelhaRaf) { vermelhaUltimoT = 0; vermelhaRaf = requestAnimationFrame(cicloVermelha); }
+  }
 
   /* Controlo de velocidade (tranche T1.6 — decisão do Mestre,
      03/11 11:46, refinada 11:48): cinco passos 1× · 1,5× · 2× ·
@@ -557,6 +660,83 @@
   function vlabValorDefender(con, armadura, fortitude) {
     return 6 + con + armadura + fortitude;
   }
+  /* ---------- PRODUTOR da declaração (C-39 — o escritor que
+     faltava; o relatório da tranche 1 atribuiu-o à tranche 3) ----
+     A declaração é um ACTO com janela (R02: reacções só na janela
+     permitida): declara-se na vez da própria figura, ANTES de
+     qualquer ataque que a atinja — declarar depois de um ataque
+     resolvido nunca o altera; vale, quando muito, para o próximo.
+     Os componentes lêem-se da fonte que a página anfitriã declarar
+     em window.FICHAS_REACCOES (a mesma costura de
+     window.CAMPO_MESTRE): { <id>: { con, armadura, fortitude,
+     origem } }. Entrada sem os três componentes finitos é
+     ignorada — o contrato acima governa: sem todos os
+     componentes, NÃO se declara, e a razão é nomeada, nunca um
+     valor inventado. Neste elenco nenhuma página declara fonte:
+     a declaração fica indisponível com a razão à vista na ficha.
+     Ciclo de vida: a declaração consome-se SÓ com a resolução
+     feita (em vlabResolverAtaqueCompleto — espelho do consumo da
+     reacção do ataque de oportunidade); por usar, expira quando a
+     vez dela volta (iniciarVez); o restauro de snapshot apaga-as
+     todas (pertenciam à linha do tempo abandonada). */
+  const REACCOES_FONTES = (typeof window !== 'undefined'
+    && window.FICHAS_REACCOES && typeof window.FICHAS_REACCOES === 'object')
+    ? window.FICHAS_REACCOES : {};
+  function fonteDefender(id) {
+    const f = REACCOES_FONTES[id];
+    /* Componentes de ficha são inteiros não negativos: fracções,
+       negativos e valores enormes não são componentes — são lixo
+       de anfitriã, e lixo não declara reacção nenhuma. */
+    if (!f || !Number.isInteger(f.con) || !Number.isInteger(f.armadura)
+      || !Number.isInteger(f.fortitude) || f.con < 0 || f.armadura < 0
+      || f.fortitude < 0 || typeof f.origem !== 'string' || !f.origem)
+      return null;
+    return f;
+  }
+  function declararReacaoDefender(id) {
+    const falhar = razao => {
+      supRegistar('bloqueada', { acao: 'declarar-reacao', actor: id, razao });
+      return { erro: razao };
+    };
+    if (batalhaFim || estado === 'fim') return falhar('BATALHA_TERMINADA');
+    if (vezAtual !== id) return falhar('FORA_DA_JANELA — reacção declara-se na vez da própria figura, antes do ataque');
+    if (REACCOES_DECLARADAS[id]) return falhar('REACCAO_JA_DECLARADA');
+    if (!ESTADO_VLAB[id] || !ESTADO_VLAB[id].reacaoDisponivel) return falhar('REACCAO_INDISPONIVEL_NESTA_RONDA');
+    const f = fonteDefender(id);
+    if (!f) return falhar('SEM_COMPONENTES_NA_FICHA — Defender pede CON, Armadura e Fortitude declarados');
+    REACCOES_DECLARADAS[id] = { tipo: 'Defender', con: f.con, armadura: f.armadura,
+      fortitude: f.fortitude, origem: f.origem };
+    supRegistar('accao', { acao: 'declarar-reacao', actor: id, tipo: 'Defender',
+      valor: vlabValorDefender(f.con, f.armadura, f.fortitude), origem: f.origem });
+    if (id === PROPRIA) {
+      say(`A <b>Ong</b> declara a reacção <b>Defender</b> — quem a atacar tem de superar a Defesa <b>${vlabValorDefender(f.con, f.armadura, f.fortitude)}</b>.`);
+      if (fichaAberta === id) abrirFicha(id);
+    }
+    return { declarada: true, valor: vlabValorDefender(f.con, f.armadura, f.fortitude) };
+  }
+  /* A secção «Reacção» da ficha dela: o estado da declaração, sem
+     números de ninguém — só os dela, e só quando há fonte. Sem
+     fonte de componentes, a linha nomeia a falta (nada se inventa
+     e nenhum botão morto se desenha). */
+  function seccaoReacaoDefender() {
+    const f = fonteDefender(PROPRIA);
+    if (!f) return `<div class="tec"><span>DEFENDER</span><em>não declarada</em></div>
+      <small>Declarar Defender pede CON, Armadura e Fortitude na ficha — esta ficha não os declara; sem os três componentes, a reacção não se declara.</small>`;
+    const valor = vlabValorDefender(f.con, f.armadura, f.fortitude);
+    if (REACCOES_DECLARADAS[PROPRIA]) {
+      /* Declarada: mostra-se a declaração GUARDADA (a que o motor
+         vai usar), não uma releitura da fonte viva. */
+      const d = REACCOES_DECLARADAS[PROPRIA];
+      return `<div class="tec"><span>DEFENDER</span><em>declarada</em></div>
+        <small>Defesa ${vlabValorDefender(d.con, d.armadura, d.fortitude)} — vale para o próximo ataque que a atinja e gasta-se com ele.</small>`;
+    }
+    if (!ESTADO_VLAB.ong.reacaoDisponivel)
+      return `<div class="tec"><span>DEFENDER</span><em>já usada</em></div>
+        <small>Defesa ${valor} — a Reacção renova na próxima vez dela.</small>`;
+    const podeDeclarar = vezAtual === PROPRIA && !batalhaFim;
+    return `<button type="button" class="reacao-btn" data-declarar-defender${podeDeclarar ? '' : ' disabled'}>Declarar Defender</button>
+      <small>Defesa ${valor} (6 + CON ${f.con} + Armadura ${f.armadura} + Fortitude ${f.fortitude}) — declara-se na vez dela, ANTES de a atacarem.</small>`;
+  }
   /* Repõe o DMG no global só durante a chamada ao motor (ver o
      passo 0): sem isto, todo o acerto morria em DMG_INDISPONIVEL. */
   function vlabComDmg(fn) {
@@ -778,8 +958,19 @@
       contexto.armaRecuperada = true;
       ESTADO_VLAB[atacanteId].armaCaida = false;
     }
-    return vlabFiltrarReciboAtaque(vlabComDmg(() => VLAB_MOTOR.resolverAtaque({
-      atacante: vlabFichaAtacante(atacanteId), alvo: alvoFicha, tecnica, contexto })), atacanteId, alvoId);
+    const reacaoEmUso = alvoFicha.reacaoDefensiva || null;
+    const saidaMotor = vlabComDmg(() => VLAB_MOTOR.resolverAtaque({
+      atacante: vlabFichaAtacante(atacanteId), alvo: alvoFicha, tecnica, contexto }));
+    /* C-39: a Reacção declarada consome-se SÓ com a resolução
+       feita (espelho do consumo da reacção do ataque de
+       oportunidade) — saída com erro não consome nada. O ramo de
+       oportunidade chega aqui sem reacção na ficha (regra B0):
+       um ataque de oportunidade nunca gasta a declaração. */
+    if (reacaoEmUso && saidaMotor && !saidaMotor.erro && REACCOES_DECLARADAS[alvoId]) {
+      delete REACCOES_DECLARADAS[alvoId];
+      if (ESTADO_VLAB[alvoId]) ESTADO_VLAB[alvoId].reacaoDisponivel = false;
+    }
+    return vlabFiltrarReciboAtaque(saidaMotor, atacanteId, alvoId);
   }
   /* Consome o lado do ATACANTE de uma saída (desgraças e bandeiras).
      Devolve a info da falha crítica (ou null). */
@@ -1544,6 +1735,12 @@
   function iniciarVez(id) {
     vezAtual = id;
     atacou = false;
+    /* C-39: a declaração de reacção é da ronda — ao abrir a vez
+       dela, a declaração por usar expira e a Reacção renova
+       (espelho da renovação das outras figuras em iniciarVezIA:
+       «a Reacção renova na vez da própria figura»). */
+    delete REACCOES_DECLARADAS[PROPRIA];
+    ESTADO_VLAB.ong.reacaoDisponivel = true;
     /* Tranche VLAB: a reserva nasce da base efectiva (Regra 7 —
        Fraca anda metade; corpo partido, metade). Levantar-se do
        Caído (desgraça de falha crítica) gasta o movimento da vez. */
@@ -1622,6 +1819,7 @@
     vezAtual = id;
     estado = 'vez-ia';
     ESTADO_VLAB[id].reacaoDisponivel = true;   // a Reacção renova na vez da própria figura
+    delete REACCOES_DECLARADAS[id];            // C-39: declaração por usar expira ao abrir a vez da figura (espelho de iniciarVez)
     if (fichaAberta) fecharFicha();          // D-13.12: a vez dele apresenta-se em ecrã limpo
     atualizarVez(); renderAcoes();
     say(aposOng
@@ -1831,6 +2029,11 @@
       Math.max(0, Math.round(almaLivre / FICHAS.ong.alma.total * 100)) + '%';
     const rotuloAlma = chipEl.querySelector('#chip-alma-rotulo');
     if (rotuloAlma) rotuloAlma.textContent = `ALMA · PA ${almaLivre}`;
+    /* C-06/C-07 gradual: a tela vermelha segue a vida por AQUI —
+       é o ponto por onde passa toda a mudança de vida dela
+       (dano, restauro/cura, transformação, arranque), nos dois
+       sentidos. */
+    aplicarTelaVermelha();
   }
   /* Fim de batalha (§1.7): DOIS terminais adjudicados — a queda
      dela (morte/estabilização/queda, como sempre) e, desde o
@@ -1846,6 +2049,16 @@
        frase são os de sempre. */
     supRegistar('fim', { actor: PROPRIA, danoSofrido,
       causa: causa || 'queda', morteAdjudicada: causa === 'morte' });
+    /* C-07 (forma gradual, 05/11/2026): a tela já vem a
+       avermelhar com a vida baixa desde os 25% — quem a move é a
+       vida, por atualizarChipVida. Aqui, a morte DELA adjudicada
+       pelo motor (causa 'morte') só garante o FIM da escala: a
+       bandeira força a fracção a zero e a intensidade ao tecto.
+       Vitória, estabilização e fecho indeterminado não tocam na
+       bandeira — o que se vê nesses fins é só o que a vida manda
+       (na estabilização ela está a zero de vida: tecto, pela
+       escala, não pela bandeira). */
+    if (causa === 'morte') { mortePropriaAdjudicada = true; aplicarTelaVermelha(); }
     continuarAposApresentacao = false;   // R1-Priv: terminal — nenhum Continuar diferido sobrevive ao fim
     batalhaFim = true;
     seqTurno++;                              // invalida continuações pendentes
@@ -2275,6 +2488,8 @@
         <div class="attrs">${f.attrs.map(([n, v]) => `<div><b>${v}</b><span>${n}</span></div>`).join('')}</div>
         <h2>Técnicas</h2>
         ${f.tecnicas.map(([n, c]) => `<div class="tec"><span>${n}</span><em>${c}</em></div>`).join('')}
+        <h2>Reacção</h2>
+        ${seccaoReacaoDefender()}
         <footer>Ficha Base</footer>`;
     } else {
       /* Cartão de vista, tipo Pokédex: só onde se encontra e como é
@@ -2307,7 +2522,23 @@
     chipEl.hidden = true;
   }
   function fecharFicha() { fichaAberta = null; fichaEl.hidden = true; chipEl.hidden = false; }
-  fichaEl.addEventListener('click', e => { if (e.target.closest('[data-fechar]')) fecharFicha(); });
+  fichaEl.addEventListener('click', e => {
+    if (e.target.closest('[data-fechar]')) fecharFicha();
+    else if (e.target.closest('[data-declarar-defender]')) {
+      const r = declararReacaoDefender(PROPRIA);
+      if (r && r.erro) {
+        /* O código do erro vive no registo do Supervisor; na tela
+           da jogadora só entra a frase do mundo. */
+        const frase = r.erro.startsWith('FORA_DA_JANELA')
+          ? 'só se declara na vez dela, antes de a atacarem'
+          : r.erro === 'REACCAO_JA_DECLARADA' ? 'já está declarada para o próximo ataque'
+          : r.erro.startsWith('REACCAO_INDISPONIVEL') ? 'a Reacção desta ronda já se gastou'
+          : r.erro.startsWith('SEM_COMPONENTES') ? 'a ficha não declara os componentes da reacção'
+          : 'a batalha acabou';
+        say(`A reacção <b>Defender</b> não se declarou — ${frase}.`);
+      }
+    }
+  });
   chipEl.addEventListener('click', () => {
     if (!campoPronto) { say(''); return; }
     /* Supervisor (pós-críticos T1.5, Conflitos A1): batalha
@@ -2841,6 +3072,72 @@
   }
   marcarVelocidade();
 
+  /* ---------- Tela vermelha gradual (C-06/C-07) ----------
+   * Linhas «Tela vermelha» e «Piscar da tela vermelha» criadas
+   * aqui (o index.html é sagrado), depois da Velocidade e antes
+   * de #stats — os interruptores que a palavra dele tornou
+   * obrigatórios (04/11/2026 21:23 o geral; 05/11/2026 10:42 o
+   * do piscar, separado). O estado, a escala e o ciclo vivem
+   * junto das outras preferências (topo); aqui moram só as
+   * linhas e os ouvintes, como nas outras opções. Trocar aplica
+   * JÁ: desligar o geral apaga a tela mesmo acesa; desligar o
+   * piscar deixa o vermelho parado na intensidade da vida. */
+  const linhaVermelha = document.createElement('div');
+  linhaVermelha.className = 'cfgrow';
+  const rotuloVermelha = document.createElement('span');
+  rotuloVermelha.className = 'cl';
+  rotuloVermelha.innerHTML = 'Tela vermelha<small>avermelha com a vida baixa</small>';
+  const togVermelha = document.createElement('button');
+  togVermelha.id = 'tog-vermelha';
+  togVermelha.className = 'tog';
+  togVermelha.type = 'button';
+  linhaVermelha.appendChild(rotuloVermelha);
+  linhaVermelha.appendChild(togVermelha);
+  cfgEl.insertBefore(linhaVermelha, $('stats'));
+  function marcarVermelha() {
+    togVermelha.classList.toggle('on', telaVermelha);
+    togVermelha.textContent = telaVermelha ? 'Ligada' : 'Desligada';
+    togVermelha.setAttribute('aria-pressed', String(telaVermelha));
+  }
+  togVermelha.addEventListener('click', () => {
+    telaVermelha = !telaVermelha;
+    try { localStorage.setItem('hudt1-tela-vermelha', telaVermelha ? 'ligado' : 'desligado'); } catch (_) {}
+    marcarVermelha();
+    aplicarTelaVermelha();
+    say(telaVermelha
+      ? 'Tela vermelha <b>ligada</b> — com a vida baixa, as bordas do ecrã vão avermelhando.'
+      : 'Tela vermelha <b>desligada</b> — a vida baixa não pinta as bordas do ecrã.');
+  });
+  marcarVermelha();
+
+  const linhaPiscar = document.createElement('div');
+  linhaPiscar.className = 'cfgrow';
+  const rotuloPiscar = document.createElement('span');
+  rotuloPiscar.className = 'cl';
+  rotuloPiscar.innerHTML = 'Piscar da tela vermelha<small>pulso lento das bordas</small>';
+  const togPiscar = document.createElement('button');
+  togPiscar.id = 'tog-vermelha-piscar';
+  togPiscar.className = 'tog';
+  togPiscar.type = 'button';
+  linhaPiscar.appendChild(rotuloPiscar);
+  linhaPiscar.appendChild(togPiscar);
+  cfgEl.insertBefore(linhaPiscar, $('stats'));
+  function marcarPiscar() {
+    togPiscar.classList.toggle('on', telaVermelhaPiscar);
+    togPiscar.textContent = telaVermelhaPiscar ? 'Ligado' : 'Desligado';
+    togPiscar.setAttribute('aria-pressed', String(telaVermelhaPiscar));
+  }
+  togPiscar.addEventListener('click', () => {
+    telaVermelhaPiscar = !telaVermelhaPiscar;
+    try { localStorage.setItem('hudt1-tela-vermelha-piscar', telaVermelhaPiscar ? 'ligado' : 'desligado'); } catch (_) {}
+    marcarPiscar();
+    aplicarTelaVermelha();
+    say(telaVermelhaPiscar
+      ? 'Piscar <b>ligado</b> — o vermelho das bordas pulsa devagar.'
+      : 'Piscar <b>desligado</b> — o vermelho das bordas fica parado.');
+  });
+  marcarPiscar();
+
   function definirModoAutomatico(ligado) {
     modoAutomatico = !!ligado;
     geracaoAuto++;                       // pendente de outra geração nunca corre
@@ -3293,6 +3590,13 @@
       e.estadoMorte = sv.estadoMorte ? { ...sv.estadoMorte } : null;
     }
     partidaPendente = null; correrUsado = false; opcoesMovimento.desvincular = false;
+    /* C-39: declarações de reacção são decisões da linha do tempo
+       abandonada — o restauro apaga-as todas, como o Continuar. */
+    for (const idDecl of Object.keys(REACCOES_DECLARADAS)) delete REACCOES_DECLARADAS[idDecl];
+    /* C-06/C-07: o restauro volta a uma batalha viva — a morte
+       adjudicada da linha abandonada não pode deixar a tela
+       vermelha acesa nesta. */
+    mortePropriaAdjudicada = false; aplicarTelaVermelha();
     rodada = snap.rodada; indiceVez = snap.indiceVez;
     ataquePendente = null; custoPendente = null; caminhoPendente = null;
     continuarAposApresentacao = false;   // R1-Priv: o Continuar diferido morre no restauro — pertencia à linha do tempo abandonada

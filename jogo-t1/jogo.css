@@ -198,6 +198,26 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
    anel de impacto que expande e some (a expansão é da pele; a posição
    e o desvanecer são do JS). */
 #danos{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:15}
+/* Tela vermelha gradual (C-07, palavra do Mestre 04/11/2026 21:23;
+   forma gradual 05/11/2026 10:42): SÓ bordas vermelhas sobre o
+   mundo — sem texto, sem números, sem capturar toques. Nasce por
+   código em jogo.js (div#tela-vermelha) e avermelha no ecrã da
+   dona à medida que a vida DELA desce dos 25% até à morte. A PELE
+   é a de sempre — é o TECTO da escala: quem comanda a opacidade é
+   o jogo.js (escala da vida × pulso lento), por isso aqui não há
+   transition nem opacity na classe .on — a classe só controla a
+   visibilidade. Por cima do mundo e dos danos flutuantes, por
+   baixo de toda a HUD. */
+#tela-vermelha{position:fixed;inset:0;pointer-events:none;z-index:18;
+  opacity:0;visibility:hidden;
+  background:radial-gradient(ellipse at center,transparent 52%,rgba(165,12,12,.38) 80%,rgba(120,0,0,.66) 100%);
+  box-shadow:inset 0 0 90px rgba(140,0,0,.55)}
+#tela-vermelha.on{visibility:visible}
+/* Botão de declarar a reacção na ficha da própria (C-39): pele mínima
+   sobre as classes da ficha; o comportamento vive em jogo.js. */
+.reacao-btn{min-height:44px;padding:8px 14px;border:1px solid var(--linha);border-radius:8px;
+  background:rgba(201,162,39,.12);color:var(--pergaminho,#f3e9d2);font-weight:700;cursor:pointer}
+.reacao-btn:disabled{opacity:.45;cursor:default}
 .dano{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;
   will-change:transform,opacity;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,.85)}
 .dano b{font-family:Georgia,'DejaVu Serif',serif;font-size:19px}

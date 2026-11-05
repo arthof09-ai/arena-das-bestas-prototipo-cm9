@@ -152,7 +152,11 @@ window.CampoWorld = function (T, scene, area) {
                 flame.rotation.y = time * .4;
                 light.intensity = 7.5 + f * 3;
             });
-        }, quality(low) {
-            batches.forEach(({ mesh, count }) => mesh.count = low ? Math.ceil(count * .45) : count);
+        }, quality(nivel) {
+            /* Densidade do cenário por perfil de qualidade:
+               baixa 45% · média 72% · alta 100%. (Aceita o booleano
+               antigo: true = baixa.) */
+            const factor = nivel === 'baixa' || nivel === true ? .45 : nivel === 'media' ? .72 : 1;
+            batches.forEach(({ mesh, count }) => mesh.count = Math.ceil(count * factor));
         } };
 };
