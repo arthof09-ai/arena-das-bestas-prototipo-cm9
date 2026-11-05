@@ -218,6 +218,27 @@
                     animation(u, false);
                 renderer.shadowMap.needsUpdate = true;
             }
+            // Recurso visual: preserva a unidade e usa os mesmos marcadores locais.
+            function addMarker(u) {
+                // Pedra mate, independente da cor de identificação do anel.
+                u.markerTint = u.model === 'marcador-lobo' ? 0x777b79 : 0x817c73;
+                const m = new T.MeshLambertMaterial({ color: C(u.markerTint) });
+                if (u.model === 'marcador-lobo') {
+                    const body = new T.Mesh(new T.IcosahedronGeometry(1, 1), m);
+                    body.scale.set(.3, u.size * .5, .7);
+                    body.position.y = u.size * .5;
+                    u.pivot.add(body);
+                }
+                else {
+                    const body = new T.Mesh(new T.CylinderGeometry(.22, .38, u.size * .68, 8), m);
+                    body.position.y = u.size * .34;
+                    u.pivot.add(body);
+                    const head = new T.Mesh(new T.IcosahedronGeometry(u.size * .14, 1), m);
+                    head.position.y = u.size * .86;
+                    u.pivot.add(head);
+                }
+                u.pivot.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+            }
             async function addUnit(data) {
                 for (const key of Object.keys(data))
                     if (!UNIT_KEYS.has(key))
@@ -262,7 +283,18 @@
                     select(u.id);
                 try {
                     if (model.endsWith('.glb')) {
-                        const gltf = await new T.GLTFLoader().loadAsync(model);
+                        let gltf;
+                        try {
+                            gltf = await new T.GLTFLoader().loadAsync(model);
+                        } catch (_) {
+                            if (disposed || u.removed) return;
+                            u.loadError = 'Não foi possível carregar o modelo de ' + u.nome + '. A figura está representada por um marcador.';
+                            u.clips = {}; // Sem rig: a apresentação usa avanço/recuo.
+                            addMarker(u);
+                            pose(u);
+                            emit('modelerror', { id: u.id, message: u.loadError });
+                            return publicUnit(u);
+                        }
                         if (disposed || u.removed) {
                             release(gltf.scene);
                             return;
@@ -282,23 +314,7 @@
                         }
                     }
                     else {
-                        // Pedra mate, independente da cor de identificação do anel.
-                        u.markerTint = model === 'marcador-lobo' ? 0x777b79 : 0x817c73;
-                        const m = new T.MeshLambertMaterial({ color: C(u.markerTint) });
-                        if (model === 'marcador-lobo') {
-                            const body = new T.Mesh(new T.IcosahedronGeometry(1, 1), m);
-                            body.scale.set(.3, data.alturaMetros * .5, .7);
-                            body.position.y = data.alturaMetros * .5;
-                            pivot.add(body);
-                        }
-                        else {
-                            const body = new T.Mesh(new T.CylinderGeometry(.22, .38, data.alturaMetros * .68, 8), m);
-                            body.position.y = data.alturaMetros * .34;
-                            pivot.add(body);
-                            const head = new T.Mesh(new T.IcosahedronGeometry(data.alturaMetros * .14, 1), m);
-                            head.position.y = data.alturaMetros * .86;
-                            pivot.add(head);
-                        }
+                        addMarker(u);
                     }
                     pivot.traverse(o => {
                         if (o.isMesh) {
@@ -491,7 +507,7 @@
                 return { area: JSON.parse(JSON.stringify(area)), selected, camera: mode, zoom: zoom[mode], zoomRange: zoomRange(), gridVisible: grid.visible, qualidade: quality, moving: [...units.values()].some(u => u.step || u.queue.length), units: [...units.values()].map(publicUnit) };
             }
             function stats() {
-                return { movementCells:movementCells.map(p=>({...p})), presentation:presentation ? {attacker:presentation.a.id,target:presentation.b.id,phase:!presentation.started?'waiting':presentation.t<.2?'turn':'gesture'} : null, hoverVisible: hover.visible, destinationVisible: destination.visible, reachableCells: (moveLayer.children[0]?.geometry.attributes.position.count ?? 0)/6, fps, triangles: renderer.info.render.triangles, totalTriangles: count(scene), drawCalls: renderer.info.render.calls, dpr: renderer.getPixelRatio(), width, height, visibleWidthMeters: viewWidth, cellPixels: CELL / viewWidth * width, shadowSize: renderer.shadowMap.enabled ? 512 : 0, areaMeters: { width: area.cols * CELL, height: area.rows * CELL }, models: [...units.values()].map(u => ({ id:u.id, frente:((T.MathUtils.radToDeg(u.pivot.rotation.y)%360)+360)%360, drawOffset:{x:u.root.position.x-wx(u.x),y:u.root.position.y-world.height(wx(u.x),wz(u.z))-u.altitude,z:u.root.position.z-wz(u.z)}, modelo:u.model, triangles:count(u.pivot), markerTint:u.markerTint ?? null, skins:(()=>{const skins=new Set();u.pivot.traverse(o=>{if(o.isSkinnedMesh)skins.add(o.skeleton.bones.map(b=>b.uuid).join(','))});return skins.size})(), action:u.actionName ?? null, actionTime:u.action?.time ?? null, clips:u.animations.map(a=>a.name), clipDurations:u.animations.map(a=>({name:a.name,duration:a.duration})) })), animations: { idle: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.idle).length, walk: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.andar).length, advancing: [...units.values()].filter(u => u.mixer && u.mixer.time > 0).length } };
+                return { movementCells:movementCells.map(p=>({...p})), presentation:presentation ? {attacker:presentation.a.id,target:presentation.b.id,phase:!presentation.started?'waiting':presentation.t<.2?'turn':'gesture'} : null, hoverVisible: hover.visible, destinationVisible: destination.visible, reachableCells: (moveLayer.children[0]?.geometry.attributes.position.count ?? 0)/6, fps, triangles: renderer.info.render.triangles, totalTriangles: count(scene), drawCalls: renderer.info.render.calls, dpr: renderer.getPixelRatio(), width, height, visibleWidthMeters: viewWidth, cellPixels: CELL / viewWidth * width, shadowSize: renderer.shadowMap.enabled ? 512 : 0, areaMeters: { width: area.cols * CELL, height: area.rows * CELL }, models: [...units.values()].map(u => ({ id:u.id, frente:((T.MathUtils.radToDeg(u.pivot.rotation.y)%360)+360)%360, drawOffset:{x:u.root.position.x-wx(u.x),y:u.root.position.y-world.height(wx(u.x),wz(u.z))-u.altitude,z:u.root.position.z-wz(u.z)}, modelo:u.model, loadError:u.loadError ?? null, triangles:count(u.pivot), markerTint:u.markerTint ?? null, skins:(()=>{const skins=new Set();u.pivot.traverse(o=>{if(o.isSkinnedMesh)skins.add(o.skeleton.bones.map(b=>b.uuid).join(','))});return skins.size})(), action:u.actionName ?? null, actionTime:u.action?.time ?? null, clips:u.animations.map(a=>a.name), clipDurations:u.animations.map(a=>({name:a.name,duration:a.duration})) })), animations: { idle: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.idle).length, walk: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.andar).length, advancing: [...units.values()].filter(u => u.mixer && u.mixer.time > 0).length } };
             }
             function animate(now) {
                 if (disposed)
@@ -566,7 +582,7 @@
                 scene.fog.far = distance + 240;
                 renderer.render(scene, camera);
                 const boxes = [];
-                const bodies = [...units.values()].map(unitRect).filter(Boolean);
+                const bodies = [...units.values()].map(u => unitRect(u)).filter(Boolean);
                 for (const u of [...units.values()].sort((a, b) => (b.id === selected) - (a.id === selected))) {
                     const p = screen(u.root.position.clone().add(new T.Vector3(0, u.vivo ? u.size + .18 : .55, 0))), hw = Math.min(120, u.nome.length * 3.2 + 10), candidates = [];
                     for (const dx of [0, -55, 55, -95, 95])

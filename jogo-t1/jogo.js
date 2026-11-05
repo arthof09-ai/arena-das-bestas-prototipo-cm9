@@ -242,11 +242,11 @@
    * resolução sai do aparelho da jogadora e estas constantes NÃO
    * são servidas à vista da Party. */
   const COMBATE_TEST = {
-    ong:     { ca: 30, atkQtd: 1, atkFaces: 6, atkBonus: 19, arma: 'Chicote de Água', dano: { qtd: 8, faces: 6, bonus: 28 }, alcance: 6,
+    ong:     { ca: 30, atkQtd: 1, atkFaces: 6, atkBonus: 19, arma: 'Chicote de Água', dano: { qtd: 8, faces: 6, bonus: 28 }, alcance: 9,
                transformacao: { custo: 40, dmgBonusNovo: 34, caNova: 36 } },
-    orc:     { ca: 33, atkQtd: 1, atkFaces: 6, atkBonus: 17, arma: 'Machado',        dano: { qtd: 4, faces: 6, bonus: 0 },  alcance: 1 },
-    capanga: { ca: 30, atkQtd: 1, atkFaces: 6, atkBonus: 10, arma: 'Ataque',         dano: { qtd: 2, faces: 6, bonus: 25 }, alcance: 1 },
-    lobo:    { ca: 34, atkQtd: 1, atkFaces: 6, atkBonus: 10, arma: 'Patada',         dano: { qtd: 1, faces: 6, bonus: 24 }, alcance: 1 }
+    orc:     { ca: 33, atkQtd: 1, atkFaces: 6, atkBonus: 17, arma: 'Machado',        dano: { qtd: 4, faces: 6, bonus: 0 },  alcance: 1.5 },
+    capanga: { ca: 30, atkQtd: 1, atkFaces: 6, atkBonus: 10, arma: 'Ataque',         dano: { qtd: 2, faces: 6, bonus: 25 }, alcance: 1.5 },
+    lobo:    { ca: 34, atkQtd: 1, atkFaces: 6, atkBonus: 10, arma: 'Patada',         dano: { qtd: 1, faces: 6, bonus: 24 }, alcance: 1.5 }
   };
   /* Derivações da engine, transcritas com a fórmula e a fonte:
    * bónus de teste = 9 + floor(min(atkBonus, 19) / 10) — vale 10
@@ -337,9 +337,10 @@
     (INICIATIVA_TEST[b.id] - INICIATIVA_TEST[a.id])
     || (ELENCO.indexOf(a) - ELENCO.indexOf(b))).map(u => u.id);
   // ORDEM = ['ong', 'lobo', 'capanga', 'orc']
-  /* Alcance de ataque da IA: 1 casa — fonte: os três têm alcance 1
-     na ficha TEST (não é empréstimo do alcance dela). */
-  const ALCANCE_IA_TEST = 1;
+  /* Alcance de ataque da IA: 1,5 m = 1 casa (LA-0: em metros) —
+     fonte: os três têm alcance 1 casa na ficha TEST (não é
+     empréstimo do alcance dela). */
+  const ALCANCE_IA_TEST = 1.5;
   /* Verbos da IA (M-018 + LB-C-08): os verbos nomeiam a acção
      VISÍVEL da arma interna de cada um — a patada do Lobo, o
      golpe do Capanga, o machado do Orc (a arma VÊ-SE na
@@ -357,6 +358,9 @@
   /* Reserva de movimento DELA (D-13.13): manda a ficha dela —
      Deslocamento 9 m. A casa do motor publicado vale 1,5 m (Q5). */
   const DESLOCAMENTO_ONG_M = 9, CASA_M = 1.5;
+  /* LA-0: as constantes de alcance vivem em METROS; a conversão
+     para casas (a régua das distâncias BFS) faz-se num sítio só. */
+  const alcanceEmCasas = metros => metros / CASA_M;
   /* FICHAS só tem a ficha completa da PRÓPRIA (Ong) — é a única ficha
      que pode aparecer neste aparelho. Não há entradas mecânicas de
      figuras alheias neste objecto, de propósito (ver VISTA, abaixo). */
@@ -1057,6 +1061,7 @@
      «ataque-sem-gesto» nascem e morrem juntos, no mesmo segmento
      (correcção R1 do julgamento de Fidelidade da T-D: antes eram
      universos diferentes e o 0 saía do clamp, não da contagem). */
+  let campoPronto = false, falhaArranque = '', falhaDefinitiva = false;
   let estado = 'base';        // base | atacar | consumivel | mover | movendo | rolagem | resultado | vez-ia | confirmar-fim | fim
   /* Máquina de turnos (T1.3): a vez roda por ORDEM. vezAtual,
      indiceVez e rodada só mudam em passarVez()/iniciarVezIA() e no
@@ -1099,7 +1104,10 @@
   const unidade = id => view.getState().units.find(u => u.id === id);
   const nomeCena = id => (ELENCO.find(u => u.id === id) || {}).nome
     || (unidade(id) || {}).nome || id;
-  function say(html) { msgTxt.innerHTML = html; }
+  function say(html) {
+    if (!campoPronto) { msgTxt.textContent = falhaArranque || 'A carregar o campo…'; return; }
+    msgTxt.innerHTML = html;
+  }
 
   /* ---------- faixa: os estados trocam o miolo, nunca o tamanho ---------- */
   const B = (acao, glifo, rotulo, cls) =>
@@ -1108,6 +1116,14 @@
     `<span class="gl">${rotulo}</span></button>`;
   const retrato = () => matchMedia('(max-width:560px)').matches;
   function renderAcoes() {
+    if (!campoPronto) {
+      document.getElementById('faixa').dataset.estado = falhaArranque ? 'falha-carregamento' : 'carregando';
+      acoesEl.classList.remove('compacta');
+      acoesEl.innerHTML = !falhaArranque ? 'A carregar…'
+        : falhaDefinitiva ? 'A batalha não começou.'
+        : B('tentar-modelos', '↻', 'Tentar de novo', 'primary');
+      return;
+    }
     const rp = retrato();
     document.getElementById('faixa').dataset.estado = estado;
     acoesEl.classList.toggle('compacta', estado === 'base' || estado === 'atacar');
@@ -1289,7 +1305,7 @@
   function fraseForaDeAlcance(alvoId, contexto) {
     const u = unidade(alvoId);
     const atraves = u ? mapaDistancias(PROPRIA).get(chave(u.posicao.x, u.posicao.y)) : undefined;
-    const tapado = atraves !== undefined && atraves <= COMBATE_TEST.ong.alcance;
+    const tapado = atraves !== undefined && atraves <= alcanceEmCasas(COMBATE_TEST.ong.alcance);
     if (contexto === 'confirmar') {
       return tapado
         ? 'O caminho até ele está tapado por outras figuras — aproxima-te com <b>Mover</b> e tenta outra vez.'
@@ -1352,13 +1368,15 @@
   }
   function tickFlutuantes(agora) {
     rafDanos = 0;
+    const projecoes = new Map(); // Cache só deste frame, inclusive resultados nulos.
     for (let i = flutuantes.length - 1; i >= 0; i--) {
       const f = flutuantes[i];
       const t = agora - f.t0 - f.atraso;
       if (t < 0) continue;
       const prog = t / f.dur;
       if (prog >= 1) { f.el.remove(); flutuantes.splice(i, 1); continue; }
-      const r = view.projectUnit(f.id);
+      if (!projecoes.has(f.id)) projecoes.set(f.id, view.projectUnit(f.id));
+      const r = projecoes.get(f.id);
       if (!r) { f.el.style.opacity = '0'; continue; }
       let cx = (r.left + r.right) / 2 + f.dx;
       /* Nenhum flutuante nasce fora do ecrã (aceite A9): junto à
@@ -1617,7 +1635,7 @@
     });
   }
   function vezDaIA(id, seq) {
-    if (distanciaEntre(id, PROPRIA) <= ALCANCE_IA_TEST) {
+    if (distanciaEntre(id, PROPRIA) <= alcanceEmCasas(ALCANCE_IA_TEST)) {
       agendarAtaqueIA(id, seq);              // já ao alcance: não anda, ataca
       return;
     }
@@ -1721,7 +1739,7 @@
       if (d === undefined) continue;
       if (!melhor || d < melhor.d || (d === melhor.d && c.passos < melhor.destino.passos))
         melhor = { d, destino: c };
-      if (melhor.d <= ALCANCE_IA_TEST) break;   // 1 é o mínimo possível: a casa dela está ocupada
+      if (melhor.d <= alcanceEmCasas(ALCANCE_IA_TEST)) break;   // 1 casa é o mínimo possível: a casa dela está ocupada
     }
     if (!melhor) return null;
     if (distActual !== undefined && melhor.d >= distActual) return null;
@@ -1741,7 +1759,7 @@
   async function atacarIA(id, seq) {
     /* Supervisor: o ataque da IA também é validado antes — sem
        alcance, não acontece (a vez fecha pelo caminho normal). */
-    if (distanciaEntre(id, PROPRIA) > ALCANCE_IA_TEST) {
+    if (distanciaEntre(id, PROPRIA) > alcanceEmCasas(ALCANCE_IA_TEST)) {
       supRegistar('bloqueada', { acao: 'ataque', actor: id, razao: 'Monstro fora de alcance da Ong' });
       return;
     }
@@ -1874,6 +1892,11 @@
      Modo automático chamam a MESMA função — o pipeline legal é um
      só; o automático não duplica resolução nenhuma. */
   async function tratarAcao(acao) {
+    if (!campoPronto) {
+      if (acao === 'tentar-modelos' && falhaArranque && !falhaDefinitiva) location.reload();
+      else say('');
+      return;
+    }
     const u = unidade(selecionada);
     /* Supervisor: batalha congelada — só o Recomeçar AGE; as
        outras acções não mutam nada, mas respondem com a frase do
@@ -1897,13 +1920,20 @@
        despejava o evento duas vezes no export. */
     if (acao === 'continuar' && apresentacaoEmCurso) { continuarAposApresentacao = true; return; }
     /* Supervisor do Comestre (T1.5): TODA a acção é validada ANTES
-       de acontecer. Bloqueio registado no Supervisor; nos bloqueios
-       "moles" o caminho existente continua e recusa com a frase de
-       sempre, sem efeito nenhum; nos "duros" (caminhos sem recusa
-       própria) a acção pára aqui, com o estado intacto. */
+       de acontecer. As acções de combate devolvem também a frase e
+       a limpeza necessária: uma validação por chamada, partilhada
+       pela casca e pelo registo. As restantes acções mantêm as
+       guardas existentes. */
     const bloqueioSup = supValidarAcaoOng(acao);
     if (bloqueioSup) {
       supRegistar('bloqueada', { acao, actor: PROPRIA, razao: bloqueioSup.razao });
+      if (bloqueioSup.mensagem) {
+        if (bloqueioSup.limparPendente) {
+          ataquePendente = null; estado = 'base'; renderAcoes();
+        }
+        say(bloqueioSup.mensagem);
+        return;
+      }
       if (bloqueioSup.duro) return;
     } else {
       supRegistar('accao', { acao, actor: PROPRIA });
@@ -1965,15 +1995,12 @@
       return;
     }
     if (acao === 'atacar') {
-      if (estado === 'movendo' || view.getState().moving) { say('Espera — a figura ainda está a andar.'); return; }
-      if (atacou) { say('A <b>Ong</b> já atacou nesta vez — prime <b>Encerrar</b> para fechar a vez dela.'); return; }
-      if (!alvo) { say('Primeiro <b>toca no inimigo</b> que queres atacar — ele fica marcado como alvo.'); return; }
-      if (distanciaAte(alvo) > COMBATE_TEST.ong.alcance) {
-        say(fraseForaDeAlcance(alvo, 'atacar'));
-        return;
-      }
+      // Abrir a gaveta não escolhe alvo: técnicas sobre si própria
+      // ficam acessíveis; o Chicote valida o seu alvo ao ser escolhido.
       estado = 'atacar'; renderAcoes();
-      say(`Atacar <b>${nomeCena(alvo)}</b> com a <b>Ong</b> · escolhe o ataque na faixa.`);
+      say(alvo
+        ? `Atacar <b>${nomeCena(alvo)}</b> com a <b>Ong</b> · escolhe o ataque na faixa.`
+        : 'Escolhe o Chicote ou a Transformação da <b>Ong</b>. A Transformação é sobre si própria.');
       return;
     }
     if (acao === 'consumivel') {
@@ -2059,8 +2086,7 @@
     if (acao === 'transformacao') {
       /* Não é um ataque: não pede alvo nem alcance; é a acção dela
          sobre si própria e consome o atacar da vez (no Confirmar).
-         Já transformada, o botão recusa aqui mesmo, com frase. */
-      if (transformada) { say('A <b>Ong</b> já está transformada.'); return; }
+         O validador comum recusa se ela já estiver transformada. */
       const t = COMBATE_TEST.ong.transformacao;
       const livre = FICHAS.ong.alma.total - FICHAS.ong.alma.comprometido - paGasto;
       ataquePendente = { tipo: 'transformacao', nome: 'Transformação' };
@@ -2073,7 +2099,10 @@
     if (acao === 'confirmar') {
       const pend = ataquePendente;
       ataquePendente = null;
-      if (!pend) { estado = 'base'; renderAcoes(); say('É a vez da <b>Ong</b>.'); return; }
+      /* Guarda reposta (bancada, R3): sem pendente, o Confirmar
+         fecha em silêncio na base — nunca lê pend.tipo a null. O
+         validador já recusa este caso; a guarda é a rede local. */
+      if (!pend) { estado = 'base'; renderAcoes(); return; }
       if (pend.tipo === 'transformacao') {
         /* O débito é REAL (T1.4 §3.3): paGasto escreve-se e a ficha
            compõe o PA livre a partir dele. Sem alma que chegue,
@@ -2082,8 +2111,6 @@
         const t = COMBATE_TEST.ong.transformacao;
         const livre = FICHAS.ong.alma.total - FICHAS.ong.alma.comprometido - paGasto;
         estado = 'base'; renderAcoes();
-        if (transformada) { say('A <b>Ong</b> já está transformada.'); return; }
-        if (livre < t.custo) { say(`Alma livre não chega — a Transformação custa ${t.custo} PA.`); return; }
         paGasto += t.custo;
         transformada = true;
         atualizarChipVida();           // M-015: o débito de PA reflecte-se já no chip (antes nem a chamada existia neste caminho)
@@ -2093,11 +2120,6 @@
       }
       // Chicote: o Confirmar REVELA a resolução do motor (D-14.2).
       // O alcance revalida-se com o alcance real da arma dela (6).
-      if (!alvo || distanciaAte(alvo) > COMBATE_TEST.ong.alcance) {
-        estado = 'base'; renderAcoes();
-        say(fraseForaDeAlcance(alvo, 'confirmar'));
-        return;
-      }
       atacou = true;                   // a acção gasta-se, acerte ou erre
       estado = 'resultado'; renderAcoes();
       /* T-D: o alvo DESTE golpe fixa-se antes do gesto — um toque
@@ -2287,6 +2309,7 @@
   function fecharFicha() { fichaAberta = null; fichaEl.hidden = true; chipEl.hidden = false; }
   fichaEl.addEventListener('click', e => { if (e.target.closest('[data-fechar]')) fecharFicha(); });
   chipEl.addEventListener('click', () => {
+    if (!campoPronto) { say(''); return; }
     /* Supervisor (pós-críticos T1.5, Conflitos A1): batalha
        congelada — o chip não muta NADA (sem estado novo, sem
        apagar ataquePendente, sem repintar a faixa); correcções
@@ -2314,6 +2337,7 @@
    * A cena devolve {unitId, cell}: a figura pela caixa projectada e a
    * casa por contenção no plano do solo — sem raio de atracção em px. */
   function tratarToque(clientX, clientY) {
+    if (!campoPronto) { say(''); return; }
     /* Supervisor (pós-críticos T1.5, Conflitos A1): batalha
        congelada — o toque não muta NADA (sem alvo novo, sem
        estado, sem abrir cartão nem ficha); correcções finais
@@ -2469,7 +2493,7 @@
       if (guardaExpiradaIA && guardaExpiradaIA.id === u.id) guardaExpiradaIA = null;   // M-009: chegada normal consome a marca velha
       if (u.id !== vezAtual || ctx.seq !== seqTurno) return;   // sequência morta
       const seq = ctx.seq;
-      if (distanciaEntre(u.id, PROPRIA) <= ALCANCE_IA_TEST) {
+      if (distanciaEntre(u.id, PROPRIA) <= alcanceEmCasas(ALCANCE_IA_TEST)) {
         agendarAtaqueIA(u.id, seq);          // chegou ao alcance: separa e ataca
       } else {
         say(`<b>${nomeCena(u.id)}</b> aproximou-se.`);
@@ -2550,6 +2574,7 @@
     try { supCritAmostraStats(s); } catch (_) { supCritErrosCamada++; }   // T1.7: amostras do Crítico (passivo)
   });
   view.on('error', e => say((e && e.message) || 'Erro na vista 3D.'));
+  view.on('modelerror', d => { supRegistar('modelo-indisponivel', { id: d && d.id }); if (d && d.message) say(d.message); });
 
   /* ---------- gestos no mapa (o padrão da demo dele): ----------
    * toque = seleccionar/agir · arrastar = órbita (só 360) ·
@@ -2828,6 +2853,7 @@
     if (modoAutomatico) agendarPassoAuto();
   }
   function agendarPassoAuto() {
+    if (!campoPronto) return;
     if (!modoAutomatico || supCongelado || batalhaFim || vezAtual !== PROPRIA) return;
     if (relogioAuto) return;             // um passo pendente chega
     const gen = geracaoAuto;
@@ -2870,6 +2896,7 @@
    * Transformação NUNCA é confirmado pelo controlador — o passo
    * só reagenda a verificação e a decisão fica manual. */
   function passoAutomatico() {
+    if (!campoPronto) return;
     if (!modoAutomatico || supCongelado || batalhaFim || vezAtual !== PROPRIA) return;
     if (apresentacaoEmCurso) { agendarPassoAuto(); return; }   // T-D: o gesto manda — o passo espera e reagenda (a apresentação da cena NÃO escala com a velocidade: a 3× o passo de 283 ms chegaria a meio dos 0,70 s)
     if (estado === 'movendo') return;    // a animação manda: o moveend retoma
@@ -2907,7 +2934,7 @@
       if (d < menor) { menor = d; alvoId = id; }
     }
     alvo = alvoId;
-    if (menor <= COMBATE_TEST.ong.alcance) {
+    if (menor <= alcanceEmCasas(COMBATE_TEST.ong.alcance)) {
       tratarAcao('atacar');
       if (estado === 'atacar') { autoAtaqueEmCurso = true; agendarPassoAuto(); }
       else tratarAcao('encerrar');
@@ -3016,37 +3043,63 @@
     supRegistar('guarda', { acao: 'mover', actor: PROPRIA, razao: 'O moveend dela não chegou em 5 s — movimento destravado sem desconto' });
     agendarPassoAuto();   // destravada, o Modo automático pode retomar
   }
-  /* Validação das acções DELA (chokepoint: tratarAcao). Devolve
-   * { razao, duro? } ou null. A Transformação valida o PA no
-   * Confirmar — é aí que ela realmente entra, antes do débito. */
+  /* Só os ataques dirigidos a outra figura usam alvo e alcance.
+     A confirmação chama novamente esta validação: o alvo pode ter
+     mudado desde a escolha. Isso não é uma verificação duplicada. */
+  function validarAlvoAtaqueOng(contexto) {
+    if (!alvo) return { razao: 'Sem alvo escolhido',
+      mensagem: 'Primeiro <b>toca no inimigo</b> que queres atacar — ele fica marcado como alvo.' };
+    const u = unidade(alvo);
+    if (!u || u.vivo === false) return { razao: 'O alvo já não está na batalha',
+      mensagem: 'O alvo já não está na batalha — escolhe outro inimigo.' };
+    if (distanciaAte(alvo) > alcanceEmCasas(COMBATE_TEST.ong.alcance)) return { razao: 'Alvo fora de alcance',
+      mensagem: fraseForaDeAlcance(alvo, contexto) };
+    return null;
+  }
+  /* Validação das acções DELA, única em cada chamada a tratarAcao.
+     A casca apresenta a mensagem devolvida; o Supervisor regista
+     a mesma recusa. O débito continua exclusivamente no Confirmar. */
   function supValidarAcaoOng(acao) {
     if (acao === 'atacar') {
-      if (estado === 'movendo' || view.getState().moving) return { razao: 'A figura ainda está a andar' };
-      if (atacou) return { razao: 'A Ong já atacou nesta vez' };
-      if (!alvo) return { razao: 'Sem alvo escolhido' };
-      if (!unidade(alvo)) return { razao: 'O alvo já não está na batalha' };
-      if (unidade(alvo).vivo === false) return { razao: 'O alvo já não está na batalha' };   // FID-R2: alvo VIVO
-      if (distanciaAte(alvo) > COMBATE_TEST.ong.alcance) return { razao: 'Alvo fora de alcance' };
+      if (estado === 'movendo' || view.getState().moving) return { razao: 'A figura ainda está a andar',
+        mensagem: 'Espera — a figura ainda está a andar.' };
+      if (atacou) return { razao: 'A Ong já atacou nesta vez',
+        mensagem: 'A <b>Ong</b> já atacou nesta vez — prime <b>Encerrar</b> para fechar a vez dela.' };
+      /* Emenda da bancada (sentença Q1-(B) da tranche da página):
+         COM alvo escolhido, a recusa de alvo morto ou fora de
+         alcance regista-se já na casca «atacar», pela mesma régua
+         de «ataque-basico» — a telemetria do Supervisor diz a
+         verdade nos dois passos. SEM alvo, devolve null e a
+         gaveta abre (F1 julgado: a Transformação é alcançável). */
+      if (alvo) {
+        const bloqueioAlvo = validarAlvoAtaqueOng('atacar');
+        if (bloqueioAlvo) return bloqueioAlvo;
+      }
       return null;
     }
     if (acao === 'ataque-basico') {
-      if (estado !== 'atacar' || !alvo || atacou
-        || distanciaAte(alvo) > COMBATE_TEST.ong.alcance)
+      if (estado !== 'atacar' || atacou)
         return { razao: 'Ataque básico sem condições para acontecer', duro: true };
-      return null;
+      return validarAlvoAtaqueOng('atacar');
     }
     if (acao === 'transformacao') {
-      if (transformada) return { razao: 'A Ong já está transformada' };
+      if (transformada) return { razao: 'A Ong já está transformada',
+        mensagem: 'A <b>Ong</b> já está transformada.' };
       return null;
     }
     if (acao === 'confirmar') {
-      if (!ataquePendente) return { razao: 'Nada para confirmar' };
+      if (!ataquePendente) return { razao: 'Nada para confirmar',
+        mensagem: 'É a vez da <b>Ong</b>.', limparPendente: true };
       if (ataquePendente.tipo === 'transformacao') {
+        if (transformada) return { razao: 'A Ong já está transformada',
+          mensagem: 'A <b>Ong</b> já está transformada.', limparPendente: true };
         const t = COMBATE_TEST.ong.transformacao;
         const livre = FICHAS.ong.alma.total - FICHAS.ong.alma.comprometido - paGasto;
-        if (livre < t.custo) return { razao: 'Alma livre não chega para a Transformação' };
-      } else if (!alvo || distanciaAte(alvo) > COMBATE_TEST.ong.alcance) {
-        return { razao: 'Alvo fora de alcance' };
+        if (livre < t.custo) return { razao: 'Alma livre não chega para a Transformação',
+          mensagem: `Alma livre não chega — a Transformação custa ${t.custo} PA.`, limparPendente: true };
+      } else {
+        const bloqueio = validarAlvoAtaqueOng('confirmar');
+        if (bloqueio) return { ...bloqueio, limparPendente: true };
       }
       return null;
     }
@@ -3389,6 +3442,7 @@
     return { batalhas: 0, quedas: {}, usoCasas: {}, alvosAuto: {}, fps: [], deslize: {}, padroes: {} };
   }
   function supCritAggLer() {
+    if (!MODO_MESTRE) return supCritAggVazio();   // E2-07 (C-17): na Party, o agregado não se lê nem se persiste — perda declarada: o «crónico» alimenta-se só das batalhas vistas pelo Mestre. (A construção em memória vive só na closure, é idêntica ao vivo e morre com a sessão; DOM/consola/export estão guardados.)
     try {
       const j = JSON.parse(localStorage.getItem(SUPCRIT_AGG_CHAVE) || 'null');
       if (j && typeof j === 'object' && typeof j.batalhas === 'number')
@@ -3398,6 +3452,7 @@
   }
   let supCritAgg = supCritAggLer();
   function supCritAggGuardar() {
+    if (!MODO_MESTRE) return;   // E2-07 (C-17): na vista da Party o agregado não se persiste
     try { localStorage.setItem(SUPCRIT_AGG_CHAVE, JSON.stringify(supCritAgg)); } catch (_) {}
   }
   function supCritNovoAcc() {
@@ -3615,7 +3670,7 @@
           && reservaMovimento >= DESLOCAMENTO_ONG_M - 1e-9) acc.ongVazias++;
         const alvoAoAlcance = ELENCO.some(u => u.id !== PROPRIA
           && unidade(u.id) && unidade(u.id).vivo !== false
-          && distanciaEntre(PROPRIA, u.id) <= COMBATE_TEST.ong.alcance);
+          && distanciaEntre(PROPRIA, u.id) <= alcanceEmCasas(COMBATE_TEST.ong.alcance));
         if (!ctx.atacou && reservaMovimento >= DESLOCAMENTO_ONG_M / 2 && alvoAoAlcance)
           acc.ongDesperdicadas++;
       }
@@ -4487,10 +4542,38 @@
   atualizarChipVida();
   say('A carregar o campo…');
   view.ready.then(() => {
+    const falhas = view.getStats().models.filter(m => m.loadError);
+    if (falhas.some(m => m.id === PROPRIA)) {
+      falhaArranque = 'Modelo da Ong indisponível. Batalha não iniciada.';
+      renderAcoes(); say('');
+      return;
+    }
     selecionar(PROPRIA);
     sincronizarCamera();
     mostrarZoom();
     iniciarVez(PROPRIA);         // a batalha começa na vez dela, rodada 1 (D-13.3)
-    say('É a vez da <b>Ong</b>. Prime <b>Mover</b> e toca numa casa acesa para andar.');
-  }).catch(error => say('Não foi possível carregar os modelos: ' + ((error && error.message) || error)));
+    /* Correcção E-02 da assimilação: a bandeira só sobe DEPOIS de o
+       arranque estar completo — antes dela, say()/renderAcoes()
+       mostram o estado de carregamento e nenhuma acção corre; se
+       alguma função do arranque lançar, o catch apanha-a com a
+       guarda ainda fechada e a falha fica visível com saída. */
+    campoPronto = true;
+    renderAcoes();
+    /* A nota de modelo em falta JUNTA-SE à dica da primeira vez —
+       nunca a sobrescreve (observação do juiz na análise do pacote). */
+    say('É a vez da <b>Ong</b>. Prime <b>Mover</b> e toca numa casa acesa para andar.'
+      + (falhas.length
+        ? `<br>Modelo indisponível: ${falhas.map(m => nomeCena(m.id)).join(', ')}. Marcador ativo.`
+        : ''));
+  }).catch(error => {
+    /* Correcção E-07 da assimilação: falha de DADOS (a validação da
+       cena lança TypeError/RangeError) não se cura com «Tentar de
+       novo» — repetir repete a mesma falha para sempre. Distingue-se
+       da falha de carregamento, que ganha o botão de recuperação. */
+    falhaDefinitiva = error instanceof TypeError || error instanceof RangeError;
+    falhaArranque = falhaDefinitiva
+      ? 'Erro nos dados das figuras — a batalha não começou.'
+      : 'Não foi possível preparar as figuras. A batalha não começou. Prime Tentar de novo.';
+    renderAcoes(); say('');
+  });
 })();
