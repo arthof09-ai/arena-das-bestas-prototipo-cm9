@@ -1704,6 +1704,7 @@
     atualizarVez(); renderAcoes();
     autoJaMoveu = false;              // T1.5: a vez nova repõe o movimento automático
     autoAtaqueEmCurso = false;
+    autoAtaqueRecusado = false;       // D-REC-01: a recusa é por vez — a vez nova limpa-a
     if (id === PROPRIA) agendarPassoAuto();   // T1.5: hook do Modo automático (desligado, não agenda)
     supSnapshot();                    // Supervisor: ponto de retorno deste turno
   }
@@ -2961,6 +2962,7 @@
   let relogioAuto = null;      // o único relógio do controlador
   let autoJaMoveu = false;     // no máximo UM movimento automático por vez dela
   let autoAtaqueEmCurso = false;   // a gaveta de ataque foi aberta pelo controlador
+  let autoAtaqueRecusado = false;  // D-REC-01: o ataque básico do controlador já foi recusado NESTA vez
 
   /* Volta S-001, V-02 (sentença §1, S1C-02): o Automático é
    * ferramenta de teste/supervisão do Mestre (X4/§7.4, inventário
@@ -3178,10 +3180,28 @@
     if (estado === 'atacar') {
       if (!autoAtaqueEmCurso) { tratarAcao('voltar'); agendarPassoAuto(); return; }
       autoAtaqueEmCurso = false;
-      tratarAcao('ataque-basico'); agendarPassoAuto(); return;
+      const seqAntesRecusa = supSeq;
+      const armaCaidaAntes = ESTADO_VLAB.ong.armaCaida === true;
+      tratarAcao('ataque-basico');
+      /* D-REC-01: se a tentativa não produziu rolagem (o estado
+       * ficou 'atacar') e não foi progresso (apanhar a arma caída
+       * muda o estado das coisas — essa pode repetir-se), a recusa
+       * fica marcada para ESTA vez: o motor recusou (evento
+       * 'bloqueada' registado nesta chamada) ou a arma está
+       * partida, e o ataque nunca passaria. Sem esta memória, o
+       * controlador voltava à base e reabria a gaveta para
+       * sempre — a batalha automática encravava. Com a marca, o
+       * planeamento encerra a vez, como nos outros ramos sem
+       * progresso deste controlador. */
+      if (estado === 'atacar' && !(armaCaidaAntes && ESTADO_VLAB.ong.armaCaida !== true)
+          && (ESTADO_VLAB.ong.armaQuebrada === true
+            || supRegisto.some(e => e.seq > seqAntesRecusa && e.tipo === 'bloqueada' && e.acao === 'ataque-basico')))
+        autoAtaqueRecusado = true;
+      agendarPassoAuto(); return;
     }
     if (estado !== 'base') return;
     if (atacou) { tratarAcao('encerrar'); return; }
+    if (autoAtaqueRecusado) { tratarAcao('encerrar'); return; }   // D-REC-01: sem outra acção ofensiva do controlador (Transformação e consumível nunca são automáticos), a vez encerra
     /* Alvo: o monstro vivo mais próximo por distanciaEntre; o
      * desempate é a ordem de `ordem` (a iteração segue essa ordem
      * e só um < estrito troca). Sem alvos vivos, pára estável —
