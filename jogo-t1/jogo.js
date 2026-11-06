@@ -1190,6 +1190,17 @@
   let alvo = null;              // última figura não-própria tocada (ou nenhuma)
   let atacou = false;           // uso de atacar da vez dela (atacar ×1; a Transformação também o consome)
   let ataquePendente = null;    // rolagem dela entre o clique e o Confirmar (T1.4 §1: o resultado NÃO se revela antes)
+  /* J1 (carta IBX-213): existe uma ROLAGEM POR RESOLVER quando o
+     pendente é um golpe já rolado — o resultado nasceu no clique
+     (ataque-basico) e espera o Confirmar. Enquanto ela existir,
+     nenhuma das três portas de saída a deita fora (Voltar, toque
+     nas figuras, chip): a rolagem fica até ao Confirmar. A
+     Transformação pendente NÃO é uma rolagem (nenhum resultado
+     foi rolado ao declará-la) e fica fora desta protecção:
+     desistir dela antes do Confirmar continua a ser o fluxo
+     legítimo de cancelar uma declaração. */
+  const rolagemPorResolver = () => !!(ataquePendente && ataquePendente.tipo === 'chicote');
+  const FRASE_ROLAGEM_PENDENTE = 'A rolagem já saiu — prime <b>Confirmar</b> para resolver o golpe.';
   let apresentacaoEmCurso = false;   // T-D: uma apresentação de confronto da cena está a decorrer (o fluxo espera por ela)
   let continuarAposApresentacao = false;   // T-D: um «Continuar» premido durante o gesto executa-se quando ele fecha
   /* T-D/R1: o contador de ataques COM apresentação já NÃO vive aqui:
@@ -2099,7 +2110,14 @@
     } else {
       supRegistar('accao', { acao, actor: PROPRIA });
     }
-    if (acao === 'voltar') { estado = 'base'; ataquePendente = null; renderAcoes(); say('É a vez da <b>Ong</b>.'); return; }
+    if (acao === 'voltar') {
+      /* J1 (carta IBX-213): com uma rolagem por resolver, o Voltar
+         NÃO a deita fora — devolve à mesma rolagem pendente. Sem
+         rolagem pendente, o Voltar é o de sempre (incl. cancelar a
+         declaração de Transformação antes de rolar). */
+      if (rolagemPorResolver()) { say(FRASE_ROLAGEM_PENDENTE); return; }
+      estado = 'base'; ataquePendente = null; renderAcoes(); say('É a vez da <b>Ong</b>.'); return;
+    }
     if (acao === 'mover') { entrarMover(); return; }
     if (acao === 'desvincular') {
       /* Declaração do modo Mover (Parte C): a intenção regista-se
@@ -2509,6 +2527,10 @@
        responde com a frase de espera e a ficha fica para depois do
        Continuar. */
     if (estado === 'resultado' || apresentacaoEmCurso) { say('Prime <b>Continuar</b> para seguir.'); return; }
+    /* J1 (carta IBX-213): com uma rolagem por resolver, o chip
+       também não a destrói — a ficha fica para depois do
+       Confirmar, como já acontece com o resultado (M-010). */
+    if (rolagemPorResolver()) { say(FRASE_ROLAGEM_PENDENTE); return; }
     if (estado === 'mover') limparAjudaMover();
     estado = 'base'; ataquePendente = null;
     selecionar(PROPRIA); abrirFicha(PROPRIA); renderAcoes();
@@ -2543,6 +2565,11 @@
        figura repunha estado='base' e ataquePendente=null também a
        partir de 'resultado' — era assim que a saída se destruía.) */
     if (estado === 'resultado' || apresentacaoEmCurso) { say('Prime <b>Continuar</b> para seguir.'); return; }
+    /* J1 (carta IBX-213): com uma rolagem por resolver, o toque
+       também não troca de alvo nem a apaga — a rolagem fica até
+       ao Confirmar (a protecção do M-010, um estado mais cedo,
+       sobre as figuras e sobre o chão). */
+    if (rolagemPorResolver()) { say(FRASE_ROLAGEM_PENDENTE); return; }
     const hit = view.hitTest(clientX, clientY);
     if (estado === 'movendo') {
       say(`Espera — <b>${nomeCena(selecionada)}</b> ainda está a andar.`);
