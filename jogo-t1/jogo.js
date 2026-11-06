@@ -749,9 +749,31 @@
     vlabRegistarReciboPublico('cura', null, null, s.publico.recibo);
     return s;
   }
-  const vlabSemente = () => (Math.floor(Math.random() * 4294967296) >>> 0);
-  const vlabVerificacao = () => [1 + Math.floor(Math.random() * 6),
-    1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
+  /* ---------- dados com estado guardável (tranche SAVES, C-23) ----------
+   * O vivo rolava com Math.random() — sem estado que se possa guardar.
+   * Aqui as rolagens da casca passam por um PRNG próprio (LCG
+   * 1664525/1013904223, a família do mundo.js): dadoEstado é a
+   * «semente» efectiva e faz parte do estado capturável pela ponte
+   * de saves (DESENHO-SAVES §3). Na base actual o motor DMG é
+   * determinístico e a entropia da casca entra só por vlabSemente
+   * (a semente de cada resolução) e vlabVerificacao (as 3 faces da
+   * verificação de crítico) — os dois passam a sair do PRNG:
+   * guardar = copiar dadoEstado+roladasDados; carregar = repô-los,
+   * e as resoluções seguintes ao carregar repetem as que se
+   * seguiriam ao guardar. dadoRodar é o ÚNICO sítio que avança o
+   * gerador nesta casca. */
+  let dadoEstado = (Math.floor(Math.random() * 4294967296)) >>> 0;
+  let roladasDados = 0;
+  function dadoRodar() {
+    dadoEstado = (Math.imul(dadoEstado, 1664525) + 1013904223) >>> 0;
+    roladasDados++;
+    return dadoEstado;
+  }
+  function dadoFace(faces) {
+    return 1 + Math.floor((dadoRodar() / 4294967296) * faces);
+  }
+  const vlabSemente = () => dadoRodar();
+  const vlabVerificacao = () => [dadoFace(6), dadoFace(6), dadoFace(6)];
   function vlabExprAtaque(id) {
     if (id === PROPRIA) return transformada ? '4d6+25' : '4d6+19';   // 4d6+INT (INT 19; transformada 25)
     const c = DADOS_COMBATE[id];
@@ -2621,6 +2643,19 @@
       }
       return;
     }
+    /* SAVES (S-CRIT-05, porta C-23): moveend tardio de um monstro com
+       restauro pendente — a animação velha pousou a figura fora do
+       estado restaurado; reafirma a posição DESTA figura a partir
+       do pendente (o pendente em si fica: a Ong pode precisar dele,
+       e o ramo de época dela, acima, é quem o consome). */
+    if (supRestauroPendente && u.id !== PROPRIA) {
+      const suR = supRestauroPendente.find(s => s.id === u.id);
+      if (suR && (u.posicao.x !== suR.x || u.posicao.y !== suR.y)) {
+        supRestaurando = true;
+        view.move(u.id, casaVista({ x: suR.x, y: suR.y }), { immediate: true });
+        supRestaurando = false;
+      }
+    }
     supConferirInvariantes('moveend');         // Supervisor: invariantes após cada movimento
     try { supCritFecharMovimento(u.id); } catch (_) { supCritErrosCamada++; }   // T1.7: fecha o segmento de movimento (passivo)
     if (u.id !== PROPRIA) {
@@ -3560,6 +3595,471 @@
     }
     supConferirInvariantes('restauro');
   }
+
+  /* ---------- ponte de estado para saves (tranche SAVES, C-23;
+   * desenho DESENHO-SAVES com as adendas da Volta 1 (CRITICA-SAVES-01)
+   * e da Volta 2 (JULGAMENTO-SAVES, via (α) completa); LIBERA da
+   * conferência dirigida — aqui PORTADA para a base REF_5) ----------
+   * Fronteira VERDADEIRA pós-(α) (desenho, adenda da Volta 2): esta
+   * ponte fala do estado vivo em memória e NÃO é inócua — quem a
+   * accionar lê a semente e pode escrever o estado. Por isso nasce
+   * INACTIVA: só responde depois de registarModuloSaves() com o
+   * token que vive APENAS em saves-mestre.js. Aqui mora só o DIGEST
+   * SHA-256 do token (o mesmo token rodado da Volta 2 — o anterior,
+   * cujo djb2 era público e colidível, aposentou-se): o SHA-256 é
+   * resistente a pré-imagem, logo o digest público NÃO permite
+   * forjar uma cadeia que active a ponte (a cadeia da conferência
+   * que colidia no djb2 falha contra este mecanismo — provado na
+   * sonda da Volta 2). A outra metade da fronteira: saves-mestre.js
+   * e mestre.html estão FORA do artefacto publicado da Party
+   * (manifesto NÃO-PUBLICAR) — quem tem o link da Party não lê o
+   * token literal em sítio nenhum servido. A ponte não conhece
+   * chaves de armazenamento nem localStorage de saves; quem
+   * lê/escreve saves é o módulo do Mestre. */
+  let ponteSavesActiva = false;
+  const DIGEST_TOKEN_SAVES = '19c7ed94fea93c93a2ac913985bc1452b1d4503aa865463e0ee589dd586d58bc';   // SHA-256 do token rodado (o token vive só em saves-mestre.js)
+  /* SHA-256 compacto SÍNCRONO (o registo da ponte é síncrono; não
+     se usa crypto.subtle, que é assíncrono e depende de contexto
+     seguro). Implementação de referência (FIPS 180-4) sobre os
+     bytes UTF-8 da cadeia; conferida contra node:crypto em 312
+     casos (sonda da Volta 2). Devolve o hex minúsculo. */
+  function sha256HexSaves(str) {
+    const K = [
+      0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+      0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+      0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+      0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+      0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+      0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+      0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+      0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
+    const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+    const utf8 = unescape(encodeURIComponent(str));
+    const len = utf8.length;
+    const bytes = [];
+    for (let i = 0; i < len; i++) bytes.push(utf8.charCodeAt(i));
+    const bitLen = len * 8;
+    bytes.push(0x80);
+    while (bytes.length % 64 !== 56) bytes.push(0);
+    const hi = Math.floor(bitLen / 4294967296), lo = bitLen >>> 0;
+    for (let i = 3; i >= 0; i--) bytes.push((hi >>> (i * 8)) & 0xff);
+    for (let i = 3; i >= 0; i--) bytes.push((lo >>> (i * 8)) & 0xff);
+    let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a,
+      h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+    const w = new Array(64);
+    for (let bloco = 0; bloco < bytes.length; bloco += 64) {
+      for (let i = 0; i < 16; i++)
+        w[i] = (bytes[bloco + i * 4] << 24) | (bytes[bloco + i * 4 + 1] << 16)
+          | (bytes[bloco + i * 4 + 2] << 8) | bytes[bloco + i * 4 + 3];
+      for (let i = 16; i < 64; i++) {
+        const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+        const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+        w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+      }
+      let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
+      for (let i = 0; i < 64; i++) {
+        const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+        const ch = (e & f) ^ (~e & g);
+        const t1 = (h + S1 + ch + K[i] + w[i]) | 0;
+        const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+        const maj = (a & b) ^ (a & c) ^ (b & c);
+        const t2 = (S0 + maj) | 0;
+        h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+      }
+      h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0;
+      h4 = (h4 + e) | 0; h5 = (h5 + f) | 0; h6 = (h6 + g) | 0; h7 = (h7 + h) | 0;
+    }
+    return [h0, h1, h2, h3, h4, h5, h6, h7]
+      .map(h => ('0000000' + (h >>> 0).toString(16)).slice(-8)).join('');
+  }
+  function hashTokenSaves(t) { return sha256HexSaves(t); }
+  /* Validação TOTAL dentro da própria ponte (correcção nomeada 1:
+   * defesa em profundidade — nunca confiar no chamador). Espelha os
+   * limites dos invariantes do jogo (supInvarianteViolada) e as
+   * coerências entre campos. Devolve nome de erro ou null.
+   * PORTA C-23 (base REF_5): FASES_SAVE ganha 'confirmar-fim' (fase
+   * nova desta base — ponto estável da vez dela, sem pendentes; a
+   * fase nunca é restaurada como ecrã, §5) e o estado ganha o campo
+   * 'vlab' (o estado do motor por figura, que o supEstadoCanonico
+   * desta base já trata como parte do estado da batalha). */
+  const FASES_SAVE = ['base', 'atacar', 'consumivel', 'mover', 'movendo',
+    'rolagem', 'resultado', 'vez-ia', 'confirmar-fim', 'fim'];
+  /* O bloco vlab de UMA figura (espelho exacto do validador do
+     módulo em saves-mestre.js — os dois têm de concordar sempre). */
+  function validarVlabUnidade(u, id) {
+    const INV = 'SAVE_ESTADO_INVALIDO', FALTA = 'SAVE_CAMPOS_EM_FALTA';
+    if (!u || typeof u !== 'object') return FALTA;
+    const chaves = ['danoSofrido', 'estados', 'armaCaida', 'armaQuebrada',
+      'desvantagemAtaque', 'deslocMetade', 'reacaoDisponivel', 'estadoMorte'];
+    for (const c of chaves) if (!(c in u)) return FALTA;
+    if (Object.keys(u).some(k => !chaves.includes(k))) return INV;
+    if (!Number.isInteger(u.danoSofrido) || u.danoSofrido < 0 || u.danoSofrido > 999) return INV;
+    if (!Array.isArray(u.estados) || u.estados.length > 16
+      || u.estados.some(s => typeof s !== 'string' || s.length < 1 || s.length > 32)) return INV;
+    if (typeof u.armaCaida !== 'boolean' || typeof u.armaQuebrada !== 'boolean'
+      || typeof u.deslocMetade !== 'boolean' || typeof u.reacaoDisponivel !== 'boolean') return INV;
+    if (!Number.isInteger(u.desvantagemAtaque) || u.desvantagemAtaque < 0
+      || u.desvantagemAtaque > 99) return INV;
+    /* estadoMorte é SÓ dela (invariante da casca): nas outras
+       figuras tem de ser null. Nela: null, ou a sequência já
+       estabilizada — 'aMorrer' é REJEITADO: capturar recusa-o com
+       SAVE_EM_VOO (resolução pendente por rondas), logo nenhum
+       produtor legítimo o emite (padrão S-CONF-03). */
+    if (id !== PROPRIA) { if (u.estadoMorte !== null) return INV; }
+    else if (u.estadoMorte !== null) {
+      const em = u.estadoMorte;
+      if (!em || typeof em !== 'object') return INV;
+      const chavesEm = ['fase', 'sucessos', 'falhas'];
+      if (Object.keys(em).some(k => !chavesEm.includes(k))
+        || !chavesEm.every(c => c in em)) return INV;
+      if (em.fase !== 'estabilizado') return INV;
+      if (!Number.isInteger(em.sucessos) || em.sucessos < 0 || em.sucessos > 99
+        || !Number.isInteger(em.falhas) || em.falhas < 0 || em.falhas > 99) return INV;
+    }
+    return null;
+  }
+  function validarVlabParaAplicar(v) {
+    const INV = 'SAVE_ESTADO_INVALIDO', FALTA = 'SAVE_CAMPOS_EM_FALTA';
+    if (!v || typeof v !== 'object') return FALTA;
+    const ids = ELENCO.map(u => u.id);
+    for (const id of ids) if (!(id in v)) return FALTA;
+    if (Object.keys(v).some(k => !ids.includes(k))) return INV;
+    for (const id of ids) {
+      const erro = validarVlabUnidade(v[id], id);
+      if (erro) return erro;
+    }
+    return null;
+  }
+  function validarEstadoParaAplicar(e) {
+    const INV = 'SAVE_ESTADO_INVALIDO', FALTA = 'SAVE_CAMPOS_EM_FALTA';
+    if (!e || typeof e !== 'object') return FALTA;
+    /* guarda de versão (CP-01): uma entrada em FORMA DE ENVELOPE com
+     * versao diferente da do formato (2) recusa-se como incompatível —
+     * nunca como campos em falta nem estado inválido. Estados puros
+     * não trazem o campo e a guarda é inerte para eles. Texto gémeo
+     * no módulo (saves-mestre.js, validarEstado). */
+    if ('versao' in e && e.versao !== 2) return 'SAVE_VERSAO_INCOMPATIVEL';
+    const chavesEstado = ['rodada', 'indiceVez', 'vez', 'ordem', 'fase',
+      'unidades', 'ong', 'batalhaFim', 'consumiveis', 'dados', 'vlab'];
+    for (const c of chavesEstado) if (!(c in e)) return FALTA;
+    if (Object.keys(e).some(k => !chavesEstado.includes(k))) return INV;
+    const ids = ELENCO.map(u => u.id);
+    const inteiro = n => Number.isInteger(n);
+    const finito = n => typeof n === 'number' && Number.isFinite(n);
+    if (!inteiro(e.rodada) || e.rodada < 1 || e.rodada > 10000) return INV;
+    if (!inteiro(e.indiceVez) || e.indiceVez < 0 || e.indiceVez >= ids.length) return INV;
+    if (!Array.isArray(e.ordem) || e.ordem.length !== ids.length
+      || !ids.every(id => e.ordem.includes(id))) return INV;
+    if (e.vez !== e.ordem[e.indiceVez]) return INV;
+    if (!FASES_SAVE.includes(e.fase)) return INV;
+    /* VOLTA 2 (S-CONF-03, via de APERTAR): fases 'rolagem'/'movendo'
+       são REJEITADAS — capturar nunca as emite (recusa-as com
+       SAVE_EM_VOO), logo um save com essas fases é incoerente por
+       construção. A coerência completa de fase está mais abaixo,
+       junto de batalhaFim. */
+    if (e.fase === 'rolagem' || e.fase === 'movendo') return INV;
+    if (!Array.isArray(e.unidades) || e.unidades.length !== ids.length) return INV;
+    const vistos = new Set(), casas = new Set();
+    for (const u of e.unidades) {
+      if (!u || typeof u !== 'object') return INV;
+      if (Object.keys(u).some(k => !['id', 'x', 'y', 'vivo'].includes(k))) return INV;
+      if (!ids.includes(u.id) || vistos.has(u.id)) return INV;
+      vistos.add(u.id);
+      if (!inteiro(u.x) || !inteiro(u.y)
+        || u.x < AREA.origin.x || u.x >= AREA.origin.x + AREA.cols
+        || u.y < AREA.origin.y || u.y >= AREA.origin.y + AREA.rows) return INV;
+      if (typeof u.vivo !== 'boolean') return INV;
+      const k = chave(u.x, u.y);
+      if (casas.has(k)) return INV;              // duas figuras na mesma casa
+      casas.add(k);
+    }
+    const porId = id => e.unidades.find(u => u.id === id);
+    const ongU = porId(PROPRIA);
+    if (!ongU) return INV;
+    if (porId(e.vez).vivo !== true) return INV;  // vez de figura morta
+    const o = e.ong;
+    if (!o || typeof o !== 'object') return FALTA;
+    const chavesOng = ['danoSofrido', 'paGasto', 'transformada',
+      'reservaMovimento', 'atacou', 'alvo'];
+    for (const c of chavesOng) if (!(c in o)) return FALTA;
+    if (Object.keys(o).some(k => !chavesOng.includes(k))) return INV;
+    /* VOLTA 2 (S-CONF-03): o dano do jogo é INTEIRO — 12,5 passa a
+       inválido (antes bastava ser finito). */
+    if (!inteiro(o.danoSofrido) || o.danoSofrido < 0 || o.danoSofrido > 999) return INV;
+    /* danoSofrido coerente com vivo: viva ⇒ dano < Vida total;
+       morta ⇒ dano >= Vida total (é assim que fimDeBatalha nasce). */
+    if (ongU.vivo ? o.danoSofrido >= FICHAS.ong.vida.total
+                  : o.danoSofrido < FICHAS.ong.vida.total) return INV;
+    if (!inteiro(o.paGasto) || o.paGasto < 0 || o.paGasto > FICHAS.ong.alma.total) return INV;
+    if (typeof o.transformada !== 'boolean' || typeof o.atacou !== 'boolean') return INV;
+    if (!finito(o.reservaMovimento) || o.reservaMovimento < 0
+      || o.reservaMovimento > DESLOCAMENTO_ONG_M + 1e-9) return INV;
+    /* VOLTA 2 (S-CONF-03): a reserva anda casa a casa (CASA_M =
+       1,5 m) — tem de ser MÚLTIPLO de 1,5 (tolerância 1e-9);
+       7,3 passa a inválido. */
+    { const passosReserva = o.reservaMovimento / CASA_M;
+      if (Math.abs(passosReserva - Math.round(passosReserva)) > 1e-9) return INV; }
+    if (o.alvo !== null && (!ids.includes(o.alvo) || o.alvo === PROPRIA
+      || porId(o.alvo).vivo !== true)) return INV;   // alvo-próprio ou morto
+    if (typeof e.batalhaFim !== 'boolean') return INV;
+    /* VOLTA 2 (S-CONF-03): coerência de fase — fase 'fim' ⇔
+       batalhaFim; fase 'vez-ia' ⇒ vez não é a Ong (e vez da Ong ⇒
+       fase não é 'vez-ia': é a mesma porta, vista dos dois lados). */
+    if ((e.fase === 'fim') !== e.batalhaFim) return INV;
+    if (e.fase === 'vez-ia' && e.vez === PROPRIA) return INV;
+    if (e.batalhaFim !== !ongU.vivo) return INV;     // batalhaFim coerente
+    /* consumiveis (correcção nomeada 5): a v2 NÃO tem inventário —
+       lista não-vazia é REJEITADA, nunca descartada em silêncio. */
+    if (!Array.isArray(e.consumiveis) || e.consumiveis.length !== 0) return INV;
+    const d = e.dados;
+    if (!d || typeof d !== 'object') return FALTA;
+    if (Object.keys(d).some(k => !['estado', 'roladas'].includes(k))) return INV;
+    if (!inteiro(d.estado) || d.estado < 0 || d.estado > 4294967295) return INV;
+    if (!inteiro(d.roladas) || d.roladas < 0 || d.roladas > 1000000) return INV;
+    /* PORTA C-23: o bloco do motor confere-se com a mesma régua. */
+    return validarVlabParaAplicar(e.vlab);
+  }
+  window.CampoSaveBridge = Object.freeze({
+    versaoPonte: 3,
+    /* Registo do módulo do Mestre: só saves-mestre.js conhece o
+       token; sem ele a ponte fica inerte. A conferência é pelo
+       digest SHA-256 — nem o token nem nenhuma cadeia que colida
+       com ele por construção fraca activam a ponte. */
+    registarModuloSaves(token) {
+      if (typeof token === 'string' && hashTokenSaves(token) === DIGEST_TOKEN_SAVES) {
+        ponteSavesActiva = true;
+        return true;
+      }
+      return false;
+    },
+    capturar() {
+      if (!ponteSavesActiva) return { ok: false, erro: 'SAVE_PONTE_INACTIVA' };
+      /* Guarda de voo (correcção nomeada 3 / S-CRIT-04 e S-CRIT-09):
+         a meio de um movimento a cena só actualiza a posição lógica
+         no fim do passo e a reserva só desconta no moveend — o par
+         capturado seria inconsistente e explorável. Rolagem já
+         tirada por revelar (ataquePendente) também recusa: a face
+         não evaporaria em silêncio. PORTA C-23: a sequência de morte
+         dela em curso (estadoMorte 'aMorrer' — 1 teste por ronda,
+         com semente nova a cada ronda) é uma resolução pendente da
+         mesma natureza e recusa igual: o formato não guarda
+         sequências a meio. */
+      let emVoo = false;
+      try { emVoo = !!(view.getState().moving); } catch (_) { emVoo = true; }
+      const morteEmCurso = !!(ESTADO_VLAB.ong.estadoMorte
+        && ESTADO_VLAB.ong.estadoMorte.fase === 'aMorrer');
+      if (emVoo || estado === 'movendo' || estado === 'rolagem'
+        || apresentacaoEmCurso || passoEmCurso || ataquePendente != null
+        || morteEmCurso)
+        return { ok: false, erro: 'SAVE_EM_VOO' };
+      return {
+        rodada, indiceVez, vez: vezAtual, ordem: [...ordem], fase: estado,
+        unidades: view.getState().units.map(u => ({
+          id: u.id, x: u.posicao.x, y: u.posicao.y, vivo: u.vivo !== false
+        })),
+        ong: {
+          danoSofrido, paGasto, transformada, reservaMovimento,
+          atacou, alvo
+        },
+        batalhaFim,
+        consumiveis: [],
+        dados: { estado: dadoEstado, roladas: roladasDados },
+        /* PORTA C-23: o estado do motor por figura entra na captura
+           (cópia profunda — o save é um valor, nunca uma referência
+           viva; é o mesmo gesto do supEstadoCanonico). */
+        vlab: JSON.parse(JSON.stringify(ESTADO_VLAB))
+      };
+    },
+    aplicar(e) {
+      if (!ponteSavesActiva) return { ok: false, erro: 'SAVE_PONTE_INACTIVA' };
+      /* Validação total ANTES de tocar em qualquer coisa: save
+         inválido não muda NADA (também fora do caminho UI). */
+      const erroVal = validarEstadoParaAplicar(e);
+      if (erroVal) return { ok: false, erro: erroVal };
+      /* VOLTA 2 (S-CONF-02): pré-snapshot interno ANTES da primeira
+         mutação — se a vista lançar a meio da aplicação, o catch
+         repõe este pré-estado e desarma qualquer pendente. Cobre
+         posições/vivo (da vista) e os escalares da casca que o
+         restauro escreve, mais a pilha e o gelo do Supervisor.
+         PORTA C-23: cobre também o bloco do motor (vlab), as
+         declarações de reacção e a bandeira da morte adjudicada.
+         Constrói-se DENTRO do try: nem a leitura do pré-estado
+         pode fazer a excepção escapar sem nome. */
+      let preSave = null;
+      try {
+        preSave = {
+          rodada, indiceVez, vez: vezAtual, ordem: [...ordem], fase: estado,
+          unidades: view.getState().units.map(u => ({
+            id: u.id, x: u.posicao.x, y: u.posicao.y, vivo: u.vivo !== false })),
+          danoSofrido, paGasto, transformada, reservaMovimento, atacou, alvo,
+          batalhaFim, dadoEstado, roladasDados, supCongelado,
+          vlab: JSON.parse(JSON.stringify(ESTADO_VLAB)),
+          reaccoes: { ...REACCOES_DECLARADAS },
+          mortePropriaAdjudicada, partidaPendente, correrUsado,
+          desvincular: opcoesMovimento.desvincular,
+          supPilha: supPilha.map(s => ({ turno: s.turno,
+            estado: JSON.parse(JSON.stringify(s.estado)) }))
+        };
+        /* Restauro completo, na ordem do precedente supRestaurar()
+           DESTA base (correcções nomeadas 2 e 3 / S-CRIT-03, 05, 06). */
+        supRestaurando = true;                    // o moveend ignora a reposição
+        supEpoca++;
+        supRestauroPendente = e.unidades.map(u => ({ ...u }));
+        supDesarmarGuardaMovimentoOng();
+        geracaoAuto++;
+        if (relogioAuto) { clearTimeout(relogioAuto); relogioAuto = null; }
+        seqTurno++;
+        if (contextoIA) consumirContextoIA(contextoIA.id);
+        /* Posições e vivo: move imediato INCONDICIONAL de todas as
+           figuras — cancela animações em voo mesmo quando a posição
+           lógica já bate com o save (era o buraco S-CRIT-05). Figura
+           que o save traz morta entra pela pose de morte rápida
+           quando a cena a tem (precedente FUSÃO T-D do restauro). */
+        for (const su of e.unidades) {
+          view.move(su.id, casaVista({ x: su.x, y: su.y }), { immediate: true });
+          const uv = unidade(su.id);
+          if (uv && (uv.vivo !== false) !== su.vivo) {
+            if (su.vivo === false && typeof view.apresentarMorte === 'function') {
+              try {
+                const pm = view.apresentarMorte(su.id, { rapido: true });
+                if (pm && pm.catch) pm.catch(() => {});
+              } catch (_) { view.setVivo(su.id, su.vivo); }
+            } else view.setVivo(su.id, su.vivo);
+          }
+        }
+        /* Números e bandeiras — ordem HONRADA (atribuída, não
+           ignorada) e batalhaFim como validado (sem correcção
+           silenciosa: a coerência já foi conferida acima). */
+        ordem = [...e.ordem];
+        rodada = e.rodada; indiceVez = e.indiceVez;
+        danoSofrido = e.ong.danoSofrido; paGasto = e.ong.paGasto;
+        transformada = e.ong.transformada;
+        /* O estado do motor volta campo a campo, como no restauro
+           do Supervisor (PORTA C-23). */
+        for (const id of Object.keys(ESTADO_VLAB)) {
+          const sv = e.vlab[id]; if (!sv) continue;
+          const ev = ESTADO_VLAB[id];
+          ev.danoSofrido = sv.danoSofrido | 0;
+          ev.estados = [...(sv.estados || [])];
+          ev.armaCaida = !!sv.armaCaida; ev.armaQuebrada = !!sv.armaQuebrada;
+          ev.desvantagemAtaque = sv.desvantagemAtaque | 0;
+          ev.deslocMetade = !!sv.deslocMetade;
+          ev.reacaoDisponivel = sv.reacaoDisponivel !== false;
+          ev.estadoMorte = sv.estadoMorte ? { ...sv.estadoMorte } : null;
+        }
+        dadoEstado = e.dados.estado >>> 0; roladasDados = e.dados.roladas;
+        ataquePendente = null; custoPendente = null; caminhoPendente = null;
+        continuarAposApresentacao = false;
+        passoEmCurso = false; parado = false;
+        partidaPendente = null; correrUsado = false;
+        opcoesMovimento.desvincular = false;
+        /* C-39: declarações de reacção são decisões da linha do
+           tempo abandonada — o carregar apaga-as todas, como o
+           restauro do Supervisor. */
+        for (const idDecl of Object.keys(REACCOES_DECLARADAS)) delete REACCOES_DECLARADAS[idDecl];
+        batalhaFim = e.batalhaFim;
+        /* A bandeira da morte adjudicada deriva-se do estado
+           restaurado (morte pelo motor deixa estadoMorte null;
+           estabilizada deixa 'estabilizado'; vitória deixa-a viva)
+           — e a tela vermelha reaplica-se sobre a vida restaurada. */
+        mortePropriaAdjudicada = !!(e.batalhaFim
+          && e.unidades.find(u => u.id === PROPRIA).vivo === false
+          && !(e.vlab.ong.estadoMorte && e.vlab.ong.estadoMorte.fase === 'estabilizado'));
+        aplicarTelaVermelha();
+        supPilha.length = 0;            // a linha do tempo abandonada sai da pilha
+        supCongelado = false;           // carregar é também a saída do congelamento
+        if (fichaAberta) fecharFicha();
+        atualizarChipVida();
+        /* Reentra na vez guardada; DEPOIS reimpõe reserva/atacou/
+           alvo (a entrada na vez repõe esses três). Com a batalha
+           terminada não há vez para reentrar: fica o estado 'fim'. */
+        if (batalhaFim) {
+          vezAtual = e.vez;
+          estado = 'fim';
+          atualizarVez(); renderAcoes();
+        } else if (e.vez === PROPRIA) iniciarVez(PROPRIA);
+        else iniciarVezIA(e.vez, false);
+        reservaMovimento = e.ong.reservaMovimento;
+        atacou = e.ong.atacou;
+        alvo = e.ong.alvo;
+        /* O snapshot do próprio carregar nasce DEPOIS da
+           reimposição (o de iniciarVez/iniciarVezIA leu valores
+           pré-carregar — snapshot híbrido S-CRIT-06): pilha limpa e
+           UM snapshot novo, já com o estado carregado. */
+        supPilha.length = 0;
+        supSnapshot();
+        supRestaurando = false;
+        supConferirInvariantes('restauro-saves');   // fecha com a rede do jogo
+        return { ok: true };
+      } catch (_) {
+        /* VOLTA 2 (S-CONF-02): atomicidade real. O pendente do save
+           FALHADO desarma-se PRIMEIRO (nenhum moveend tardio pode
+           reafirmar posições de uma aplicação que não aconteceu) e
+           tenta-se repor o pré-estado do pré-snapshot — cada passo
+           da reposição corre com o seu próprio try, dentro deste
+           catch, para uma segunda excepção da vista não voltar a
+           armar nada. As saídas deste catch deixam SEMPRE
+           supRestauroPendente === null e supRestaurando === false. */
+        supRestauroPendente = null;
+        try {
+          supRestaurando = true;              // os moveend da reposição ignoram-se
+          if (preSave) for (const su of preSave.unidades) {
+            try { view.move(su.id, casaVista({ x: su.x, y: su.y }), { immediate: true }); } catch (__) {}
+            try {
+              const uv = unidade(su.id);
+              if (uv && (uv.vivo !== false) !== su.vivo) view.setVivo(su.id, su.vivo);
+            } catch (__) {}
+          }
+          if (preSave) {
+            ordem = [...preSave.ordem];
+            rodada = preSave.rodada; indiceVez = preSave.indiceVez;
+            vezAtual = preSave.vez;
+            danoSofrido = preSave.danoSofrido; paGasto = preSave.paGasto;
+            transformada = preSave.transformada;
+            for (const id of Object.keys(ESTADO_VLAB)) {
+              const sv = preSave.vlab[id]; if (!sv) continue;
+              const ev = ESTADO_VLAB[id];
+              ev.danoSofrido = sv.danoSofrido | 0;
+              ev.estados = [...(sv.estados || [])];
+              ev.armaCaida = !!sv.armaCaida; ev.armaQuebrada = !!sv.armaQuebrada;
+              ev.desvantagemAtaque = sv.desvantagemAtaque | 0;
+              ev.deslocMetade = !!sv.deslocMetade;
+              ev.reacaoDisponivel = sv.reacaoDisponivel !== false;
+              ev.estadoMorte = sv.estadoMorte ? { ...sv.estadoMorte } : null;
+            }
+            reservaMovimento = preSave.reservaMovimento;
+            atacou = preSave.atacou; alvo = preSave.alvo;
+            batalhaFim = preSave.batalhaFim;
+            dadoEstado = preSave.dadoEstado >>> 0; roladasDados = preSave.roladasDados;
+            ataquePendente = null; custoPendente = null; caminhoPendente = null;
+            continuarAposApresentacao = false;
+            passoEmCurso = false; parado = false;
+            partidaPendente = preSave.partidaPendente;
+            correrUsado = preSave.correrUsado;
+            opcoesMovimento.desvincular = preSave.desvincular;
+            for (const idDecl of Object.keys(REACCOES_DECLARADAS)) delete REACCOES_DECLARADAS[idDecl];
+            for (const idDecl of Object.keys(preSave.reaccoes)) REACCOES_DECLARADAS[idDecl] = preSave.reaccoes[idDecl];
+            mortePropriaAdjudicada = preSave.mortePropriaAdjudicada;
+            try { aplicarTelaVermelha(); } catch (__) {}
+            supCongelado = preSave.supCongelado;
+            supPilha.length = 0;
+            for (const s of preSave.supPilha) supPilha.push(s);
+            /* Fase reposta com coerência: fases de voo do pré-estado
+               não se restauram como ecrã (os pendentes nasceram
+               vazios) — normalizam para a base da vez, como no §5. */
+            estado = batalhaFim ? 'fim'
+              : (preSave.fase === 'movendo' || preSave.fase === 'rolagem') ? 'base'
+              : preSave.fase;
+            try { atualizarChipVida(); } catch (__) {}
+            try { atualizarVez(); renderAcoes(); } catch (__) {}
+          }
+        } catch (__) { /* a reposição é tentativa: o erro nomeado sai na mesma */ }
+        supRestauroPendente = null;
+        supRestaurando = false;
+        return { ok: false, erro: 'SAVE_APLICACAO_FALHOU' };
+      }
+    }
+  });
 
   /* ---------- Supervisor: superfície do Mestre (só #cfgpop) ----------
    * S-001+M-016: esta superfície inteira só é CRIADA na vista do
