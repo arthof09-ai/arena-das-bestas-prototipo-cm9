@@ -4,7 +4,7 @@
  * oficial por create(), os toques resolvem-se por hitTest (contenção)
  * e os gestos são os da demo do Codex (arrastar = órbita/360,
  * pinça = zoom, toque = seleccionar/agir — sem lutas entre gestos).
- * Sem motor: valores de demonstração marcados TEST; o alcance é a
+ * Sem motor: valores das fichas oficiais; o alcance é a
  * aproximação declarada (BFS da demo) até o motor real mandar as
  * casas — ver NOTAS-T1.md. Silêncio proibido: cada toque e cada botão
  * acabam numa frase na linha de mensagem VISÍVEL.
@@ -17,7 +17,7 @@
  * interna nunca exibida; dano = a expressão de dados da ficha; a
  * Transformação custa PA e debita de verdade) — sistema substituído
  * pela tranche VLAB, ver o parágrafo seguinte — e a batalha tem
- * TURNOS: a vez roda por uma ordem fixa TEST, os monstros agem nas
+ * TURNOS: a vez roda por uma ordem fixa, os monstros agem nas
  * vezes deles por uma IA básica da casca (no jogo de verdade manda
  * o H10 — diferença declarada nas NOTAS) e o movimento dela é uma
  * reserva em metros da ficha dela, gasta por toque ou pelas setas
@@ -299,7 +299,7 @@
   const casaMotor = cell => (cell ? { x: cell.x, y: cell.z } : null); // hitTest → motor
   const chave = (x, y) => x + ',' + y;
 
-  /* ---------- dados de demonstração (TEST) ---------- */
+  /* ---------- dados de combate (valores das fichas oficiais) ---------- */
   const PROPRIA = 'ong';                 // a personagem da jogadora deste aparelho
   /* Vista da jogadora (decisão do Mestre, 03/11 07:52): neste aparelho
      SÓ a Ong é controlável. Tocar noutra figura NUNCA a torna a
@@ -309,104 +309,41 @@
      jogadora observa, com os toques interceptados (§ das guardas). */
   const ALVO_NOME = { orc: 'o Orc', capanga: 'o Capanga 1', lobo: 'o Lobo da Caverna' };
 
-  /* ---------- combate no sistema dele (tranche T1.4) ----------
-   * Fonte única: TEST_CHARACTERS via engine criarEstado, conferida
-   * contra F-MECANICAS §1.1. A TABELA continua a ser a fonte dos
-   * dados de combate desta casca, mas a RESOLUÇÃO já não é o
-   * resolvedor local provisório da T1.4: desde a tranche VLAB, quem
-   * resolve é o motor pinado (vlab-completo.js — VLAB + DMG), pelo
-   * adaptador do bloco «combate VLAB». Substituições nomeadas:
-   * (i) o limiar de acerto dela deixa de ser a Defesa comprimida
-   * round(CA/3)+3 e passa a ser a CA da ficha (superar, contrato
-   * VLAB Parte A); (ii) o teste do Chicote deixa de ser a derivação
-   * 1d6+bónusTeste e passa a ser a expressão da ficha (4d6+INT,
-   * encomenda §1.4); (iii) o dano deixa de rolar localmente e vem
-   * do DMG (parcelas por tipo); (iv) o Chicote passa a custar o PA
-   * da técnica (8 PA, encomenda §1.4). O que FICA da derivação
-   * F-MECANICAS, declarado: o teste dos MONSTROS (1d6+bónusTeste
-   * contra a Defesa derivada dela, via defesaAplicavel do contrato)
-   * — as fichas das bestas não trazem teste de ataque em fonte
-   * nenhuma (censo do corpus: «teste de ataque ausente»), e inventar
-   * o par expressão×CA deles violaria a regra de não-invenção; a
-   * lacuna fica nomeada no relatório da tranche VLAB.
-   * COMBATE_TEST guarda, por figura, SÓ os campos que o combate usa
-   * (ca, atkQtd, atkFaces, atkBonus, arma, dano, alcance). Vida e PA
-   * de monstro NÃO entram — a ficha do monstro não mora nesta tabela.
-   * (A Vida do elenco inimigo mora em VIDA_TEST, mais abaixo —
-   * COMPLETAMENTO A01, com a fonte de cada valor lavrada lá.)
-   * As linhas dos monstros e as Defesas derivadas são RESÍDUO
-   * DECLARADO, classe (b) — família dos resíduos aceites pelo Mestre
-   * (PA exactamente calculável, 02/11 14:21; vida fixável por evento
-   * público, P-ADV-01; descoberta por esforço próprio, 02/11
-   * 18:12–18:13): exibição ZERO em qualquer superfície (frase, ficha,
-   * cartão, flutuante), residência apenas no fonte desta vista de
-   * TESTE, dentro deste IIFE — nada ligado a window/globalThis.
-   * Destino de produção, explícito: na build ligada ao motor, a
-   * resolução sai do aparelho da jogadora e estas constantes NÃO
-   * são servidas à vista da Party. */
-  const COMBATE_TEST = {
+  /* ---------- combate (resolução no motor oficial) ----------
+   * A resolução é TODA do motor pinado (vlab-completo.js —
+   * VLAB + DMG), pelo adaptador do bloco «combate VLAB»:
+   * o teste é a expressão da ficha do atacante e o limiar é
+   * a CA da ficha do alvo (superar); o dano rola dentro do
+   * DMG, por parcelas de tipo. NENHUMA derivação local.
+   * DADOS_COMBATE guarda, por figura, só os campos que o
+   * combate lê (ca, atkQtd, atkFaces, atkBonus, arma, dano,
+   * alcance) — valores das fichas de cada figura, salvo três
+   * campos herdados ainda sem leitura oficial (ataque e CA do
+   * Capanga, ataque do Lobo), nomeados na sentença J3/J5.
+   * A Vida do elenco inimigo mora em VIDA_MONSTROS, mais
+   * abaixo. Os números das figuras alheias nunca se exibem:
+   * exibição ZERO em frase, ficha, cartão e flutuante —
+   * vivem só no estado interno e na resolução. */
+  const DADOS_COMBATE = {
     ong:     { ca: 30, atkQtd: 1, atkFaces: 6, atkBonus: 19, arma: 'Chicote de Água', dano: { qtd: 8, faces: 6, bonus: 28 }, alcance: 9,
                transformacao: { custo: 40, dmgBonusNovo: 34, caNova: 36 } },
     orc:     { ca: 33, atkQtd: 1, atkFaces: 6, atkBonus: 17, arma: 'Machado',        dano: { qtd: 4, faces: 6, bonus: 0 },  alcance: 1.5 },
     capanga: { ca: 30, atkQtd: 1, atkFaces: 6, atkBonus: 10, arma: 'Ataque',         dano: { qtd: 2, faces: 6, bonus: 25 }, alcance: 1.5 },
     lobo:    { ca: 34, atkQtd: 1, atkFaces: 6, atkBonus: 10, arma: 'Patada',         dano: { qtd: 1, faces: 6, bonus: 24 }, alcance: 1.5 }
   };
-  /* Derivações da engine, transcritas com a fórmula e a fonte:
-   * bónus de teste = 9 + floor(min(atkBonus, 19) / 10) — vale 10
-   * para os quatro combatentes deste elenco (o eixo do teste não
-   * diferencia atacantes aqui; a diferenciação vive nos dados de
-   * dano). Defesa = round(CA/3) + 3. Na forma transformada dela, a
-   * Defesa é a base + 1 com teto 15 (D3/D2): 13 → 14 — é a forma
-   * que a tabela da fonte regista (= min(15, 13+1)), NÃO round(36/3)+3. */
-  const bonusTeste = c => 9 + Math.floor(Math.min(c.atkBonus, 19) / 10);
-  function defesaDe(id) {
-    if (id === PROPRIA && transformada)
-      return Math.min(15, Math.round(COMBATE_TEST.ong.ca / 3) + 3 + 1);
-    if (id === PROPRIA) return Math.round(COMBATE_TEST.ong.ca / 3) + 3;
-    return DEFESA_TEST[id];
-  }
-  /* Defesas das figuras alheias — subtabela interna derivada de
-     COMBATE_TEST. Só a resolução a lê (defesaDe); proibido exibi-la.
-     A Defesa DELA não mora aqui: deriva-se em defesaDe (muda com a
-     Transformação) e também nunca se exibe. */
-  const DEFESA_TEST = {};
-  for (const id of ['orc', 'capanga', 'lobo'])
-    DEFESA_TEST[id] = Math.round(COMBATE_TEST[id].ca / 3) + 3;
+  /* Sem derivações locais: a expressão de ataque de cada
+   * figura são os campos da ficha dela (atkQtd d atkFaces +
+   * atkBonus), lidos campo a campo em vlabExprAtaque; o
+   * limiar de qualquer alvo é a CA da ficha dele. */
 
-  /* Vida do elenco inimigo (COMPLETAMENTO A01, 04/11/2026 —
-     condição de fecho da tranche, sentença do juiz em
-     JULGAMENTO-JUIZ-T1.md (b)): cada valor é a vidaTotal LIDA na
-     ficha que o Motor de Fichas produziu (corpus congelado em
-     ~/workspace/motor-fichas/corpus/casos/), com a identidade da
-     figura conferida contra COMBATE_TEST (CA e dano têm de bater
-     — é assim que se sabe que a ficha é DESTA figura):
-       orc     26 — ORC TEST N01 (C1-orc-n01.json; fixture
-                 TEST_CHARACTERS.md §1.3, «Vida natural 26»;
-                 CA 33 e dano 4d6+0 = COMBATE_TEST.orc).
-       capanga 210 — Capanga 1 (C4-capanga-r199.json; fixture
-                 TEST_CHARACTERS.md §3, caso VLAB R199, «Vida
-                 máxima 210»; dano 2d6+25 = COMBATE_TEST.capanga;
-                 rank Prata 3 = FONTES_RANK.capanga).
-       lobo    270 — Lobo da Caverna, Prata 1: a ficha ORIGINAL
-                 dizia 240 (C5-lobo-duas-fontes.json: bestiário E
-                 página de caso R199 concordantes), mas a auditoria
-                 AUDITORIA-FICHA-LOBO.md provou que 240 DESVIA da
-                 régua de criação de bestas (Regra 5: 30 + 6×(20+CON
-                 20) = 270; o Espectro vizinho tem o mesmo −30). Por
-                 ORDEM DO MESTRE (04/11/2026 19:37) a ficha foi
-                 RECRIADA no Notion com a régua aplicada — Vida 270,
-                 bancada LIBERA e readback verde às 19:44 (registo:
-                 FICHA-LOBO-RECRIADA.md). O valor ligado é o da
-                 ficha recriada: 270. CA 34 e Patada 1d6+24 =
-                 COMBATE_TEST.lobo (identidade inalterada).
-     Como COMBATE_TEST/DEFESA_TEST: resíduo TEST declarado, de
-     exibição ZERO — a Vida de um monstro nunca aparece em frase,
-     ficha, cartão, flutuante, recibo público ou registo
-     exportável para a Party; vive só no estado interno e nas
-     saídas soDoMestre do motor (portão H-3 intacto). */
-  const VIDA_TEST = { orc: 26, capanga: 210, lobo: 270 };
+  /* Vida do elenco inimigo — o total da ficha oficial de
+     cada figura. A Vida de um monstro nunca aparece em
+     frase, ficha, cartão, flutuante, recibo público ou
+     registo exportável para a Party; vive só no estado
+     interno e nas saídas soDoMestre do motor. */
+  const VIDA_MONSTROS = { orc: 26, capanga: 210, lobo: 270 };
   function vlabVidaMonstro(id) {
-    return Math.max(0, VIDA_TEST[id] - (ESTADO_VLAB[id].danoSofrido | 0));
+    return Math.max(0, VIDA_MONSTROS[id] - (ESTADO_VLAB[id].danoSofrido | 0));
   }
 
   /* (A antiga peça local de rolagem de dano da casca saiu na
@@ -414,7 +351,7 @@
    * ver o bloco «combate VLAB». Não fica nenhum resolvedor local.) */
   /* A expressão de dano dela no estado actual (normal/transformada). */
   function expressaoOng() {
-    const c = COMBATE_TEST.ong;
+    const c = DADOS_COMBATE.ong;
     return transformada
       ? { qtd: c.dano.qtd, faces: c.dano.faces, bonus: c.transformacao.dmgBonusNovo }
       : c.dano;
@@ -430,20 +367,20 @@
   }
 
   /* ---------- turnos e IA básica (tranche T1.3) ----------
-   * Ordem da rodada: constante interna de iniciativa TEST. O +4 da
-   * Ong vem da ficha TEST dela (já exibido na ficha dela); os
-   * valores dos monstros são inventados TEST, só para a rotação ser
-   * determinística e misturada. A interface mostra só nomes e de
-   * quem é a vez — nunca números de iniciativa de ninguém. */
-  const INICIATIVA_TEST = { ong: 4, lobo: 3, capanga: 2, orc: 1 };
+   * Ordem da rodada: constante interna de iniciativa. O +4
+   * da Ong vem da ficha dela (já exibido na ficha dela); os
+   * valores dos monstros são os desta batalha, só para a
+   * rotação ser determinística e misturada. A interface
+   * mostra só nomes e de quem é a vez — nunca números de
+   * iniciativa de ninguém. */
+  const INICIATIVA = { ong: 4, lobo: 3, capanga: 2, orc: 1 };
   const ORDEM = [...ELENCO].sort((a, b) =>
-    (INICIATIVA_TEST[b.id] - INICIATIVA_TEST[a.id])
+    (INICIATIVA[b.id] - INICIATIVA[a.id])
     || (ELENCO.indexOf(a) - ELENCO.indexOf(b))).map(u => u.id);
   // ORDEM = ['ong', 'lobo', 'capanga', 'orc']
-  /* Alcance de ataque da IA: 1,5 m = 1 casa (LA-0: em metros) —
-     fonte: os três têm alcance 1 casa na ficha TEST (não é
-     empréstimo do alcance dela). */
-  const ALCANCE_IA_TEST = 1.5;
+  /* O alcance de ataque da IA é o alcance da ficha do
+     próprio monstro (DADOS_COMBATE[id].alcance), lido onde
+     a IA age — constante separada não existe. */
   /* Verbos da IA (M-018 + LB-C-08): os verbos nomeiam a acção
      VISÍVEL da arma interna de cada um — a patada do Lobo, o
      golpe do Capanga, o machado do Orc (a arma VÊ-SE na
@@ -468,7 +405,7 @@
      que pode aparecer neste aparelho. Não há entradas mecânicas de
      figuras alheias neste objecto, de propósito (ver VISTA, abaixo). */
   const FICHAS = {
-    /* Valores da ficha TEST dela (fonte: TEST_CHARACTERS via engine):
+    /* Valores da ficha dela (ficha oficial):
        vida 99, alma 91 (0 comprometido), CA 30. O "perdido" e o "PA
        livre" NÃO são literais: compõem-se em abrirFicha a partir de
        danoSofrido e paGasto (tempo de corrida). O campo de ataque
@@ -476,7 +413,7 @@
        4d6+INT com INT 19; encomenda §1.4; desde a tranche VLAB);
        campo de CD não existe: é gramática estranha ao sistema dele.
        Atributos: INT 19 é da fonte; os restantes ficam como exibição
-       TEST sem fonte no elenco (declarado nas NOTAS). */
+       sem fonte no elenco. */
     ong: { completa: true, nome: 'ONG', sub: 'Espiritualista · Água',
       vida: { total: 99 }, alma: { total: 91, comprometido: 0 },
       ca: 30, desloc: '9 m', ini: '+4', ataque: 'Teste 4d6+19',
@@ -510,7 +447,7 @@
    * Recado da frente LEVEL UP (03/11/2026 23:16, ordem do Mestre):
    * leitura de classificacao / rank / dadoProgressao, âmbito V1 da
    * encomenda do jogo. Homologação B (decisão dele, 03/11 23:08):
-   * leitura + contrato + Regra 2 canónicos; o resto continua TEST.
+   * leitura + contrato + Regra 2 canónicos; o resto continua provisório.
    * O motor é o levelup.js DESTA pasta, byte a byte o pinado da
    * frente (v2.1, SHA-256 f0b61973…a247; bateria dele 123/123 PASS;
    * leituras byte-idênticas à v1 em 11/11 — prova desta frente): o dado
@@ -523,33 +460,24 @@
    * combate fica fora da V1), não se escreve em ficha nenhuma, e
    * NENHUM resultado destas leituras é mostrado em ecrã nenhum
    * nesta tranche — nem o da própria.
-   * FONTES_RANK: os textos de rank de cada figura, tal como estão
-   * escritos nas fontes dela (só os três rótulos que o motor lê;
-   * proveniência completa — fixture TEST_CHARACTERS/casos R199 e
-   * corpus do Motor de Fichas C1–C5 — nas NOTAS e no relatório da
-   * tranche; aqui fica o essencial por figura):
+   * FONTES_RANK: os textos de rank de cada figura, tal como
+   * estão escritos nas fichas oficiais dela (só os três
+   * rótulos que o motor lê; aqui fica o essencial por figura):
    *  - ong «Prata 2» e capanga «Prata 3»: fonte única, leitura
-   *    «lido» no corpus (C3/C4).
-   *  - lobo: duas fontes reais (bestiário C5-BEST + fixture C5-
-   *    R199) — ver CONFLITOS_RANK_DECLARADOS, abaixo.
-   *  - orc {}: nenhuma fonte fixa o Orc DESTA batalha num estágio
-   *    da matriz de 25 (C1/C2 são outros estágios) — declarar um
-   *    seria inventar; a leitura é o erro nomeado.
+   *    «lido» na ficha.
+   *  - lobo: duas fontes reais — ver CONFLITOS_RANK_DECLARADOS,
+   *    abaixo.
+   *  - orc {}: nenhuma fonte fixa o Orc DESTA batalha num
+   *    estágio da matriz de 25 — declarar um seria inventar;
+   *    a leitura é o erro nomeado.
    * ERROS NOMEADOS, nunca silenciosos, sempre envelopes
    * { valor, estado, prov } — nunca número solto:
    * UNRESOLVED_RANK_CONFLICT (sem inferência, safe_to_apply=false),
    * FONTE_RANK_ILEGIVEL, FICHA_SEM_RANK_LEGIVEL e, se o motor
    * faltar, MOTOR_LEVELUP_INDISPONIVEL.
-   * EXPOSIÇÃO NOMEADA (não escondida): nesta casca de TESTE, os
-   * textos de FONTES_RANK e o ficheiro do motor são servidos no
-   * fonte da página — como os resíduos TEST já declarados da casca
-   * (COMBATE_TEST/DEFESA_TEST). A fronteira D6 da frente LEVEL UP
-   * declara envelopes de progressão material só-do-Mestre: tratar
-   * esta exposição como resíduo TEST visível é EXCEPÇÃO a essa
-   * fronteira e exige palavra expressa registada; sem ela, esta
-   * tranche NÃO se publica (estado nas NOTAS/relatório). O que a
-   * página em execução nunca faz: mostrar, registar em DOM/
-   * Supervisor/localStorage ou ligar a window qualquer leitura. */
+   * As leituras de progressão nunca são mostradas em ecrã
+   * nenhum, nem registadas em DOM/Supervisor/localStorage,
+   * nem ligadas a window. */
   const FONTES_RANK = {
     ong:     { rotuloRank: 'Prata 2' },
     capanga: { rotuloRank: 'Prata 3' },
@@ -624,8 +552,8 @@
    * das bestas/NPCs vivem SÓ no campo soDoMestre das saídas e no
    * estado interno ESTADO_VLAB desta vista — nunca em frase, ficha,
    * cartão, flutuante ou registo exportável para a Party.
-   * COMPLETAMENTO A01 (04/11/2026): a Vida deste elenco ficou
-   * fixada com fonte (VIDA_TEST, acima) e o adaptador passou a
+   * A Vida deste elenco ficou
+   * fixada com fonte (VIDA_MONSTROS, acima) e o adaptador passou a
    * enviar vidaActual/vidaTotal dos monstros — só para dentro do
    * motor; o dano que sofrem acumula-se no campo interno
    * danoSofrido de ESTADO_VLAB e a queda deles consome-se do
@@ -826,11 +754,11 @@
     1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
   function vlabExprAtaque(id) {
     if (id === PROPRIA) return transformada ? '4d6+25' : '4d6+19';   // 4d6+INT (INT 19; transformada 25)
-    const c = COMBATE_TEST[id];
-    return `${c.atkQtd}d${c.atkFaces}+${bonusTeste(c)}`;              // derivação TEST declarada (ver cabeçalho)
+    const c = DADOS_COMBATE[id];
+    return `${c.atkQtd}d${c.atkFaces}+${c.atkBonus}`;   // expressão da ficha, campo a campo
   }
   function vlabExprDanoStr(id) {
-    const e = id === PROPRIA ? expressaoOng() : COMBATE_TEST[id].dano;
+    const e = id === PROPRIA ? expressaoOng() : DADOS_COMBATE[id].dano;
     return `${e.qtd}d${e.faces}${e.bonus ? '+' + e.bonus : ''}`;
   }
   function vlabVidaOng() { return Math.max(0, FICHAS.ong.vida.total - danoSofrido); }
@@ -840,9 +768,9 @@
     if (id === PROPRIA && vlabOngFraca() && !st.includes('fraco')) st.push('fraco');
     /* A01: Fraco (Regra 7) também se deriva para os monstros, da
        Vida interna deles — mesma régua dos 10% que a dela. */
-    if (id !== PROPRIA && VIDA_TEST[id] != null) {
+    if (id !== PROPRIA && VIDA_MONSTROS[id] != null) {
       const v = vlabVidaMonstro(id);
-      if (v > 0 && v * 10 < VIDA_TEST[id] && !st.includes('fraco')) st.push('fraco');
+      if (v > 0 && v * 10 < VIDA_MONSTROS[id] && !st.includes('fraco')) st.push('fraco');
     }
     return st;
   }
@@ -859,21 +787,21 @@
       f.vidaActual = vlabVidaOng();
       f.vidaTotal = FICHAS.ong.vida.total;
       f.testesDeMorteDesignado = true;   // personagem designada (contrato M3): a corrida é dela
-    } else if (VIDA_TEST[id] != null) {
+    } else if (VIDA_MONSTROS[id] != null) {
       /* A01: o monstro como ATACANTE também declara a Vida —
          a desgraça «acerta-se» do motor aplica-lhe o dano próprio
          (com o tecto de 1 de Vida: nunca o mata). O valor viaja
          para dentro do motor; nunca sai em superfície da Party. */
       f.vidaActual = vlabVidaMonstro(id);
-      f.vidaTotal = VIDA_TEST[id];
+      f.vidaTotal = VIDA_MONSTROS[id];
     }
     return f;
   }
   function vlabFichaAlvo(id) {
     const f = {
       ca: id === PROPRIA
-        ? (transformada ? COMBATE_TEST.ong.transformacao.caNova : COMBATE_TEST.ong.ca)
-        : COMBATE_TEST[id].ca,
+        ? (transformada ? DADOS_COMBATE.ong.transformacao.caNova : DADOS_COMBATE.ong.ca)
+        : DADOS_COMBATE[id].ca,
       estado: vlabEstadosDe(id),
       rd: { geral: 0, porTipo: {} }
     };
@@ -886,30 +814,26 @@
       f.vidaTotal = FICHAS.ong.vida.total;
       f.testesDeMorteDesignado = true;
       if (ESTADO_VLAB.ong.estadoMorte) f.estadoMorte = ESTADO_VLAB.ong.estadoMorte;
-    } else if (VIDA_TEST[id] != null) {
+    } else if (VIDA_MONSTROS[id] != null) {
       /* A01: o monstro como ALVO declara a Vida (só para dentro
          do motor) — é dela que o motor deriva o foraDeCombate. */
       f.vidaActual = vlabVidaMonstro(id);
-      f.vidaTotal = VIDA_TEST[id];
+      f.vidaTotal = VIDA_MONSTROS[id];
     }
     return f;
   }
-  /* Alvo DELA usa defesaAplicavel: o par teste×Defesa dos monstros é
-     a derivação TEST declarada no cabeçalho (não há par de ficha).
-     EXCEPÇÃO DA REGRA B0 (achado 1 do Crítico 1): contra um Ataque
-     de Oportunidade o motor RECUSA qualquer alvo com defesaAplicavel
-     ou reacaoDefensiva declaradas (o alvo não pode reagir — declarar
-     é erro nomeado e o golpe nunca resolvia). Nesse caso o limiar
-     TEST do par vai no campo ca, sem reacção nenhuma. */
+  /* Alvo DELA: a ficha de alvo é a mesma de qualquer alvo —
+     o limiar é a CA da ficha dela (a normal ou a da forma
+     transformada, via vlabFichaAlvo) e o teste do monstro
+     é a expressão da ficha dele. EXCEPÇÃO DA REGRA B0
+     (achado 1 do Crítico 1): contra um Ataque de
+     Oportunidade o motor RECUSA qualquer alvo com
+     reacaoDefensiva declarada (o alvo não pode reagir) —
+     nesse caso a declaração retira-se; o limiar continua
+     a ser a CA, sem reacção nenhuma. */
   function vlabFichaAlvoDela(paraOportunidade) {
     const f = vlabFichaAlvo(PROPRIA);
-    if (paraOportunidade) {
-      delete f.reacaoDefensiva;
-      f.ca = defesaDe(PROPRIA);
-      return f;
-    }
-    delete f.ca;
-    f.defesaAplicavel = { valor: defesaDe(PROPRIA), nomeDaRegra: 'Defesa (derivação F-MECANICAS §1.1/D3 desta casca)', origem: 'par TEST declarado — as fichas das bestas não trazem teste de ataque' };
+    if (paraOportunidade) delete f.reacaoDefensiva;
     return f;
   }
   function vlabFlanqueandoSobre(alvoId, atacanteId) {
@@ -929,7 +853,7 @@
   function vlabResolverAtaqueCompleto(atacanteId, alvoId, opts) {
     opts = opts || {};
     if (!VLAB_MOTOR) return { erro: { codigo: 'MOTOR_VLAB_INDISPONIVEL', detalhe: 'vlab-completo.js não carregou' } };
-    const c = COMBATE_TEST[atacanteId];
+    const c = DADOS_COMBATE[atacanteId];
     const tecnica = atacanteId === PROPRIA
       ? { nome: c.arma, custoPA: 8, expressaoAtaque: vlabExprAtaque(atacanteId),
           expressaoDano: vlabExprDanoStr(atacanteId), tipo: 'agua', magia: false, usaArma: true }
@@ -985,11 +909,11 @@
       if (id === PROPRIA && Number.isFinite(dep.vidaActual)) {
         danoSofrido = FICHAS.ong.vida.total - dep.vidaActual;   // acerta-se: o motor já aplicou o tecto (nunca mata)
         atualizarChipVida();
-      } else if (id !== PROPRIA && VIDA_TEST[id] != null && Number.isFinite(dep.vidaActual)) {
+      } else if (id !== PROPRIA && VIDA_MONSTROS[id] != null && Number.isFinite(dep.vidaActual)) {
         /* A01: o dano próprio do monstro (desgraça «acerta-se»)
            acumula-se na Vida interna dele — o motor aplicou o
            tecto de 1 de Vida, por isso nunca nasce uma queda aqui. */
-        ESTADO_VLAB[id].danoSofrido = VIDA_TEST[id] - dep.vidaActual;
+        ESTADO_VLAB[id].danoSofrido = VIDA_MONSTROS[id] - dep.vidaActual;
       }
     }
     if (sm.falhaCritica && sm.falhaCritica.efeitoMecanico
@@ -1001,7 +925,7 @@
   }
   /* Consome o lado do ALVO de uma saída. Para os monstros: estados
      internos e Vida interna, em silêncio total — e, desde o
-     COMPLETAMENTO A01, a QUEDA: o foraDeCombate do motor tomba a
+     completamento, a QUEDA: o foraDeCombate do motor tomba a
      figura na cena (setVivo) e devolve 'caiu'. Para ela: Vida,
      corrida de morte. Devolve 'morreu' | 'aMorrer' | 'caiu' | null. */
   function vlabAplicarAlvoDepois(id, saida) {
@@ -1012,9 +936,9 @@
         if (!ESTADO_VLAB[id].estados.includes(e)) ESTADO_VLAB[id].estados.push(e);
       for (const e of dep.estadosRemovidos || [])
         ESTADO_VLAB[id].estados = ESTADO_VLAB[id].estados.filter(x => x !== e);
-      if (VIDA_TEST[id] != null && Number.isFinite(dep.vidaActual))
-        ESTADO_VLAB[id].danoSofrido = VIDA_TEST[id] - dep.vidaActual;
-      const caiu = VIDA_TEST[id] != null
+      if (VIDA_MONSTROS[id] != null && Number.isFinite(dep.vidaActual))
+        ESTADO_VLAB[id].danoSofrido = VIDA_MONSTROS[id] - dep.vidaActual;
+      const caiu = VIDA_MONSTROS[id] != null
         && (dep.vidaActual === 0 || (dep.estadosNovos || []).includes('foraDeCombate'));
       if (caiu) {
         /* A queda VÊ-SE pela máquina de morte da cena quando ela
@@ -1048,7 +972,7 @@
   /* Frase de ficção de uma desgraça (sem números de ninguém). */
   function vlabFraseDesgraca(id, fc) {
     const nome = id === PROPRIA ? 'a <b>Ong</b>' : `<b>${nomeCena(id)}</b>`;
-    const arma = COMBATE_TEST[id].arma;
+    const arma = DADOS_COMBATE[id].arma;
     switch (fc && fc.desgraca && fc.desgraca.id) {
       case 'cai': return `${nome} foi ao chão com o golpe falhado.`;
       case 'arma-cai': return `A arma (${arma}) caiu-lhe da mão.`;
@@ -1258,10 +1182,10 @@
      indiceVez e rodada só mudam em passarVez()/iniciarVezIA() e no
      arranque — nenhum outro caminho os escreve. */
   let ordem = ORDEM, indiceVez = 0, vezAtual = PROPRIA, seqTurno = 0, rodada = 1;
-  let batalhaFim = false;       // trava do fim de batalha TEST (só a queda dela, §1.7 do desenho T1.3)
+  let batalhaFim = false;       // trava do fim de batalha (só a queda dela, §1.7 do desenho T1.3)
   let danoSofrido = 0;          // vida perdida acumulada DELA — nasce a 0; a ficha e o chip lêem daqui
   let paGasto = 0;              // PA gasto por ela em tempo de corrida — só a Transformação o escreve
-  let transformada = false;     // snapshot da Transformação aplicado (expressão 8d6+34, Defesa dela 14)
+  let transformada = false;     // snapshot da Transformação aplicado (expressão 8d6+34, CA 36 na forma transformada)
   let reservaMovimento = DESLOCAMENTO_ONG_M;   // metros que ela ainda pode andar NESTA vez
   let custoPendente = null;     // casas do caminho por toque, a descontar no moveend dela
   let caminhoPendente = null;   // o path (motor) desse caminho — custo do Parar pelas casas andadas (D-13.15)
@@ -1333,8 +1257,8 @@
       // Transformação — os dois com o custo no rótulo.
       acoesEl.innerHTML =
         B('voltar', '←', 'Voltar', 'ghost') +
-        B('ataque-basico', '⚔', `${rp ? 'Chicote' : COMBATE_TEST.ong.arma} <span class="pa">8 PA</span>`, 'primary') +
-        B('transformacao', '✦', `Transformação <span class="pa">${COMBATE_TEST.ong.transformacao.custo} PA</span>`);
+        B('ataque-basico', '⚔', `${rp ? 'Chicote' : DADOS_COMBATE.ong.arma} <span class="pa">8 PA</span>`, 'primary') +
+        B('transformacao', '✦', `Transformação <span class="pa">${DADOS_COMBATE.ong.transformacao.custo} PA</span>`);
     } else if (estado === 'vez-ia') {
       // Vez de um monstro: o miolo é um TEXTO de estado, não um botão
       // (um botão que nunca responde violaria o silêncio proibido).
@@ -1496,7 +1420,7 @@
   function fraseForaDeAlcance(alvoId, contexto) {
     const u = unidade(alvoId);
     const atraves = u ? mapaDistancias(PROPRIA).get(chave(u.posicao.x, u.posicao.y)) : undefined;
-    const tapado = atraves !== undefined && atraves <= alcanceEmCasas(COMBATE_TEST.ong.alcance);
+    const tapado = atraves !== undefined && atraves <= alcanceEmCasas(DADOS_COMBATE.ong.alcance);
     if (contexto === 'confirmar') {
       return tapado
         ? 'O caminho até ele está tapado por outras figuras — aproxima-te com <b>Mover</b> e tenta outra vez.'
@@ -1833,7 +1757,7 @@
     });
   }
   function vezDaIA(id, seq) {
-    if (distanciaEntre(id, PROPRIA) <= alcanceEmCasas(ALCANCE_IA_TEST)) {
+    if (distanciaEntre(id, PROPRIA) <= alcanceEmCasas(DADOS_COMBATE[id].alcance)) {
       agendarAtaqueIA(id, seq);              // já ao alcance: não anda, ataca
       return;
     }
@@ -1937,7 +1861,7 @@
       if (d === undefined) continue;
       if (!melhor || d < melhor.d || (d === melhor.d && c.passos < melhor.destino.passos))
         melhor = { d, destino: c };
-      if (melhor.d <= alcanceEmCasas(ALCANCE_IA_TEST)) break;   // 1 casa é o mínimo possível: a casa dela está ocupada
+      if (melhor.d <= alcanceEmCasas(DADOS_COMBATE[id].alcance)) break;   // 1 casa é o mínimo possível: a casa dela está ocupada
     }
     if (!melhor) return null;
     if (distActual !== undefined && melhor.d >= distActual) return null;
@@ -1945,8 +1869,9 @@
   }
   /* O ataque da IA (§2.3; desde a tranche VLAB resolve o motor
      pinado, pelo adaptador): o teste e o dano rolam-se DENTRO do
-     motor — o par teste×Defesa dela é a derivação TEST declarada
-     (vlabFichaAlvoDela), o dano vem do DMG e aplica-se à Vida dela
+     motor — o teste é a expressão da ficha do monstro e o
+     limiar é a CA da ficha dela (vlabFichaAlvoDela); o dano
+     vem do DMG e aplica-se à Vida dela
      pelo soDoMestre do motor (vlabAplicarAlvoDepois escreve
      danoSofrido — a ficha e a barra do chip lêem daí, como antes).
      Mostra-se apenas o resultado narrado e, no acerto, o total que
@@ -1957,7 +1882,7 @@
   async function atacarIA(id, seq) {
     /* Supervisor: o ataque da IA também é validado antes — sem
        alcance, não acontece (a vez fecha pelo caminho normal). */
-    if (distanciaEntre(id, PROPRIA) > alcanceEmCasas(ALCANCE_IA_TEST)) {
+    if (distanciaEntre(id, PROPRIA) > alcanceEmCasas(DADOS_COMBATE[id].alcance)) {
       supRegistar('bloqueada', { acao: 'ataque', actor: id, razao: 'Monstro fora de alcance da Ong' });
       return;
     }
@@ -2037,7 +1962,7 @@
   }
   /* Fim de batalha (§1.7): DOIS terminais adjudicados — a queda
      dela (morte/estabilização/queda, como sempre) e, desde o
-     COMPLETAMENTO A01, a VITÓRIA: todos os monstros fora de
+     completamento, a VITÓRIA: todos os monstros fora de
      combate. A máquina pára onde está. */
   function fimDeBatalha(causa) {
     /* Supervisor (pós-críticos T1.5): evento TERMINAL do fim
@@ -2252,7 +2177,7 @@
          motor devolve-a SEM aplicar; aplicar é o Confirmar, com
          segunda chamada ao motor (escolha = a proposta, troca
          registada se um dia houver). */
-      const c = COMBATE_TEST.ong;
+      const c = DADOS_COMBATE.ong;
       if (ESTADO_VLAB.ong.armaQuebrada) {
         say(`O ${c.arma} está partido — só volta a servir depois de consertado.`);
         return;
@@ -2300,7 +2225,7 @@
       /* Não é um ataque: não pede alvo nem alcance; é a acção dela
          sobre si própria e consome o atacar da vez (no Confirmar).
          O validador comum recusa se ela já estiver transformada. */
-      const t = COMBATE_TEST.ong.transformacao;
+      const t = DADOS_COMBATE.ong.transformacao;
       const livre = FICHAS.ong.alma.total - FICHAS.ong.alma.comprometido - paGasto;
       ataquePendente = { tipo: 'transformacao', nome: 'Transformação' };
       estado = 'rolagem'; renderAcoes();
@@ -2321,7 +2246,7 @@
            compõe o PA livre a partir dele. Sem alma que chegue,
            recusa sem debitar e sem forçar (pagamento forçado com
            Exaustão fica fora desta tranche, declarado nas NOTAS). */
-        const t = COMBATE_TEST.ong.transformacao;
+        const t = DADOS_COMBATE.ong.transformacao;
         const livre = FICHAS.ong.alma.total - FICHAS.ong.alma.comprometido - paGasto;
         estado = 'base'; renderAcoes();
         paGasto += t.custo;
@@ -2727,7 +2652,7 @@
       if (guardaExpiradaIA && guardaExpiradaIA.id === u.id) guardaExpiradaIA = null;   // M-009: chegada normal consome a marca velha
       if (u.id !== vezAtual || ctx.seq !== seqTurno) return;   // sequência morta
       const seq = ctx.seq;
-      if (distanciaEntre(u.id, PROPRIA) <= alcanceEmCasas(ALCANCE_IA_TEST)) {
+      if (distanciaEntre(u.id, PROPRIA) <= alcanceEmCasas(DADOS_COMBATE[u.id].alcance)) {
         agendarAtaqueIA(u.id, seq);          // chegou ao alcance: separa e ataca
       } else {
         say(`<b>${nomeCena(u.id)}</b> aproximou-se.`);
@@ -3234,7 +3159,7 @@
       if (d < menor) { menor = d; alvoId = id; }
     }
     alvo = alvoId;
-    if (menor <= alcanceEmCasas(COMBATE_TEST.ong.alcance)) {
+    if (menor <= alcanceEmCasas(DADOS_COMBATE.ong.alcance)) {
       tratarAcao('atacar');
       if (estado === 'atacar') { autoAtaqueEmCurso = true; agendarPassoAuto(); }
       else tratarAcao('encerrar');
@@ -3352,7 +3277,7 @@
     const u = unidade(alvo);
     if (!u || u.vivo === false) return { razao: 'O alvo já não está na batalha',
       mensagem: 'O alvo já não está na batalha — escolhe outro inimigo.' };
-    if (distanciaAte(alvo) > alcanceEmCasas(COMBATE_TEST.ong.alcance)) return { razao: 'Alvo fora de alcance',
+    if (distanciaAte(alvo) > alcanceEmCasas(DADOS_COMBATE.ong.alcance)) return { razao: 'Alvo fora de alcance',
       mensagem: fraseForaDeAlcance(alvo, contexto) };
     return null;
   }
@@ -3393,7 +3318,7 @@
       if (ataquePendente.tipo === 'transformacao') {
         if (transformada) return { razao: 'A Ong já está transformada',
           mensagem: 'A <b>Ong</b> já está transformada.', limparPendente: true };
-        const t = COMBATE_TEST.ong.transformacao;
+        const t = DADOS_COMBATE.ong.transformacao;
         const livre = FICHAS.ong.alma.total - FICHAS.ong.alma.comprometido - paGasto;
         if (livre < t.custo) return { razao: 'Alma livre não chega para a Transformação',
           mensagem: `Alma livre não chega — a Transformação custa ${t.custo} PA.`, limparPendente: true };
@@ -3977,7 +3902,7 @@
           && reservaMovimento >= DESLOCAMENTO_ONG_M - 1e-9) acc.ongVazias++;
         const alvoAoAlcance = ELENCO.some(u => u.id !== PROPRIA
           && unidade(u.id) && unidade(u.id).vivo !== false
-          && distanciaEntre(PROPRIA, u.id) <= alcanceEmCasas(COMBATE_TEST.ong.alcance));
+          && distanciaEntre(PROPRIA, u.id) <= alcanceEmCasas(DADOS_COMBATE.ong.alcance));
         if (!ctx.atacou && reservaMovimento >= DESLOCAMENTO_ONG_M / 2 && alvoAoAlcance)
           acc.ongDesperdicadas++;
       }
