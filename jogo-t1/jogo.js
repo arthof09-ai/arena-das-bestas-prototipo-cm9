@@ -2372,6 +2372,7 @@
          débito vem DEPOIS de supConferirSoma. */
       if (s.resultado === 'erra') {
         paGasto += s.pa.custo;
+        atualizarChipVida();           // M-015: o débito de PA reflecte-se já no chip (antes a plaquinha ficava no valor anterior ao ataque)
         // Falha: sem impacto, sem flutuantes, sem dano — mas a
         // tentativa VÊ-SE (gesto T-D do vivo): a frase da falha só
         // sai quando o gesto fecha; época mudada ou gelo = a
@@ -2385,6 +2386,7 @@
       }
       if (s.resultado === 'falhaCritica') {
         paGasto += s.pa.custo;
+        atualizarChipVida();           // M-015: o débito de PA reflecte-se já no chip (antes a plaquinha ficava no valor anterior ao ataque)
         const fc = vlabAplicarAtacanteDepois(PROPRIA, s);
         if (s.desgracaPendente)
           supRegistar('accao', { acao: 'desgraca-pendente', actor: PROPRIA, tipo: s.desgracaPendente.tipo, aplicada: false, motivo: 'sem aliado ao alcance nesta batalha a solo' });
@@ -2395,6 +2397,7 @@
          congela e a resolução ABORTA neste tick (sem dano). */
       if (!supConferirSoma(s.danoAplicado.parcelas.map(p => ({ valor: p.subtotal })), s.danoAplicado.total, PROPRIA)) return;
       paGasto += s.pa.custo;           // conferido e fechado: debita-se o custo da técnica
+      atualizarChipVida();           // M-015: o débito de PA reflecte-se já no chip (antes a plaquinha ficava no valor anterior ao ataque)
       supRegistar('accao', { acao: 'ataque', actor: PROPRIA, alvo: alvoDoGolpe, acerto: true, dano: s.totalEfectivo });
       /* T-D: validação do Supervisor completa → o gesto
          apresenta-se e SÓ DEPOIS o golpe marca (anel, flutuantes,
