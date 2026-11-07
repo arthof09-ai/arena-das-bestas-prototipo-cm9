@@ -944,6 +944,29 @@
         && sm.falhaCritica.efeitoMecanico.tipo === 'quebraCorporal') {
       ESTADO_VLAB[id].desvantagemAtaque = 1;
       ESTADO_VLAB[id].deslocMetade = true;
+      /* T-QUEBRAR25 (regra do Mestre, 07/11 09:02): quebrar uma
+         parte do corpo custa NA HORA 25% da vida ACTUAL de quem
+         falhou o golpe — soma-se aos dois efeitos de cima. A perda
+         é floor(25% da vida actual), com o tecto de nunca tirar a
+         última vida: esta regra sozinha NUNCA mata (com vida 1–3
+         a perda é 0). Assenta-se pela via normal da casca — o
+         mesmo danoSofrido do «acerta-se» — e vê-se na vida (chip
+         dela / Vida interna do monstro) e na frase da desgraça;
+         sem parcela flutuante nova. */
+      const vidaActualQ = id === PROPRIA ? vlabVidaOng()
+        : (VIDA_MONSTROS[id] != null ? vlabVidaMonstro(id) : 0);
+      let perdaQ = Math.floor(vidaActualQ / 4);
+      if (perdaQ > vidaActualQ - 1) perdaQ = vidaActualQ - 1;
+      if (perdaQ < 0) perdaQ = 0;
+      sm.falhaCritica.perdaQuebraCorporal = perdaQ;
+      if (perdaQ > 0) {
+        if (id === PROPRIA) {
+          danoSofrido += perdaQ;
+          atualizarChipVida();
+        } else if (VIDA_MONSTROS[id] != null) {
+          ESTADO_VLAB[id].danoSofrido = (ESTADO_VLAB[id].danoSofrido | 0) + perdaQ;
+        }
+      }
     }
     return sm.falhaCritica || null;
   }
@@ -1002,7 +1025,11 @@
       case 'arma-cai': return `A arma (${arma}) caiu-lhe da mão.`;
       case 'arma-quebra': return `A arma (${arma}) quebrou — fica inutilizável até ser consertada.`;
       case 'acerta-se': return `${nome} atingiu-se a si ${id === PROPRIA ? 'própria' : 'próprio'} com o próprio golpe.`;
-      case 'quebra-corpo': return `${nome} quebrou algo no corpo — os golpes dela ficam prejudicados e anda metade até ao fim do combate.`.replace('dela', id === PROPRIA ? 'dela' : 'dele');
+      case 'quebra-corpo': {
+        const pronQ = id === PROPRIA ? 'dela' : 'dele';
+        const perdaFraseQ = fc && Number.isFinite(fc.perdaQuebraCorporal) ? fc.perdaQuebraCorporal : 0;
+        return `${nome} quebrou algo no corpo — os golpes ${pronQ} ficam prejudicados e anda metade até ao fim do combate.${perdaFraseQ > 0 ? ' Perde um quarto da vida que tem agora.' : ''}`;
+      }
       case 'acerta-amigo': return `O golpe atingiu um aliado sem querer.`;
       default: return `O golpe correu mal.`;
     }
