@@ -57,18 +57,20 @@
          * Crítico R2: o sol 0xffa050 a 1,85 sobre a textura quente colapsou
          * o canal azul da cena (B médio = 15). Fonte corrigida: sol mais
          * claro e menos vermelho, mais alto (sombras ~0,83×), hemisférica
-         * fria a sério — é ela que devolve azul aos cantos e aos vales. */
+         * fria a sério — é ela que devolve azul aos cantos e aos vales.
+         * Enchimento fixado pela base V7 (fila IBX-212, item 15 —
+         * T-LUZ): hemisférica 0,40 e sombras 512; sem luz ambiente. */
         scene.traverse(o => {
             if (o.isDirectionalLight) {
                 o.color.set(0xffe3c0).convertSRGBToLinear();
                 o.intensity = 0.98;
                 o.position.set(-18, 27, -13.5); // elevação ~50° (original: 21,8°)
-                o.shadow.mapSize.set(2048, 2048);
+                o.shadow.mapSize.set(512, 512);
                 if (o.shadow.map) { o.shadow.map.dispose(); o.shadow.map = null; }
             } else if (o.isHemisphereLight) {
                 o.color.set(0x7d9ab8).convertSRGBToLinear();       // céu petróleo vivo
                 o.groundColor.set(0x2e2a24).convertSRGBToLinear(); // chão quase neutro
-                o.intensity = 0.44;
+                o.intensity = 0.40;
             }
         });
 
