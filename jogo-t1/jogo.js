@@ -1227,6 +1227,22 @@
   let passoEmCurso = false;     // um passo de seta está a animar (pressões novas ignoram-se)
   let contextoIA = null;        // { id, seq, relogio, destino? } do movimento/ataque da IA em voo — consumo único (G-13.3(d)); destino só no movimento (E-1)
   let guardaExpiradaIA = null;  // M-009: { id, seq } da última guarda de 5 s expirada cuja figura ainda vem a caminho — a chegada tardia dela diz-se, não se engole em silêncio
+  /* Reserva de destino em voo (tranche do congelamento «Duas figuras
+     na mesma casa»): id do monstro → { x, y } do destino que ele já
+     escolheu e para onde ainda anda. É a metade que faltava ao
+     contextoIA: o contexto consome-se quando a vez fecha (pontual ou
+     pela guarda de 5 s), mas a figura continua em voo — e é nesse
+     intervalo que o monstro seguinte escolhia sobre a fotografia a
+     meio do trânsito e os dois acabavam na mesma casa. A reserva
+     nasce no despacho (vezDaIA), é lida por calcularAlcancePara
+     (a casa reservada de outra figura conta como ocupada) e morre
+     só na chegada dessa figura (o moveend tardio incluído), na
+     recusa da cena, ou quando o mundo é substituído/termina
+     (restauro, saves, congelamento, fim de batalha). Uma reserva
+     por figura: um despacho novo da mesma figura sobrescreve a
+     anterior. Estado transitório de voo: nunca entra em snapshots
+     nem em saves. */
+  const reservasDestinoIA = new Map();
   let vezIASemMovimento = false; // T-J7: a vez da IA que se abre com um levantar — o movimento desta vez já está gasto (espelho da reservaMovimento = 0 da Ong em iniciarVez)
   let vezIAFechada = -1;        // última geração de IA cuja conclusão já foi consumida (fimDaVezIA idempotente)
   let ajudaGrid = true;
@@ -1361,6 +1377,19 @@
     if (!u) return new Map();
     const ocupadas = new Set(s.units.filter(v => v.id !== u.id && v.vivo !== false)
       .map(v => chave(v.posicao.x, v.posicao.y)));
+    /* Reserva de destino em voo: o destino já escolhido por outra
+       figura que ainda anda conta como ocupado — bloqueia caminho
+       e destino, como uma figura viva pousada. É isto que fecha a
+       janela entre a guarda de 5 s fechar a vez de um monstro e a
+       chegada tardia dele: quem escolhe a seguir já não pode cair
+       na casa que está prometida. Reserva de dono morto é fuga
+       (a figura já não chega): descarta-se aqui, na leitura. */
+    for (const [dono, r] of reservasDestinoIA) {
+      if (dono === u.id) continue;
+      const donoU = s.units.find(v => v.id === dono);
+      if (!donoU || donoU.vivo === false) { reservasDestinoIA.delete(dono); continue; }
+      ocupadas.add(chave(r.x, r.y));
+    }
     const inicio = { x: u.posicao.x, y: u.posicao.y, passos: 0, path: [] };
     const vistos = new Map([[chave(inicio.x, inicio.y), inicio]]);
     const fila = [inicio];
@@ -1841,6 +1870,10 @@
     }
     guardaExpiradaIA = null;   // M-009: movimento novo desta figura — a marca de expiração anterior já não descreve nada em voo
     contextoIA = { id, seq, destino: { x: destino.x, y: destino.y }, relogio: setTimeout(() => relogioIA(id, seq), GUARDA_IA_MS) };
+    /* Reserva de destino em voo: nasce com o despacho e NÃO morre
+       com o contexto — sobrevive à guarda de 5 s, até esta figura
+       de facto pousar neste destino (ver o tratador de moveend). */
+    reservasDestinoIA.set(id, { x: destino.x, y: destino.y });
     /* Supervisor (pós-críticos T1.5): o movimento LEGAL do monstro
        também entra no registo — actor, de→para e passos. */
     { const uIA = unidade(id);
@@ -1856,6 +1889,7 @@
     } catch (_) {
       // G-13.5: a cena recusou o movimento — a vez sobrevive.
       consumirContextoIA(id);
+      reservasDestinoIA.delete(id);   // a figura não vai a lado nenhum: a reserva morre com a recusa
       say(`<b>${nomeCena(id)}</b> não conseguiu andar.`);
       fimDaVezIA(seq);
     }
@@ -2071,6 +2105,7 @@
     batalhaFim = true;
     seqTurno++;                              // invalida continuações pendentes
     if (contextoIA) consumirContextoIA(contextoIA.id);
+    reservasDestinoIA.clear();   // a batalha acabou: nenhuma reserva de voo atravessa o fim
     /* FUSÃO T-D (casca-td §1.3): a queda entra pela máquina de morte
        da cena (Death_A -> pose persistente) quando ela existe —
        nunca pela prancha do setVivo; na cena sagrada do vivo, que
@@ -2103,6 +2138,7 @@
     batalhaFim = true;
     seqTurno++;                              // invalida continuações pendentes
     if (contextoIA) consumirContextoIA(contextoIA.id);
+    reservasDestinoIA.clear();   // fim declarado: nenhuma reserva de voo atravessa o fim
     estado = 'fim';
     atualizarVez(); renderAcoes();
     say('A batalha <b>terminou</b> — a mesa fechou este encontro. Prime <b>Recomeçar</b> para jogar outra vez.');
@@ -2712,8 +2748,10 @@
         supRestaurando = true;               // a reafirmação não é movimento de jogo
         for (const su of snapUnidades) {
           const uv = unidade(su.id);
-          if (uv && (uv.posicao.x !== su.x || uv.posicao.y !== su.y))
+          if (uv && (uv.posicao.x !== su.x || uv.posicao.y !== su.y)) {
+            reservasDestinoIA.delete(su.id);   // EMENDA-V1: a reafirmação cancela o voo desta figura — a reserva dele morre com o voo cancelado, antes do move, porque o moveend cancelado é engolido em :2734
             view.move(su.id, casaVista({ x: su.x, y: su.y }), { immediate: true });
+          }
         }
         supRestaurando = false;
         supConferirInvariantes('moveend-tardio');
@@ -2729,6 +2767,7 @@
       const suR = supRestauroPendente.find(s => s.id === u.id);
       if (suR && (u.posicao.x !== suR.x || u.posicao.y !== suR.y)) {
         supRestaurando = true;
+        reservasDestinoIA.delete(u.id);   // EMENDA-V1: idem — voo cancelado pela reafirmação; sem isto, o casamento por destino de :2781 falha contra a posição reafirmada e a reserva fica órfã
         view.move(u.id, casaVista({ x: suR.x, y: suR.y }), { immediate: true });
         supRestaurando = false;
       }
@@ -2736,6 +2775,15 @@
     supConferirInvariantes('moveend');         // Supervisor: invariantes após cada movimento
     try { supCritFecharMovimento(u.id); } catch (_) { supCritErrosCamada++; }   // T1.7: fecha o segmento de movimento (passivo)
     if (u.id !== PROPRIA) {
+      /* Reserva de destino em voo: esta figura pousou — a reserva
+         dela morre aqui, chegue o moveend a tempo ou tarde (depois
+         da guarda). O casamento é por destino, como o E-1 do
+         contexto: uma chegada a outra casa não liberta a reserva
+         de um voo mais novo da mesma figura. Deste instante em
+         diante quem ocupa a casa é a própria figura, pela posição. */
+      { const rIA = reservasDestinoIA.get(u.id);
+        if (rIA && rIA.x === u.posicao.x && rIA.y === u.posicao.y)
+          reservasDestinoIA.delete(u.id); }
       /* Chegou um monstro. A conclusão do movimento tem UM dono:
          quem chega primeiro (este tratador ou o relógio de guarda)
          consome o contextoIA; sem contexto vivo, este moveend é
@@ -3539,6 +3587,7 @@
     if (relogioAuto) { clearTimeout(relogioAuto); relogioAuto = null; }
     seqTurno++;                          // continuações da IA morrem
     if (contextoIA) consumirContextoIA(contextoIA.id);
+    reservasDestinoIA.clear();   // o mundo congela neste instante: reservas do mundo velho não vazam
     estado = 'fim';
     atualizarVez(); renderAcoes();   // EXP-R1: o indicador passa a «FIM» no gelo (terminal honesto)
   }
@@ -3611,6 +3660,7 @@
     if (relogioAuto) { clearTimeout(relogioAuto); relogioAuto = null; }
     seqTurno++;
     if (contextoIA) consumirContextoIA(contextoIA.id);
+    reservasDestinoIA.clear();   // o restauro substitui o mundo: os voos da linha abandonada já não prometem casas
     for (const su of snap.unidades) {
       const u = unidade(su.id);
       if (u && (u.posicao.x !== su.x || u.posicao.y !== su.y))
@@ -4006,6 +4056,7 @@
         if (relogioAuto) { clearTimeout(relogioAuto); relogioAuto = null; }
         seqTurno++;
         if (contextoIA) consumirContextoIA(contextoIA.id);
+        reservasDestinoIA.clear();   // idem supRestaurar: o save substitui o mundo, os voos velhos já não prometem casas
         /* Posições e vivo: move imediato INCONDICIONAL de todas as
            figuras — cancela animações em voo mesmo quando a posição
            lógica já bate com o save (era o buraco S-CRIT-05). Figura
