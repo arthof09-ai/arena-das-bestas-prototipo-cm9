@@ -288,7 +288,7 @@
                             gltf = await new T.GLTFLoader().loadAsync(model);
                         } catch (_) {
                             if (disposed || u.removed) return;
-                            u.loadError = 'Não foi possível carregar o modelo de ' + u.nome + '. A figura está representada por um marcador.';
+                            u.loadError = 'Não foi possível mostrar o modelo de ' + u.nome + '. A figura está representada por um marcador.';
                             u.clips = {}; // Sem rig: a apresentação usa avanço/recuo.
                             addMarker(u);
                             pose(u);
@@ -620,7 +620,7 @@
             }
             const contextLost = e => {
                 e.preventDefault();
-                emit('error', { message: 'Contexto gráfico perdido. Recarregue a página.' });
+                emit('error', { message: 'Contexto gráfico perdido. Atualiza a página.' });
             };
             renderer.domElement.addEventListener('webglcontextlost', contextLost);
             setQualidade(options.qualidade || 'alta');
