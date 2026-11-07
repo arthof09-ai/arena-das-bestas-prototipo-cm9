@@ -1000,9 +1000,9 @@
     switch (fc && fc.desgraca && fc.desgraca.id) {
       case 'cai': return `${nome} foi ao chão com o golpe falhado.`;
       case 'arma-cai': return `A arma (${arma}) caiu-lhe da mão.`;
-      case 'arma-quebra': return `A arma (${arma}) partiu-se — fica inutilizável até ser consertada.`;
+      case 'arma-quebra': return `A arma (${arma}) quebrou — fica inutilizável até ser consertada.`;
       case 'acerta-se': return `${nome} atingiu-se a si ${id === PROPRIA ? 'própria' : 'próprio'} com o próprio golpe.`;
-      case 'quebra-corpo': return `${nome} partiu algo no corpo — os golpes dela ficam prejudicados e anda metade até ao fim do combate.`.replace('dela', id === PROPRIA ? 'dela' : 'dele');
+      case 'quebra-corpo': return `${nome} quebrou algo no corpo — os golpes dela ficam prejudicados e anda metade até ao fim do combate.`.replace('dela', id === PROPRIA ? 'dela' : 'dele');
       case 'acerta-amigo': return `O golpe atingiu um aliado sem querer.`;
       default: return `O golpe correu mal.`;
     }
@@ -1202,7 +1202,7 @@
      desistir dela antes do Confirmar continua a ser o fluxo
      legítimo de cancelar uma declaração. */
   const rolagemPorResolver = () => !!(ataquePendente && ataquePendente.tipo === 'chicote');
-  const FRASE_ROLAGEM_PENDENTE = 'A rolagem já saiu — prime <b>Confirmar</b> para resolver o golpe.';
+  const FRASE_ROLAGEM_PENDENTE = 'A rolagem já saiu — aperta <b>Confirmar</b> para resolver o golpe.';
   let apresentacaoEmCurso = false;   // T-D: uma apresentação de confronto da cena está a decorrer (o fluxo espera por ela)
   let continuarAposApresentacao = false;   // T-D: um «Continuar» premido durante o gesto executa-se quando ele fecha
   /* T-D/R1: o contador de ataques COM apresentação já NÃO vive aqui:
@@ -1595,7 +1595,7 @@
     if (!u) return;
     if (estado === 'movendo' || view.getState().moving) { say('Espera — a figura ainda está a andar.'); return; }
     if (reservaMovimento < CASA_M) {
-      say(`A <b>Ong</b> andou o que podia andar nesta vez — prime <b>Atacar</b> ou <b>Encerrar</b>.`);
+      say(`A <b>Ong</b> andou o que podia andar nesta vez — aperta <b>Atacar</b> ou <b>Encerrar</b>.`);
       return;
     }
     alcance = calcularAlcance();
@@ -1617,7 +1617,7 @@
   /* Reserva esgotada: o modo Mover fecha sozinho para a base. */
   function esgotarReserva() {
     sairMover();
-    say(`A <b>Ong</b> andou o que podia andar nesta vez — prime <b>Atacar</b> ou <b>Encerrar</b>.`);
+    say(`A <b>Ong</b> andou o que podia andar nesta vez — aperta <b>Atacar</b> ou <b>Encerrar</b>.`);
   }
   /* Um passo de seta (§3.4): uma casa na direcção da GRELHA (nunca
      da câmera), pela mesma API e pelo mesmo adaptador do toque.
@@ -1729,7 +1729,7 @@
   }
   function fraseEsperaVez() {
     say(batalhaFim
-      ? 'A batalha acabou — prime <b>Recomeçar</b>.'
+      ? 'A batalha acabou — aperta <b>Recomeçar</b>.'
       : `É a vez de <b>${nomeCena(vezAtual)}</b> — espera que ele aja.`);
   }
   function iniciarVez(id) {
@@ -2008,7 +2008,7 @@
     if (s.erro) {
       supRegistar('bloqueada', { acao: 'ataque', actor: id, razao: s.erro.codigo });
       if (s.erro.codigo === 'ARMA_QUEBRADA')
-        say(`<b>${nomeCena(id)}</b> não consegue atacar — a arma dele está partida.`);
+        say(`<b>${nomeCena(id)}</b> não consegue atacar — a arma dele está quebrada.`);
       return;
     }
     if (s.resultado === 'falhaCritica') {
@@ -2122,10 +2122,10 @@
     estado = 'fim';
     atualizarVez(); renderAcoes();
     say(causa === 'vitoria'
-      ? 'Os inimigos caíram todos — <b>vitória</b> da <b>Ong</b> nesta batalha. Prime <b>Recomeçar</b> para jogar outra vez.'
+      ? 'Os inimigos caíram todos — <b>vitória</b> da <b>Ong</b> nesta batalha. Aperta <b>Recomeçar</b> para jogar outra vez.'
       : causa === 'estabilizada'
-      ? 'A <b>Ong</b> caiu, mas estabilizou — fim desta batalha. Prime <b>Recomeçar</b> para jogar outra vez.'
-      : 'A <b>Ong</b> caiu — fim desta batalha. Prime <b>Recomeçar</b> para jogar outra vez.');
+      ? 'A <b>Ong</b> caiu, mas estabilizou — fim desta batalha. Aperta <b>Recomeçar</b> para jogar outra vez.'
+      : 'A <b>Ong</b> caiu — fim desta batalha. Aperta <b>Recomeçar</b> para jogar outra vez.');
   }
   /* Terminar a batalha (M-014): a saída que a especificação reserva
      à mesa — fecha o encontro a meio, SEM a Ong cair (sem setVivo):
@@ -2141,7 +2141,7 @@
     reservasDestinoIA.clear();   // fim declarado: nenhuma reserva de voo atravessa o fim
     estado = 'fim';
     atualizarVez(); renderAcoes();
-    say('A batalha <b>terminou</b> — a mesa fechou este encontro. Prime <b>Recomeçar</b> para jogar outra vez.');
+    say('A batalha <b>terminou</b> — a mesa fechou este encontro. Aperta <b>Recomeçar</b> para jogar outra vez.');
   }
 
   /* ---------- acções da faixa ---------- */
@@ -2160,7 +2160,7 @@
        mundo (EXP-R1: pós-gelo, silêncio é proibido nesta casca). */
     if (supCongelado) {
       if (acao === 'recomecar') location.reload();
-      else say('A batalha parou — prime <b>Recomeçar</b>.');
+      else say('A batalha parou — aperta <b>Recomeçar</b>.');
       return;
     }
     /* Guarda de vez (§1.5): na vez de um monstro, cliques em botões
@@ -2283,13 +2283,13 @@
       if (estado !== 'base') { say('Primeiro volta às acções base.'); return; }
       /* M-014: pedir a confirmação — a batalha não fecha por um toque. */
       estado = 'confirmar-fim'; renderAcoes();
-      say(`Terminar esta batalha? A rodada ${rodada} fica por fechar — prime <b>Sim, terminar</b> para fechar, ou <b>Voltar</b> para continuar a jogar.`);
+      say(`Terminar esta batalha? A rodada ${rodada} fica por fechar — aperta <b>Sim, terminar</b> para fechar, ou <b>Voltar</b> para continuar a jogar.`);
       return;
     }
     if (acao === 'terminar-sim') {
       /* LB-C-05: terminar-sim só a partir de confirmar-fim — directo
          da base (ou de outro estado) não fecha a batalha. */
-      if (estado !== 'confirmar-fim') { say('Primeiro prime <b>Terminar</b> para confirmar.'); return; }
+      if (estado !== 'confirmar-fim') { say('Primeiro aperta <b>Terminar</b> para confirmar.'); return; }
       terminarBatalha(); return;
     }
     if (acao === 'ataque-basico') {
@@ -2305,7 +2305,7 @@
          registada se um dia houver). */
       const c = DADOS_COMBATE.ong;
       if (ESTADO_VLAB.ong.armaQuebrada) {
-        say(`O ${c.arma} está partido — só volta a servir depois de consertado.`);
+        say(`O ${c.arma} está quebrado — só volta a servir depois de consertado.`);
         return;
       }
       if (ESTADO_VLAB.ong.armaCaida) {
@@ -2344,7 +2344,7 @@
       if (rol.ajusteVantagemDesvantagem < 0) soma += ' − ' + (-rol.ajusteVantagemDesvantagem);
       const notaVD = rol.niveisLiquidos !== 0
         ? ` · (${rol.niveisLiquidos > 0 ? 'a melhor' : 'a pior'} de ${rol.conjuntosDeFaces.length} rolagens — ${rol.niveisLiquidos > 0 ? 'Vantagem' : 'Desvantagem'})` : '';
-      say(`${c.arma} de <b>Ong</b> contra <b>${nomeCena(alvo)}</b> · <b>${rol.expressao} → ${soma} = ${rol.total}</b>${notaVD} · prime <b>Confirmar</b> para saber se acertou.`);
+      say(`${c.arma} de <b>Ong</b> contra <b>${nomeCena(alvo)}</b> · <b>${rol.expressao} → ${soma} = ${rol.total}</b>${notaVD} · aperta <b>Confirmar</b> para saber se acertou.`);
       return;
     }
     if (acao === 'transformacao') {
@@ -2489,7 +2489,7 @@
       if (apresentacaoEmCurso) { continuarAposApresentacao = true; return; }
       estado = 'base'; renderAcoes();
       say(atacou
-        ? 'A <b>Ong</b> já atacou nesta vez — prime <b>Encerrar</b> para fechar a vez dela.'
+        ? 'A <b>Ong</b> já atacou nesta vez — aperta <b>Encerrar</b> para fechar a vez dela.'
         : 'É a vez da <b>Ong</b>.');
       return;
     }
@@ -2600,7 +2600,7 @@
        apagar ataquePendente, sem repintar a faixa); correcções
        finais (EXP-R1): responde com a frase do mundo, sem
        silêncio. */
-    if (supCongelado) { say('A batalha parou — prime <b>Recomeçar</b>.'); return; }
+    if (supCongelado) { say('A batalha parou — aperta <b>Recomeçar</b>.'); return; }
     // Na vez de um monstro (ou no fim), o chip responde como os
     // toques: frase de espera (§1.5); a ficha dela vê-se antes e depois.
     if (vezAtual !== PROPRIA || batalhaFim) { fraseEsperaVez(); return; }
@@ -2611,7 +2611,7 @@
        do golpe ainda a decorrer), o chip também não destrói a saída:
        responde com a frase de espera e a ficha fica para depois do
        Continuar. */
-    if (estado === 'resultado' || apresentacaoEmCurso) { say('Prime <b>Continuar</b> para seguir.'); return; }
+    if (estado === 'resultado' || apresentacaoEmCurso) { say('Aperta <b>Continuar</b> para seguir.'); return; }
     /* J1 (carta IBX-213): com uma rolagem por resolver, o chip
        também não a destrói — a ficha fica para depois do
        Confirmar, como já acontece com o resultado (M-010). */
@@ -2631,7 +2631,7 @@
        congelada — o toque não muta NADA (sem alvo novo, sem
        estado, sem abrir cartão nem ficha); correcções finais
        (EXP-R1): responde com a frase do mundo, sem silêncio. */
-    if (supCongelado) { say('A batalha parou — prime <b>Recomeçar</b>.'); return; }
+    if (supCongelado) { say('A batalha parou — aperta <b>Recomeçar</b>.'); return; }
     fecharCfg();
     // Intercepção à entrada (§1.5/§1.7): na vez de um monstro ou no
     // fim da batalha, qualquer toque só produz a frase de espera —
@@ -2649,7 +2649,7 @@
        Continuar e a frase do golpe sobrevivem. (Antes, o ramo de
        figura repunha estado='base' e ataquePendente=null também a
        partir de 'resultado' — era assim que a saída se destruía.) */
-    if (estado === 'resultado' || apresentacaoEmCurso) { say('Prime <b>Continuar</b> para seguir.'); return; }
+    if (estado === 'resultado' || apresentacaoEmCurso) { say('Aperta <b>Continuar</b> para seguir.'); return; }
     /* J1 (carta IBX-213): com uma rolagem por resolver, o toque
        também não troca de alvo nem a apaga — a rolagem fica até
        ao Confirmar (a protecção do M-010, um estado mais cedo,
@@ -2688,7 +2688,7 @@
         estado = 'base'; ataquePendente = null; renderAcoes();
       }
       abrirFicha(hit.unitId);
-      say(`<b>${nome}</b> é o teu alvo. Prime <b>Atacar</b> para a atacar com a Ong, ou <b>Mover</b> para te aproximares.`);
+      say(`<b>${nome}</b> é o teu alvo. Aperta <b>Atacar</b> para a atacar com a Ong, ou <b>Mover</b> para te aproximares.`);
       return;
     }
     if (estado === 'mover') {
@@ -2722,9 +2722,9 @@
       });
       return;
     }
-    if (estado === 'resultado') { say('Prime <b>Continuar</b> para seguir.'); return; }
-    if (estado !== 'base') { say('Isso é o chão. Prime <b>Voltar</b> para regressar às acções base.'); return; }
-    say('Isso é o chão. Prime <b>Mover</b>, toca numa casa acesa. Ficha: toca na figura.');
+    if (estado === 'resultado') { say('Aperta <b>Continuar</b> para seguir.'); return; }
+    if (estado !== 'base') { say('Isso é o chão. Aperta <b>Voltar</b> para regressar às acções base.'); return; }
+    say('Isso é o chão. Aperta <b>Mover</b>, toca numa casa acesa. Ficha: toca na figura.');
   }
 
   /* O tratador de moveend ramifica por quem andou e pelo contexto
@@ -2853,8 +2853,8 @@
         desenharAlcance();
         renderAcoes();
         say(foiParado
-          ? `<b>Ong</b> parou. Restam <b>${fmtM(reservaMovimento)}</b> — continua a andar, ou prime <b>Cancelar</b> para voltar às acções.`
-          : `<b>Ong</b> chegou. Restam <b>${fmtM(reservaMovimento)}</b> — continua a andar, ou prime <b>Cancelar</b> para voltar às acções.`);
+          ? `<b>Ong</b> parou. Restam <b>${fmtM(reservaMovimento)}</b> — continua a andar, ou aperta <b>Cancelar</b> para voltar às acções.`
+          : `<b>Ong</b> chegou. Restam <b>${fmtM(reservaMovimento)}</b> — continua a andar, ou aperta <b>Cancelar</b> para voltar às acções.`);
       }
     }
     /* Tranche VLAB: saída de adjacência — se ela partiu de junto
@@ -3581,7 +3581,7 @@
          registo), para o Mestre cruzar com o registo da sua cópia.
          Emite-se uma vez: a guarda supCongelado já o garante. No
          Mestre nada muda — a razão continua visível em #sup-alertas. */
-      say(`A batalha parou por um erro do jogo — prime <b>Recomeçar</b>. Se puderes, diz ao Mestre que parou no erro nº ${supAlertas.length}.`);
+      say(`A batalha parou por um erro do jogo — aperta <b>Recomeçar</b>. Se puderes, diz ao Mestre que parou no erro nº ${supAlertas.length}.`);
     }
     geracaoAuto++;
     if (relogioAuto) { clearTimeout(relogioAuto); relogioAuto = null; }
@@ -5440,7 +5440,7 @@
     renderAcoes();
     /* A nota de modelo em falta JUNTA-SE à dica da primeira vez —
        nunca a sobrescreve (observação do juiz na análise do pacote). */
-    say('É a vez da <b>Ong</b>. Prime <b>Mover</b> e toca numa casa acesa para andar.'
+    say('É a vez da <b>Ong</b>. Aperta <b>Mover</b> e toca numa casa acesa para andar.'
       + (falhas.length
         ? `<br>Modelo indisponível: ${falhas.map(m => nomeCena(m.id)).join(', ')}. Marcador ativo.`
         : ''));
@@ -5452,7 +5452,7 @@
     falhaDefinitiva = error instanceof TypeError || error instanceof RangeError;
     falhaArranque = falhaDefinitiva
       ? 'Erro nos dados das figuras — a batalha não começou.'
-      : 'Não foi possível preparar as figuras. A batalha não começou. Prime Tentar de novo.';
+      : 'Não foi possível preparar as figuras. A batalha não começou. Aperta Tentar de novo.';
     renderAcoes(); say('');
   });
 })();
