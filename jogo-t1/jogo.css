@@ -98,6 +98,24 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 #sup-dicas .sup-dica{margin-bottom:6px;padding-bottom:6px;
   border-bottom:1px dashed rgba(201,162,39,.25)}
 
+/* ---------- ecrãs baixos e largos (tranche F5) ----------
+   Num celular deitado (≤560 px de altura) o pop-up pendurado na
+   engrenagem mostrava 148 px de 519 — os controlos de baixo ficavam
+   inalcançáveis na prática. Aqui o pop-up vira uma folha encostada ao
+   lado da coluna de cantos, do topo a 64 px do fundo, com as linhas em
+   duas colunas: a 390 px a janela é de 316 px para ~308 de conteúdo —
+   sem rolagem. Fora desta consulta, nada muda. Só CSS: controlos,
+   ids e ligações intactos. */
+@media (max-height:560px) and (min-width:600px){
+  #cfgpop{top:max(10px,env(safe-area-inset-top));bottom:64px;max-height:none;
+    left:calc(max(10px,env(safe-area-inset-left)) + 52px);
+    width:524px;max-width:calc(100vw - 72px);
+    display:grid;grid-template-columns:1fr 1fr;column-gap:14px;align-content:start}
+  #cfgpop h3,#cfgpop .stats{grid-column:1 / -1}
+  #cfgpop .cfgrow:nth-of-type(-n+2){border-top:0}
+  #sup-alertas,#sup-json,#sup-ultimo,#sup-dicas{grid-column:1 / -1}
+}
+
 /* ---------- selo «TESTE — resolvedor local» (spec §4.3 / M-006) ----------
    Permanente e discreto, centrado no topo; pointer-events:none para
    nunca roubar um toque ao campo. */
