@@ -1225,6 +1225,7 @@
   let passoEmCurso = false;     // um passo de seta está a animar (pressões novas ignoram-se)
   let contextoIA = null;        // { id, seq, relogio, destino? } do movimento/ataque da IA em voo — consumo único (G-13.3(d)); destino só no movimento (E-1)
   let guardaExpiradaIA = null;  // M-009: { id, seq } da última guarda de 5 s expirada cuja figura ainda vem a caminho — a chegada tardia dela diz-se, não se engole em silêncio
+  let vezIASemMovimento = false; // T-J7: a vez da IA que se abre com um levantar — o movimento desta vez já está gasto (espelho da reservaMovimento = 0 da Ong em iniciarVez)
   let vezIAFechada = -1;        // última geração de IA cuja conclusão já foi consumida (fimDaVezIA idempotente)
   let ajudaGrid = true;
   let alcance = new Map();    // chave(x,y) → {x, y, passos, path:[{x,y}]} em coords do motor
@@ -1778,11 +1779,21 @@
     estado = 'vez-ia';
     ESTADO_VLAB[id].reacaoDisponivel = true;   // a Reacção renova na vez da própria figura
     delete REACCOES_DECLARADAS[id];            // C-39: declaração por usar expira ao abrir a vez da figura (espelho de iniciarVez)
+    /* T-J7: o monstro caído levanta-se ao abrir a vez dele — espelho
+       do levantar da Ong em iniciarVez (retira 'caido', gasta o
+       movimento da vez, anuncia-se). A acção mantém-se, como a dela. */
+    vezIASemMovimento = false;
+    if ((ESTADO_VLAB[id].estados || []).includes('caido')) {
+      ESTADO_VLAB[id].estados = ESTADO_VLAB[id].estados.filter(e => e !== 'caido');
+      vezIASemMovimento = true;
+    }
     if (fichaAberta) fecharFicha();          // D-13.12: a vez dele apresenta-se em ecrã limpo
     atualizarVez(); renderAcoes();
+    const fraseLevantar = vezIASemMovimento
+      ? ` <b>${nomeCena(id)}</b> levanta-se — isso gasta o movimento desta vez.` : '';
     say(aposOng
-      ? `Vez da <b>Ong</b> encerrada — a batalha continua. Vez de <b>${nomeCena(id)}</b>.`
-      : `Vez de <b>${nomeCena(id)}</b>.`);
+      ? `Vez da <b>Ong</b> encerrada — a batalha continua. Vez de <b>${nomeCena(id)}</b>.${fraseLevantar}`
+      : `Vez de <b>${nomeCena(id)}</b>.${fraseLevantar}`);
     supSnapshot();                    // Supervisor: ponto de retorno deste turno
     const minhaSeq = ++seqTurno;
     aguardar(ESPERA_ANUNCIO_MS).then(() => {
@@ -1793,6 +1804,13 @@
   function vezDaIA(id, seq) {
     if (distanciaEntre(id, PROPRIA) <= alcanceEmCasas(DADOS_COMBATE[id].alcance)) {
       agendarAtaqueIA(id, seq);              // já ao alcance: não anda, ataca
+      return;
+    }
+    if (vezIASemMovimento) {
+      /* T-J7: levantou-se agora mesmo — o movimento desta vez já
+         está gasto; fica onde está e a vez fecha sem andar. */
+      say(`<b>${nomeCena(id)}</b> fica onde está — levantou-se agora mesmo.`);
+      fimDaVezIA(seq);
       return;
     }
     const destino = escolherDestinoIA(id);
