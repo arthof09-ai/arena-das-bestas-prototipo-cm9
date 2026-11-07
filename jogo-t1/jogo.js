@@ -290,7 +290,6 @@
     msgTxt.innerHTML = '<b>WebGL indisponível</b> — tenta outro navegador.';
     return;
   }
-  window.mapa3d = view;
 
   /* ---------- ÚNICO adaptador de coordenadas ----------
    * O motor/casca falam (x,y) no chão; a vista fala (x,z) no chão.
@@ -1673,8 +1672,8 @@
      da IA e acerto da Ong entram; a FALHA da Ong não entra (não
      gera esse evento — semântica pré-T-D preservada), logo a
      apresentação dela também não conta como «apresentada».
-     Apresentações disparadas fora da casca (consola,
-     window.mapa3d) nunca passam por aqui: não contam em
+     Apresentações disparadas fora da casca (consola)
+     nunca passam por aqui: não contam em
      universo nenhum da dica. E «apresentado» exige o gesto a
      ARRANCAR: observa-se a fase da apresentação da cena
      (getStats().presentation.phase) enquanto ela corre — só a
