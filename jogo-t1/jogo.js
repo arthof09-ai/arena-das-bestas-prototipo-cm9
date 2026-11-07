@@ -865,7 +865,10 @@
     return ELENCO.some(u => {
       if (u.id === atacanteId || u.id === alvoId) return false;
       const v = unidade(u.id);
-      return v && distanciaEntre(u.id, alvoId) === 1
+      /* T-J12J13: cadáver não dá flanqueamento — o parceiro do
+         outro lado tem de estar vivo (o padrão `vivo !== false`
+         da casa, o mesmo das adjacências de oportunidade A01). */
+      return v && v.vivo !== false && distanciaEntre(u.id, alvoId) === 1
         && v.posicao.x - t.posicao.x === -dx && v.posicao.y - t.posicao.y === -dy;
     });
   }
@@ -1349,13 +1352,15 @@
    * acontece só no adaptador, ao desenhar e ao mandar andar. */
   /* Generalização (T1.3): a BFS recebe a figura e o teto em casas —
      a Ong usa o teto da reserva dela; a IA usa a reserva interna do
-     monstro. Todas as casas ocupadas bloqueiam (a da Ong e as dos
-     outros monstros): ninguém anda para cima de ninguém. */
+     monstro. Todas as casas ocupadas por figuras vivas bloqueiam
+     (a da Ong e as dos outros monstros): ninguém anda para cima de
+     ninguém vivo. (T-J12J13: o cadáver não bloqueia — a casa dele
+     é atravessável, mas nunca destino; ver o fim da função.) */
   function calcularAlcancePara(id, tetoCasas) {
     const s = view.getState();
     const u = s.units.find(v => v.id === id);
     if (!u) return new Map();
-    const ocupadas = new Set(s.units.filter(v => v.id !== u.id)
+    const ocupadas = new Set(s.units.filter(v => v.id !== u.id && v.vivo !== false)
       .map(v => chave(v.posicao.x, v.posicao.y)));
     const inicio = { x: u.posicao.x, y: u.posicao.y, passos: 0, path: [] };
     const vistos = new Map([[chave(inicio.x, inicio.y), inicio]]);
@@ -1374,6 +1379,13 @@
       }
     }
     vistos.delete(chave(inicio.x, inicio.y));
+    /* T-J12J13: as casas dos cadáveres saem do mapa devolvido,
+       como a casa de partida: atravessam-se, não se pára nelas
+       (duas figuras na mesma casa continua proibido — invariante
+       do Supervisor e validação dos saves). */
+    for (const v of s.units)
+      if (v.id !== u.id && v.vivo === false)
+        vistos.delete(chave(v.posicao.x, v.posicao.y));
     return vistos;
   }
   function calcularAlcance() {
@@ -1415,14 +1427,16 @@
      generalizado): é ela que governa o portão do Atacar dela
      (T1.4 §2.4: "a BFS da casca com casas ocupadas"). Não é a
      leitura do mapa de pontuação: as duas réguas diferem de
-     propósito, e a diferença fica registada nas NOTAS. */
+     propósito, e a diferença fica registada nas NOTAS.
+     (T-J12J13: quem bloqueia é só figura viva — o cadáver entre
+     os dois não inflaciona a distância de arma.) */
   function distanciaEntre(deId, paraId) {
     const s = view.getState();
     const eu = s.units.find(v => v.id === deId);
     const ele = s.units.find(v => v.id === paraId);
     if (!eu || !ele) return Infinity;
     const bloqueadas = new Set(s.units
-      .filter(v => v.id !== deId && v.id !== paraId)
+      .filter(v => v.id !== deId && v.id !== paraId && v.vivo !== false)
       .map(v => chave(v.posicao.x, v.posicao.y)));
     const destino = chave(ele.posicao.x, ele.posicao.y);
     const vistos = new Map([[chave(eu.posicao.x, eu.posicao.y), 0]]);
