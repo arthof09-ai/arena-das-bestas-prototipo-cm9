@@ -1287,6 +1287,14 @@
   let supEpoca = 0;
   let epocaMovimentoOng = 0;
   let supRestauroPendente = null;   // unidades do snapshot restaurado, ou null
+  /* EM-TJ12J13-01: carimbo do voo de monstro que ATRAVESSA o
+     restauro ({ id, seq } do voo seguido nesse instante — contextoIA
+     com destino, senão a marca de guarda expirada), ou null. O ramo
+     de monstro do moveend só reafirma chegadas DESTE voo: sem
+     carimbo, nenhuma chegada pós-restauro é devolvida. Estado
+     transitório de voo, como as reservas: nunca entra em snapshots
+     nem em saves, e nasce/morre sempre com o pendente. */
+  let supRestauroVoo = null;
   let guardaMovimentoOng = null;    // { epoca, relogio } do movimento dela em voo
   /* Correcções T1.7 (F10.7): contador de erros da camada crítica —
      os catch dos hooks/motores incrementam-no em vez de engolirem
@@ -2133,6 +2141,7 @@
     seqTurno++;                              // invalida continuações pendentes
     if (contextoIA) consumirContextoIA(contextoIA.id);
     reservasDestinoIA.clear();   // a batalha acabou: nenhuma reserva de voo atravessa o fim
+    supRestauroVoo = null;   // EM-TJ12J13-01: limpeza defensiva — o carimbo de travessia também não atravessa o fim
     /* FUSÃO T-D (casca-td §1.3): a queda entra pela máquina de morte
        da cena (Death_A -> pose persistente) quando ela existe —
        nunca pela prancha do setVivo; na cena sagrada do vivo, que
@@ -2166,6 +2175,8 @@
     seqTurno++;                              // invalida continuações pendentes
     if (contextoIA) consumirContextoIA(contextoIA.id);
     reservasDestinoIA.clear();   // fim declarado: nenhuma reserva de voo atravessa o fim
+    supRestauroPendente = null;
+    supRestauroVoo = null;   // EM-TJ12J13-01: fim declarado — o par de restauro também não atravessa o fim
     estado = 'fim';
     atualizarVez(); renderAcoes();
     say('A batalha <b>terminou</b> — a mesa fechou este encontro. Aperta <b>Recomeçar</b> para jogar outra vez.');
@@ -2772,6 +2783,7 @@
       if (supRestauroPendente) {
         const snapUnidades = supRestauroPendente;
         supRestauroPendente = null;
+        supRestauroVoo = null;   // EM-TJ12J13-01: a reafirmação geral resolve todas as travessias — o carimbo morre com o pendente
         supRestaurando = true;               // a reafirmação não é movimento de jogo
         for (const su of snapUnidades) {
           const uv = unidade(su.id);
@@ -2789,15 +2801,31 @@
        restauro pendente — a animação velha pousou a figura fora do
        estado restaurado; reafirma a posição DESTA figura a partir
        do pendente (o pendente em si fica: a Ong pode precisar dele,
-       e o ramo de época dela, acima, é quem o consome). */
-    if (supRestauroPendente && u.id !== PROPRIA) {
-      const suR = supRestauroPendente.find(s => s.id === u.id);
-      if (suR && (u.posicao.x !== suR.x || u.posicao.y !== suR.y)) {
-        supRestaurando = true;
-        reservasDestinoIA.delete(u.id);   // EMENDA-V1: idem — voo cancelado pela reafirmação; sem isto, o casamento por destino de :2781 falha contra a posição reafirmada e a reserva fica órfã
-        view.move(u.id, casaVista({ x: suR.x, y: suR.y }), { immediate: true });
-        supRestaurando = false;
+       e o ramo de época dela, acima, é quem o consome).
+       EM-TJ12J13-01 (porta por proveniência): o ramo só dispara
+       para a chegada do voo CARIMBADO ao armar o pendente
+       (supRestauroVoo) — e mesmo essa não dispara se a chegada
+       casar com o destino do contexto vivo (é o voo NOVO da mesma
+       figura a pousar, não a travessia). Sem carimbo, ou resolvida
+       a travessia, nenhuma chegada é devolvida: os voos despachados
+       já na linha restaurada pousam onde foram despachados. */
+    if (supRestauroPendente && supRestauroVoo && u.id === supRestauroVoo.id) {
+      const ctxVivo = (contextoIA && contextoIA.id === u.id && contextoIA.destino) ? contextoIA : null;
+      const rViva = reservasDestinoIA.get(u.id);
+      const chegadaNova =
+        (ctxVivo && u.posicao.x === ctxVivo.destino.x && u.posicao.y === ctxVivo.destino.y)
+        || (guardaExpiradaIA && guardaExpiradaIA.id === u.id && guardaExpiradaIA.seq > supRestauroVoo.seq)
+        || (rViva && u.posicao.x === rViva.x && u.posicao.y === rViva.y);
+      if (!chegadaNova) {
+        const suR = supRestauroPendente.find(s => s.id === u.id);
+        if (suR && (u.posicao.x !== suR.x || u.posicao.y !== suR.y)) {
+          supRestaurando = true;
+          reservasDestinoIA.delete(u.id);   // EMENDA-V1: idem — voo cancelado pela reafirmação; sem isto, o casamento por destino de :2781 falha contra a posição reafirmada e a reserva fica órfã
+          view.move(u.id, casaVista({ x: suR.x, y: suR.y }), { immediate: true });
+          supRestaurando = false;
+        }
       }
+      supRestauroVoo = null;   // EM-TJ12J13-01: a travessia resolveu-se — reafirmada, ou pousada pelo voo novo
     }
     supConferirInvariantes('moveend');         // Supervisor: invariantes após cada movimento
     try { supCritFecharMovimento(u.id); } catch (_) { supCritErrosCamada++; }   // T1.7: fecha o segmento de movimento (passivo)
@@ -3592,6 +3620,7 @@
     continuarAposApresentacao = false;   // R1-Priv: o Continuar diferido morre no gelo — não atravessa épocas
     supEpoca++;                          // guarda de época: moveend tardio dela não acerta contas
     supDesarmarGuardaMovimentoOng();
+    supRestauroVoo = null;   // EM-TJ12J13-01: limpeza defensiva — no gelo nenhuma travessia se reafirma
     supAlertas.push({ rodada, vez: vezAtual, razao });
     supRegistar('alerta', { razao, congelou: true });
     /* Evento terminal do congelamento (pós-críticos T1.5): o
@@ -3682,6 +3711,15 @@
        FIM natural (ferramenta de teste/replay — ver NOTAS). */
     supEpoca++;
     supRestauroPendente = snap.unidades.map(u => ({ ...u }));
+    /* EM-TJ12J13-01: carimba o voo de monstro seguido NESTE instante
+       (antes de o contexto ser consumido abaixo): só a chegada dele
+       pode ser reafirmada pelo ramo de monstro do moveend. */
+    const vooAoArmar = (contextoIA && contextoIA.destino)
+      ? { id: contextoIA.id, seq: contextoIA.seq }
+      : (guardaExpiradaIA ? { id: guardaExpiradaIA.id, seq: guardaExpiradaIA.seq } : null);
+    if (vooAoArmar) supRestauroVoo = vooAoArmar;
+    // se vooAoArmar é null, PRESERVA o carimbo anterior ainda não resolvido:
+    // uma travessia por resolver não morre por um segundo restauro sem voo seguido
     supDesarmarGuardaMovimentoOng();
     geracaoAuto++;
     if (relogioAuto) { clearTimeout(relogioAuto); relogioAuto = null; }
@@ -4078,6 +4116,15 @@
         supRestaurando = true;                    // o moveend ignora a reposição
         supEpoca++;
         supRestauroPendente = e.unidades.map(u => ({ ...u }));
+        /* EM-TJ12J13-01: idem supRestaurar — carimba o voo de monstro
+           seguido NESTE instante, antes de o contexto ser consumido
+           abaixo; só a chegada dele pode ser reafirmada. */
+        const vooAoArmar = (contextoIA && contextoIA.destino)
+          ? { id: contextoIA.id, seq: contextoIA.seq }
+          : (guardaExpiradaIA ? { id: guardaExpiradaIA.id, seq: guardaExpiradaIA.seq } : null);
+        if (vooAoArmar) supRestauroVoo = vooAoArmar;
+        // se vooAoArmar é null, PRESERVA o carimbo anterior ainda não resolvido:
+        // uma travessia por resolver não morre por um segundo restauro sem voo seguido
         supDesarmarGuardaMovimentoOng();
         geracaoAuto++;
         if (relogioAuto) { clearTimeout(relogioAuto); relogioAuto = null; }
@@ -4175,6 +4222,7 @@
            armar nada. As saídas deste catch deixam SEMPRE
            supRestauroPendente === null e supRestaurando === false. */
         supRestauroPendente = null;
+        supRestauroVoo = null;   // EM-TJ12J13-01: simetria S-CONF-02 — aplicação que não aconteceu não deixa carimbo
         try {
           supRestaurando = true;              // os moveend da reposição ignoram-se
           if (preSave) for (const su of preSave.unidades) {
@@ -4229,6 +4277,7 @@
           }
         } catch (__) { /* a reposição é tentativa: o erro nomeado sai na mesma */ }
         supRestauroPendente = null;
+        supRestauroVoo = null;   // EM-TJ12J13-01: idem — pendente e carimbo saem sempre juntos deste catch
         supRestaurando = false;
         return { ok: false, erro: 'SAVE_APLICACAO_FALHOU' };
       }
