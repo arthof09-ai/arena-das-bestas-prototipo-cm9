@@ -1833,8 +1833,9 @@
       fimDaVezIA(seq);
       return;
     }
-    /* Supervisor: o destino da IA tem de caber na reserva dela. */
-    if (destino.passos > (ORCAMENTOS[id] || 4)) {
+    /* Supervisor: o destino da IA tem de caber na reserva dela
+       (a efectiva, já reduzida — orcamentoIA). */
+    if (destino.passos > orcamentoIA(id)) {
       supRegistar('bloqueada', { acao: 'mover', actor: id, razao: 'Destino além da reserva do monstro' });
       fimDaVezIA(seq);
       return;
@@ -1916,13 +1917,30 @@
      mapaDistancias(PROPRIA) calculado uma vez; desempate por menos
      passos, depois pela ordem determinística da BFS. Se nenhuma
      casa alcançável melhorar a distância actual, não anda. */
+  /* T-J8 (IBX-212 item 8): o orçamento EFECTIVO da IA — a reserva
+     do monstro reduzida pelas mesmas metades que já governam o
+     deslocamento dela (vlabDeslocBaseOng): Fraco (Regra 7, derivado
+     em vlabEstadosDe da Vida interna dele) corta a metade; corpo
+     partido (deslocMetade, da quebra-corpo) corta a metade; as
+     duas metades acumulam, como nas dela. Em casas a metade é o
+     piso da divisão (7→3, 6→3, 9→4); com as reservas vigentes o
+     mínimo possível é 1 — o enfraquecido anda menos, nunca fica
+     colado por esta regra. Os dois leitores de ORCAMENTOS (a BFS
+     de escolherDestinoIA e a guarda do Supervisor em vezDaIA)
+     lêem este valor, para nunca discordarem. */
+  function orcamentoIA(id) {
+    let o = ORCAMENTOS[id] || 4;
+    if (vlabEstadosDe(id).includes('fraco')) o = Math.floor(o / 2);
+    if (ESTADO_VLAB[id].deslocMetade) o = Math.floor(o / 2);
+    return o;
+  }
   function escolherDestinoIA(id) {
     const eu = unidade(id);
     if (!eu) return null;
     const distOng = mapaDistancias(PROPRIA);
     const distActual = distOng.get(chave(eu.posicao.x, eu.posicao.y));
     let melhor = null;
-    for (const c of calcularAlcancePara(id, ORCAMENTOS[id] || 4).values()) {
+    for (const c of calcularAlcancePara(id, orcamentoIA(id)).values()) {
       const d = distOng.get(chave(c.x, c.y));
       if (d === undefined) continue;
       if (!melhor || d < melhor.d || (d === melhor.d && c.passos < melhor.destino.passos))
