@@ -1202,7 +1202,8 @@
         if (desfecho === 'morreu') { fimDeBatalha('morte'); break; }
         if (desfecho === 'aMorrer') { entrarAMorrer(); break; }
       } else if (s.resultado === 'falhaCritica') {
-        vlabAplicarAtacanteDepois(aoo.inimigoId, s);
+        const fc = vlabAplicarAtacanteDepois(aoo.inimigoId, s);
+        supRegistar('accao', { acao: 'ataque', actor: aoo.inimigoId, alvo: PROPRIA, acerto: false, oportunidade: true, falhaCritica: fc ? fc.desgraca.id : null });
         frases.push(`${nome} tenta golpeá-la de oportunidade e falha. ` +
           vlabFraseDesgraca(aoo.inimigoId, (s.soDoMestre || {}).falhaCritica));
       } else {
@@ -2224,6 +2225,11 @@
       supRegistar('bloqueada', { acao, actor: PROPRIA, razao: bloqueioSup.razao });
       if (bloqueioSup.mensagem) {
         if (bloqueioSup.limparPendente) {
+          /* EM-J1-04 (quarta porta do J1): com uma rolagem por
+             resolver, a recusa do Confirmar NÃO apaga a rolagem —
+             devolve à frase-ponte, sem limpar o pendente nem
+             mudar o estado. */
+          if (rolagemPorResolver()) { say(FRASE_ROLAGEM_PENDENTE); return; }
           ataquePendente = null; estado = 'base'; renderAcoes();
         }
         say(bloqueioSup.mensagem);
@@ -2477,6 +2483,7 @@
         paGasto += s.pa.custo;
         atualizarChipVida();           // M-015: o débito de PA reflecte-se já no chip (antes a plaquinha ficava no valor anterior ao ataque)
         const fc = vlabAplicarAtacanteDepois(PROPRIA, s);
+        supRegistar('accao', { acao: 'ataque', actor: PROPRIA, alvo: alvoDoGolpe, acerto: false, falhaCritica: fc ? fc.desgraca.id : null });
         if (s.desgracaPendente)
           supRegistar('accao', { acao: 'desgraca-pendente', actor: PROPRIA, tipo: s.desgracaPendente.tipo, aplicada: false, motivo: 'sem aliado ao alcance nesta batalha a solo' });
         say(`<b>Falha crítica</b> · ${pend.nome} não atinge ${ALVO_NOME[alvoDoGolpe] || nomeCena(alvoDoGolpe)}. ` + vlabFraseDesgraca(PROPRIA, fc));
@@ -3523,7 +3530,7 @@
       if (estado === 'movendo' || view.getState().moving) return { razao: 'A figura ainda está a andar',
         mensagem: 'Espera — a figura ainda está a andar.' };
       if (atacou) return { razao: 'A Ong já atacou nesta vez',
-        mensagem: 'A <b>Ong</b> já atacou nesta vez — prime <b>Encerrar</b> para fechar a vez dela.' };
+        mensagem: 'A <b>Ong</b> já atacou nesta vez — aperta <b>Encerrar</b> para fechar a vez dela.' };
       /* Emenda da bancada (sentença Q1-(B) da tranche da página):
          COM alvo escolhido, a recusa de alvo morto ou fora de
          alcance regista-se já na casca «atacar», pela mesma régua
@@ -3537,8 +3544,7 @@
       return null;
     }
     if (acao === 'ataque-basico') {
-      if (estado !== 'atacar' || atacou)
-        return { razao: 'Ataque básico sem condições para acontecer', duro: true };
+      if (estado !== 'atacar' || atacou) return { razao: 'Ataque básico sem condições para acontecer', duro: true, mensagem: atacou ? 'A <b>Ong</b> já atacou nesta vez — aperta <b>Encerrar</b> para fechar a vez dela.' : 'Primeiro aperta <b>Atacar</b> para escolher o golpe.' };
       return validarAlvoAtaqueOng('atacar');
     }
     if (acao === 'transformacao') {
@@ -3569,7 +3575,7 @@
     }
     if (acao === 'encerrar') {
       if (estado === 'movendo' || view.getState().moving)
-        return { razao: 'Não pode encerrar a vez enquanto anda', duro: true };
+        return { razao: 'Não pode encerrar a vez enquanto anda', duro: true, mensagem: 'Espera — a figura ainda está a andar.' };
       return null;
     }
     return null;
