@@ -205,9 +205,30 @@
             const a = rnd() * Math.PI * 2, rad = 128 + rnd() * 30, x = 512 + Math.cos(a) * rad, y = 512 + Math.sin(a) * rad;
             traco(x, y, a + Math.PI / 2 + (rnd() - 0.5) * 0.4, 9 + rnd() * 15, 1.6 + rnd() * 2.2, 26, 22, 16, 0.07 + rnd() * 0.08);
         }
+        /* ---------- LIMPEZA-VISUAL C2R (recurso procedural): os riscos dentro da arena ----------
+         * Diagnóstico «risco e chão» §2/§5-C2R: os traços de 0,6–2,6 m lêem-se
+         * como poluição à distância de batalha. Dentro da arena, as camadas de
+         * riscos (sulcos volta 2, tracoForte de dentro, sulcos fundos) passam a
+         * grão fino de 0,1–0,3 m a ~⅓ do contraste, com degradê de 2,5 m para
+         * cada lado da banda do anel (8,69–9,61 m). A modulação é por ORIGEM
+         * do traço, não por píxel: medido no canvas, 771 px de caudas de
+         * traços nascidos dentro do degradê cruzam além de 12,11 m (raio
+         * elíptico máximo 16,11 m) — é o preço do degradê sem aresta, e a
+         * bancada de programação aceitou-o com a medição declarada.
+         * Comprimento, LARGURA e alfa são escalados pelo mesmo factor
+         * (emenda da bancada: sem escalar a largura, um traço mais curto
+         * que a própria largura lia-se como disco de 0,23–0,54 m).
+         * fatorArena: 0 no coração da arena, 1 fora da banda+degradê (distância
+         * elíptica ×1,22 como na textura pintada; canvas 1024 px = 120 m).
+         * A stream `rnd` consome EXACTAMENTE o mesmo em todas as camadas —
+         * comprimento e alfa são escalados depois de sorteados — por isso
+         * tudo o que se pinta a jusante fica idêntico. */
+        const fatorArena = (x, y) => sstep(6.19, 12.11, Math.hypot((x - 512) / 1.22, y - 512) / 8.5333);
         for (let i = 0; i < 340; i++) { // SULCOS (volta 2): riscos escuros de direcção livre, também sobre o aro e o disco central
             const x = rnd() * 1024, y = rnd() * 1024, ang = rnd() * Math.PI * 2;
-            traco(x, y, ang, 6 + rnd() * 13, 1.4 + rnd() * 1.8, 24, 19, 13, 0.08 + rnd() * 0.09);
+            const comp = 6 + rnd() * 13, larg = 1.4 + rnd() * 1.8, alfa = 0.08 + rnd() * 0.09;
+            const f = fatorArena(x, y);
+            traco(x, y, ang, comp * (0.13 + 0.87 * f), larg * (0.35 + 0.65 * f), 24, 19, 13, alfa * (0.33 + 0.67 * f));
         }
         /* ---------- VOLTA 3: partir o degradé e pincelada APONTÁVEL ----------
          * Veredictos V3R2 (Pintura condição 1; Disfarce (e)): as passagens
@@ -243,8 +264,9 @@
             const a = rnd() * Math.PI * 2, dist = dentro ? Math.sqrt(rnd()) * 225 : 235 + rnd() * 265;
             const x = 512 + Math.cos(a) * dist, y = 512 + Math.sin(a) * dist;
             const ang = rnd() * Math.PI * 2, comp = 13 + rnd() * 29;
-            if (escuro) traco(x, y, ang, comp, 2 + rnd() * 2.6, 22, 17, 10, 0.20 + rnd() * 0.13);
-            else traco(x, y, ang, comp * 0.85, 1.5 + rnd() * 2, 233, 205, 152, 0.12 + rnd() * 0.10);
+            const f = fatorArena(x, y), fc = 0.05 + 0.95 * f, fa = 0.33 + 0.67 * f, fl = 0.35 + 0.65 * f; // C2R: dentro da arena, vira grão
+            if (escuro) { const larg = 2 + rnd() * 2.6, alfa = 0.20 + rnd() * 0.13; traco(x, y, ang, comp * fc, larg * fl, 22, 17, 10, alfa * fa); }
+            else { const larg = 1.5 + rnd() * 2, alfa = 0.12 + rnd() * 0.10; traco(x, y, ang, comp * 0.85 * fc, larg * fl, 233, 205, 152, alfa * fa); }
         };
         for (let i = 0; i < 240; i++) tracoForte(true, true);    // terra revolvida dentro do círculo
         for (let i = 0; i < 150; i++) tracoForte(false, true);   // pincel seco claro dentro
@@ -252,9 +274,140 @@
         for (let i = 0; i < 80; i++) tracoForte(false, false);
         for (let i = 0; i < 170; i++) { // sulcos: riscos fundos de direcção livre
             const x = rnd() * 1024, y = rnd() * 1024, ang = rnd() * Math.PI * 2;
-            traco(x, y, ang, 16 + rnd() * 24, 1.2 + rnd() * 1.2, 16, 12, 7, 0.16 + rnd() * 0.10);
+            const comp = 16 + rnd() * 24, larg = 1.2 + rnd() * 1.2, alfa = 0.16 + rnd() * 0.10;
+            const f = fatorArena(x, y);
+            traco(x, y, ang, comp * (0.05 + 0.95 * f), larg * (0.35 + 0.65 * f), 16, 12, 7, alfa * (0.33 + 0.67 * f));
         }
         g.lineCap = 'butt';
+        /* ---------- LIMPEZA-VISUAL C2R/E4 v4: matéria multi-escala dentro da arena ----------
+         * A bancada de arte reprovou a v3 neste ponto: as manchas de uma só
+         * escala e as pintas uniformes somavam um SEGUNDO padrão regular
+         * sobre a grelha do hillshade — lia-se «cortiça pintalgada».
+         * Critério de morte da v4: no zoom 1 não pode existir passo
+         * regular detectável. Resposta em TRÊS escalas (variação de
+         * escala > 10×) + cor disciplinada (jitter de luminância neutro;
+         * cor quente/fria só nas manchas grandes):
+         * (1) manchas grandes suaves r 30–90 px, alfa 0,04–0,09;
+         * (2) manchas médias r 4–18 px, alfa 0,05–0,10;
+         * (3) pintas em AGLOMERADOS (40 centros × 20–60 pintas de 1–4 px,
+         * luminância ±8–20%) — cascalho em montinhos, não ritmo;
+         * (4) ruído fino píxel a píxel ±4,5% sobre toda a arena, a
+         * descorrelacionar a grelha à escala do texel; a força segue o
+         * mesmo degradê fatorArena — além de 12,11 m, zero.
+         * Semente local própria (a stream `rnd` não é consumida). */
+        {
+            let seedG = 41771005;
+            const rndG = () => ((seedG = (Math.imul(seedG, 1664525) + 1013904223) >>> 0) / 4294967296);
+            const mancha = (rMin, rVar, aMin, aVar) => {
+                const a = rndG() * Math.PI * 2, dist = Math.sqrt(rndG()) * 71; // rn elíptico < ~8,3 m
+                const x = 512 + Math.cos(a) * dist * 1.22, y = 512 + Math.sin(a) * dist;
+                /* raio LIMITADO PELA FOLGA à fronteira de 9,5 m: a v4.0
+                 * deixava as manchas grandes (r até 90 px) vazarem além
+                 * de 12,11 m — 4.739 px medidos. Contenção por construção. */
+                const folgaPx = (9.5 - dist / 8.5333) * 8.5333;
+                if (folgaPx < 4) return;
+                const r = Math.min(rMin + rndG() * rVar, folgaPx), quente = rndG() < 0.5;
+                const gr = g.createRadialGradient(x, y, 0, x, y, r);
+                gr.addColorStop(0, quente ? 'rgba(146,106,58,' + (aMin + rndG() * aVar) + ')' : 'rgba(14,20,28,' + (aMin + rndG() * aVar) + ')');
+                gr.addColorStop(1, 'rgba(0,0,0,0)');
+                g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+            };
+            for (let i = 0; i < 26; i++) mancha(30, 60, 0.04, 0.05);  // (1) grandes
+            for (let i = 0; i < 90; i++) mancha(4, 14, 0.05, 0.05);   // (2) médias
+            const imgC = g.getImageData(0, 0, 1024, 1024), dc = imgC.data;
+            const jitter = (px, py, fMul) => {
+                if (px < 0 || px > 1023 || py < 0 || py > 1023) return;
+                const k = (py * 1024 + px) * 4;
+                dc[k] = Math.max(0, Math.min(255, dc[k] * fMul));
+                dc[k + 1] = Math.max(0, Math.min(255, dc[k + 1] * fMul));
+                dc[k + 2] = Math.max(0, Math.min(255, dc[k + 2] * fMul));
+            };
+            for (let c = 0; c < 40; c++) { // (3) aglomerados de cascalho
+                const a = rndG() * Math.PI * 2, dist = Math.sqrt(rndG()) * 72;
+                const cx = 512 + Math.cos(a) * dist * 1.22, cy = 512 + Math.sin(a) * dist;
+                const n = 20 + (rndG() * 40 | 0);
+                for (let i = 0; i < n; i++) {
+                    const ox = Math.round(cx + (rndG() + rndG() - 1) * 10), oy = Math.round(cy + (rndG() + rndG() - 1) * 10);
+                    const fMul = 1 + (rndG() - 0.5) * 0.4, tam = 1 + (rndG() * 4 | 0);
+                    for (let t = 0; t < tam; t++) jitter(ox + (t % 2), oy + ((t / 2) | 0), fMul);
+                }
+            }
+            for (let py = 0; py < 1024; py++) for (let px = 0; px < 1024; px++) { // (4) ruído fino
+                const f = fatorArena(px, py);
+                if (f >= 1) continue;
+                jitter(px, py, 1 + (rndG() - 0.5) * 0.09 * (1 - f));
+            }
+            g.putImageData(imgC, 0, 0);
+        }
+        /* ============ C2R/FONTE (v5) — a malha morre na fonte ============
+         * A «malha» do chão é um xadrez de dither ao nível do texel,
+         * baked na pilha de sombreado por gradientes deste pintor
+         * (medido: amplitude alternada −1,51 níveis na base, −2,50 na
+         * candidata v4 — os passes de matéria da v4 somaram-se ao padrão
+         * em vez de o matarem). Este passe corre sobre o canvas JÁ
+         * pintado (logo, apanha o dither de todas as camadas, incluindo
+         * a matéria C2R) e remove SÓ a componente alternada coerente em
+         * fase: para cada texel, estima a amplitude local do xadrez por
+         * correlação com o sinal (−1)^(x+y) numa janela 9×9 do resíduo
+         * (valor − média local 5×5) e subtrai-a, limitada a ±3 níveis.
+         * A média local não muda (a correcção tem média zero por
+         * construção) e o detalhe que não está em fase com o xadrez
+         * fica — grão, traços e manchas aprovados intactos. A força é
+         * modulada por (1 − fatorArena), a MESMA mancha elíptica do
+         * C2R: força total no coração da arena, zero fora dela.
+         * Determinístico: função pura do canvas pintado; não consome
+         * `rnd` nem `rndG` — a jusante nem repara. */
+        {
+            const imgM = g.getImageData(0, 0, 1024, 1024), dm = imgM.data, NM = 1024;
+            const lumM = new Float32Array(NM * NM);
+            for (let p = 0; p < NM * NM; p++) lumM[p] = (dm[p * 4] + dm[p * 4 + 1] + dm[p * 4 + 2]) / 3;
+            // integral da luminância (para a média local 5×5)
+            const intM = new Float64Array((NM + 1) * (NM + 1));
+            for (let y = 0; y < NM; y++) {
+                let somaLinha = 0;
+                for (let x = 0; x < NM; x++) {
+                    somaLinha += lumM[y * NM + x];
+                    intM[(y + 1) * (NM + 1) + x + 1] = intM[y * (NM + 1) + x + 1] + somaLinha;
+                }
+            }
+            const somaJanela = (x0, y0, x1, y1) => {
+                x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(NM, x1); y1 = Math.min(NM, y1);
+                return intM[y1 * (NM + 1) + x1] - intM[y0 * (NM + 1) + x1] - intM[y1 * (NM + 1) + x0] + intM[y0 * (NM + 1) + x0];
+            };
+            // resíduo alternado: (valor − média 5×5) × sinal do xadrez
+            const altM = new Float32Array(NM * NM);
+            for (let y = 0; y < NM; y++) for (let x = 0; x < NM; x++) {
+                const x0 = Math.max(0, x - 2), x1 = Math.min(NM, x + 3), y0 = Math.max(0, y - 2), y1 = Math.min(NM, y + 3);
+                const media = somaJanela(x0, y0, x1, y1) / ((x1 - x0) * (y1 - y0));
+                altM[y * NM + x] = (lumM[y * NM + x] - media) * (((x + y) & 1) ? -1 : 1);
+            }
+            // integral do resíduo alternado (para a correlação local 9×9)
+            const intA = new Float64Array((NM + 1) * (NM + 1));
+            for (let y = 0; y < NM; y++) {
+                let somaLinha = 0;
+                for (let x = 0; x < NM; x++) {
+                    somaLinha += altM[y * NM + x];
+                    intA[(y + 1) * (NM + 1) + x + 1] = intA[y * (NM + 1) + x + 1] + somaLinha;
+                }
+            }
+            const somaAlt = (x0, y0, x1, y1) => {
+                x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(NM, x1); y1 = Math.min(NM, y1);
+                return intA[y1 * (NM + 1) + x1] - intA[y0 * (NM + 1) + x1] - intA[y1 * (NM + 1) + x0] + intA[y0 * (NM + 1) + x0];
+            };
+            for (let y = 0; y < NM; y++) for (let x = 0; x < NM; x++) {
+                const fM = 1 - fatorArena(x, y);   // fatorArena(x, y) recebe COORDENADAS de texel (mancha elíptica) — não um raio
+                if (fM <= 0.01) continue;
+                const x0 = Math.max(0, x - 4), x1 = Math.min(NM, x + 5), y0 = Math.max(0, y - 4), y1 = Math.min(NM, y + 5);
+                let amp = somaAlt(x0, y0, x1, y1) / ((x1 - x0) * (y1 - y0));
+                amp = Math.max(-3, Math.min(3, amp));
+                if (Math.abs(amp) < 0.05) continue;
+                const corr = amp * (((x + y) & 1) ? -1 : 1) * fM, p = (y * NM + x) * 4;
+                dm[p] = Math.max(0, Math.min(255, dm[p] - corr));
+                dm[p + 1] = Math.max(0, Math.min(255, dm[p + 1] - corr));
+                dm[p + 2] = Math.max(0, Math.min(255, dm[p + 2] - corr));
+            }
+            g.putImageData(imgM, 0, 0);
+        }
         const texChao = new T.CanvasTexture(cv);
         texChao.encoding = T.sRGBEncoding; texChao.anisotropy = 4;
         const geoChao = new T.PlaneGeometry(120, 120, 112, 112); geoChao.rotateX(-Math.PI / 2);
@@ -866,24 +1019,209 @@
          * a camada longe quase se dissolve na névoa. BackSide = vê-se o
          * interior do anel em qualquer direcção da câmara (modo 360° ok).
          * A base vai enterrada (−1,4 m) para o relevo não abrir fendas. */
+        /* ---------- LIMPEZA-VISUAL C1R v5: a linha de árvores como ARTE NOVA ----------
+         * PROTÓTIPO (só o anel longe; o perto continua na v4 até a bancada
+         * julgar este). A abordagem «desgastar a silhueta do cone» foi
+         * condenada por 3 rondas de crítica de Arte (ripas → cacos de
+         * papel → copas roídas): aqui a forma NASCE floresta — duas filas
+         * de copas redondas sobrepostas (a de trás mais fundida na névoa),
+         * vales ocasionais entre aglomerados, emergentes raros, textura
+         * interior, e a base a desfazer-se em fios verticais com a
+         * densidade a crescer para baixo. A régua é a leitura à distância
+         * de batalha: massa contínua, sem aresta dura, sem motivo
+         * repetido legível, sem ilhas suspensas.
+         * Consumo da stream `rnd` PRESERVADO: a pintura antiga corre para
+         * um canvas de rascunho com exactamente as mesmas chamadas rnd()
+         * de sempre — a stream alimenta tochas, chamas e cenário a
+         * jusante; mexer nela deslocava a cena aprovada toda. */
         const anelPintado = (raio, altura, cor, nome) => {
             const cv2 = document.createElement('canvas'); cv2.width = 2048; cv2.height = 256;
             const a2 = cv2.getContext('2d');
             a2.fillStyle = cor; a2.beginPath(); a2.moveTo(0, 256);
-            let x = 0;
-            while (x < 2048) { // copas: triângulos irregulares de pinheiro + troncos
+            let xL = 0;
+            while (xL < 2048) {
                 const w = 26 + rnd() * 46, topo = 256 - (86 + rnd() * 118);
-                a2.lineTo(x + w * 0.5, topo); a2.lineTo(x + w, 256 - (18 + rnd() * 26));
-                if (rnd() < 0.75) a2.fillRect(x + w * 0.44, 256 - 34, 3.4, 34);
-                x += w * (0.72 + rnd() * 0.4);
+                a2.lineTo(xL + w * 0.5, topo); a2.lineTo(xL + w, 256 - (18 + rnd() * 26));
+                if (rnd() < 0.75) a2.fillRect(xL + w * 0.44, 256 - 34, 3.4, 34);
+                xL += w * (0.72 + rnd() * 0.4);
             }
             a2.lineTo(2048, 256); a2.closePath(); a2.fill();
-            a2.globalAlpha = 0.16; // pincelada dentro da silhueta: quebras claras raras
+            a2.globalAlpha = 0.16;
             for (let i = 0; i < 260; i++) {
                 a2.fillStyle = '#8fa8bc'; const sx = rnd() * 2048, sy = 120 + rnd() * 130;
                 a2.fillRect(sx, sy, 5 + rnd() * 16, 1.6 + rnd() * 2.2);
             }
             a2.globalAlpha = 1;
+            a2.clearRect(0, 0, 2048, 256);   // a pintura antiga era só consumo de stream — o canvas recomeça limpo
+            /* a arte nova — semente local derivada do raio, como antes */
+            let seedF = 71221024 + raio;
+            const rndF = () => ((seedF = (Math.imul(seedF, 1664525) + 1013904223) >>> 0) / 4294967296);
+            const longe = raio > 40;
+            const canal = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+            const mistura = (h1, h2, f) => { const A = canal(h1), B = canal(h2); return 'rgb(' + A.map((v, i) => Math.round(v + (B[i] - v) * f)).join(',') + ')'; };
+            const corTras = mistura(cor, '#8fa8bc', longe ? 0.55 : 0.44), corFrente = mistura(cor, '#22303f', 0.12);
+            const elipse = (cx, cy, rx, ry, fill) => { a2.fillStyle = fill; for (const dx of [-2048, 0, 2048]) { a2.beginPath(); a2.ellipse(cx + dx, cy, rx, ry, 0, 0, 6.2832); a2.fill(); } };
+            /* A massa constrói-se como PERFIL de alturas (não como formas
+             * fechadas): cada coluna tem um tecto; saltos em 3 escalas —
+             * aglomerado, copa, tufo — empilham-se e a silhueta é uma
+             * linha de paisagem contínua, sem óvalo que se possa isolar
+             * com o olho. Duas filas: trás (mais alta, mais névoa) e
+             * frente (mais baixa, mais escura), cada uma com o seu perfil. */
+            const massa = (cor, base, saltos, nEntalhes, gradLuz) => {
+                const top = new Float32Array(2048).fill(base);
+                const salto = (c, w, h) => {
+                    c = Math.round(c); w = Math.round(w);   // índices do Float32Array têm de ser inteiros — centro fraccionário escrevia em propriedades fantasmas e o salto perdia-se
+                    for (let dx = -w; dx <= w; dx++) {
+                        const x = (((c + dx) % 2048) + 2048) % 2048, t = dx / w, forma = 1 - t * t;
+                        const cand = top[x] - h * forma;
+                        if (cand < top[x]) top[x] = Math.max(44, cand);
+                    }
+                };
+                for (const s of saltos) salto(s[0], s[1], s[2]);
+                a2.fillStyle = cor; a2.beginPath(); a2.moveTo(0, top[0]);
+                for (let x = 1; x < 2048; x++) a2.lineTo(x, top[x]);
+                a2.lineTo(2048, 256); a2.lineTo(0, 256); a2.closePath(); a2.fill();
+                // modelação tonal: luz no tecto da massa, sombra na base (só onde há massa)
+                const gr = a2.createLinearGradient(0, 40, 0, 256);
+                gr.addColorStop(0, 'rgba(163,186,205,' + gradLuz + ')'); gr.addColorStop(0.45, 'rgba(163,186,205,0.05)');
+                gr.addColorStop(1, 'rgba(8,13,20,' + gradLuz + ')');
+                a2.save(); a2.globalCompositeOperation = 'source-atop'; a2.fillStyle = gr; a2.fillRect(0, 0, 2048, 256); a2.restore();
+                // o contorno parte-se à escala da folhagem: dentadas de céu pequenas e irregulares
+                a2.save(); a2.globalCompositeOperation = 'destination-out';
+                for (let i = 0; i < nEntalhes; i++) {
+                    const x = (rndF() * 2048) | 0;
+                    a2.globalAlpha = 0.5 + rndF() * 0.5;
+                    a2.fillRect(x, top[x] - 1, 2 + rndF() * 4, 2 + rndF() * 8);
+                }
+                a2.restore(); a2.globalAlpha = 1;
+                return top;
+            };
+            const saltosDe = (passoMin, passoVar, hMin, hVar, wMin, wVar, fAlt = 1) => {
+                const s = [];
+                for (let cx = -160; cx < 2210; cx += passoMin + rndF() * passoVar) {
+                    s.push([cx + rndF() * 30, wMin + rndF() * wVar, (hMin + rndF() * hVar) * fAlt]);                    // o aglomerado
+                    const n = 2 + (rndF() * 2 | 0);
+                    for (let k = 0; k < n; k++) s.push([cx + (rndF() * 2 - 1) * 40, 15 + rndF() * 17, (16 + rndF() * 16) * fAlt]); // copas sobre ele
+                    if (rndF() < 0.10) s.push([cx + (rndF() * 2 - 1) * 18, 24 + rndF() * 12, (18 + rndF() * 12) * fAlt]);          // emergente raro — largo, nunca uma cunha estreita
+                }
+                for (let x = 0; x < 2048; x += 13 + rndF() * 17) s.push([x, 6 + rndF() * 8, (5 + rndF() * 7) * fAlt]);              // tufos por todo o tecto
+                return s;
+            };
+            /* CRISTA (missão limpeza-visual-v5-crista): no anel de perto, os
+             * topos mais altos furavam a crista do terreno nos sectores
+             * direitos do 360° e liam-se como recortes pálidos isolados
+             * sobre a linha do horizonte. As alturas dos saltos do anel de
+             * perto baixam (fAlt 0,42) para os tectos ficarem abaixo da
+             * crista em todos os sectores; o anel de longe não muda
+             * (fAlt 1 — a mesma corrente de sorteio, a mesma textura). */
+            const fAltAnel = longe ? 1 : 0.42;
+            const topTras = massa(corTras, 224, saltosDe(95, 80, 36, 22, 34, 30, fAltAnel), 1500, 0.20);
+            const topFrente = massa(corFrente, 232, saltosDe(95, 80, 30, 20, 34, 30, fAltAnel), 1200, 0.30);
+            for (let i = 0; i < 260; i++) {                           // textura interior: brilhos logo sob o tecto da fila da frente
+                a2.globalAlpha = 0.05 + rndF() * 0.10; a2.fillStyle = '#8fa8bc';
+                const sx = (rndF() * 2048) | 0, sy = topFrente[sx] + 4 + rndF() * 48;
+                for (const dx of [-2048, 0, 2048]) a2.fillRect(sx + dx, sy, 5 + rndF() * 17, 1.6 + rndF() * 2.4);
+            }
+            for (let i = 0; i < 170; i++) {                           // idem sob o tecto da fila de trás (parte a lisura das massas pálidas)
+                a2.globalAlpha = 0.05 + rndF() * 0.09; a2.fillStyle = '#aebfd0';
+                const sx = (rndF() * 2048) | 0, sy = topTras[sx] + 3 + rndF() * 36;
+                for (const dx of [-2048, 0, 2048]) a2.fillRect(sx + dx, sy, 4 + rndF() * 14, 1.5 + rndF() * 2.2);
+            }
+            for (let i = 0; i < 110; i++) {                           // textura interior: sombras suaves de profundidade
+                a2.globalAlpha = 0.05 + rndF() * 0.08; a2.fillStyle = '#1c2836';
+                const sx = rndF() * 2048, sy = 130 + rndF() * 110;
+                for (const dx of [-2048, 0, 2048]) { a2.beginPath(); a2.ellipse(sx + dx, sy, 18 + rndF() * 44, 8 + rndF() * 15, 0, 0, 6.2832); a2.fill(); }
+            }
+            a2.globalAlpha = 1;
+            /* A dissolução mora na LINHA DO CHÃO VISÍVEL: o cilindro está
+             * enterrado 1,4 m, logo a linha do terreno na textura é a
+             * linha 256 − (1,4/altura)·256 (longe ≈ 230 · perto ≈ 216) —
+             * abaixo dela a textura nem se vê. A erosão concentra-se nos
+             * ~48 px acima dessa linha e morre abaixo dela: a massa
+             * encontra o chão partida por clareiras de névoa, sem saia de
+             * estática nem trechos suspensos. */
+            const linhaChao = 256 - Math.round(1.4 / altura * 256);
+            a2.save(); a2.globalCompositeOperation = 'destination-out';
+            for (let i = 0; i < 90; i++) {                             // clareiras de névoa junto ao chão
+                a2.globalAlpha = 0.22 + rndF() * 0.25;
+                const sx = rndF() * 2048, sy = linhaChao - 16 + rndF() * 18;
+                for (const dx of [-2048, 0, 2048]) { a2.beginPath(); a2.ellipse(sx + dx, sy, 8 + rndF() * 16, 3 + rndF() * 5, 0, 0, 6.2832); a2.fill(); }
+            }
+            const nFios = longe ? 2400 : 1800;                         // fios finos em tufos, só na faixa da linha do chão
+            for (let i = 0; i < nFios; i++) {
+                const y0 = (linhaChao - 46) + Math.pow(rndF(), 1.3) * 48, prof = (y0 - (linhaChao - 46)) / 48;
+                if (rndF() > 0.22 + 0.78 * prof) continue;
+                a2.globalAlpha = 0.40 + rndF() * 0.60;
+                const xx = rndF() * 2048, wdt = 1.5 + rndF() * 4, hgt = 3 + rndF() * 8;
+                for (const dx of [-2048, 0, 2048]) a2.fillRect(xx + dx, y0, wdt, hgt);
+            }
+            a2.restore(); a2.globalAlpha = 1; a2.globalCompositeOperation = 'source-over';
+            { // limpeza de ilhas: componente desligada e pequena sai. A análise corre
+              // em largura dupla — a costura x=0/2048 não parte componentes a meio.
+                const imgL = a2.getImageData(0, 0, 2048, 256), d = imgL.data;
+                const W2 = 4096, opaco = new Uint8Array(W2 * 256);
+                for (let y = 0; y < 256; y++) for (let x = 0; x < 2048; x++) {
+                    const v = d[(y * 2048 + x) * 4 + 3] > 107 ? 1 : 0;
+                    opaco[y * W2 + x] = v; opaco[y * W2 + x + 2048] = v;
+                }
+                const visto = new Uint8Array(W2 * 256), pilha = [], apagar = new Uint8Array(2048 * 256);
+                for (let s0 = 0; s0 < W2 * 256; s0++) {
+                    if (visto[s0]) continue;
+                    visto[s0] = 1;
+                    if (!opaco[s0]) continue;
+                    const comp = []; let toca = false;
+                    pilha.push(s0);
+                    while (pilha.length) {
+                        const p = pilha.pop(); comp.push(p);
+                        const py = (p / W2) | 0, px = p - py * W2;
+                        if (py >= 250) toca = true;
+                        if (px > 0 && opaco[p - 1] && !visto[p - 1]) { visto[p - 1] = 1; pilha.push(p - 1); }
+                        if (px < W2 - 1 && opaco[p + 1] && !visto[p + 1]) { visto[p + 1] = 1; pilha.push(p + 1); }
+                        if (py > 0 && opaco[p - W2] && !visto[p - W2]) { visto[p - W2] = 1; pilha.push(p - W2); }
+                        if (py < 255 && opaco[p + W2] && !visto[p + W2]) { visto[p + W2] = 1; pilha.push(p + W2); }
+                    }
+                    if (!toca && comp.length <= 700) {
+                        const unic = new Set(comp.map(p => ((p / W2) | 0) * 2048 + ((p % W2) % 2048)));
+                        if (unic.size <= 350) for (const u of unic) apagar[u] = 1;
+                    }
+                }
+                let mudou = false;
+                for (let p = 0; p < 2048 * 256; p++) if (apagar[p]) { d[p * 4 + 3] = 0; mudou = true; }
+                { // REGRA DE CONTACTO (correcção pós-crítica de Arte v5): no canvas
+                  // VISÍVEL (linhas 0..linhaChao+2), uma componente que não toca na
+                  // linha do chão visível lê-se suspensa no render — apaga-se,
+                  // seja qual for o tamanho. A colina pode cortar a base acima da
+                  // linha nominal; por isso os vales das filas desceram para
+                  // junto dela na mesma correcção.
+                    const G2 = linhaChao + 2, opR = new Uint8Array(W2 * (G2 + 1));
+                    for (let y = 0; y <= G2; y++) for (let x = 0; x < 2048; x++) {
+                        const v = d[(y * 2048 + x) * 4 + 3] > 107 ? 1 : 0;
+                        opR[y * W2 + x] = v; opR[y * W2 + x + 2048] = v;
+                    }
+                    const visR = new Uint8Array(W2 * (G2 + 1)), pilhaR = [];
+                    for (let s0 = 0; s0 < W2 * (G2 + 1); s0++) {
+                        if (visR[s0]) continue;
+                        visR[s0] = 1;
+                        if (!opR[s0]) continue;
+                        const comp = []; let toca = false;
+                        pilhaR.push(s0);
+                        while (pilhaR.length) {
+                            const p = pilhaR.pop(); comp.push(p);
+                            const py = (p / W2) | 0, px = p - py * W2;
+                            if (py >= G2) toca = true;
+                            if (px > 0 && opR[p - 1] && !visR[p - 1]) { visR[p - 1] = 1; pilhaR.push(p - 1); }
+                            if (px < W2 - 1 && opR[p + 1] && !visR[p + 1]) { visR[p + 1] = 1; pilhaR.push(p + 1); }
+                            if (py > 0 && opR[p - W2] && !visR[p - W2]) { visR[p - W2] = 1; pilhaR.push(p - W2); }
+                            if (py < G2 && opR[p + W2] && !visR[p + W2]) { visR[p + W2] = 1; pilhaR.push(p + W2); }
+                        }
+                        if (!toca) for (const p of comp) {
+                            const u = ((p / W2) | 0) * 2048 + ((p % W2) % 2048);
+                            if (d[u * 4 + 3] !== 0) { d[u * 4 + 3] = 0; mudou = true; }
+                        }
+                    }
+                }
+                if (mudou) a2.putImageData(imgL, 0, 0);
+            }
             const tex = new T.CanvasTexture(cv2); tex.encoding = T.sRGBEncoding;
             tex.wrapS = T.RepeatWrapping; tex.repeat.x = 3;
             const anel = new T.Mesh(new T.CylinderGeometry(raio, raio, altura, 64, 1, true),
@@ -891,8 +1229,14 @@
             anel.position.y = altura / 2 - 1.4; anel.name = nome;
             scene.add(anel);
         };
-        anelPintado(34, 13, '#223140', 'visual2-anel-perto');
-        anelPintado(55, 21, '#2c4256', 'visual2-anel-longe');
+
+
+        /* LIMPEZA-VISUAL C1R: alturas 13→9 / 21→14 (ponto de partida do
+         * diagnóstico — os números finais nascem das capturas C4) e corpos
+         * aclarados para a família da névoa (#35485e), para a aresta deixar
+         * de recortar contra o céu. */
+        anelPintado(34, 9, '#31465e', 'visual2-anel-perto');
+        anelPintado(55, 14, '#35485e', 'visual2-anel-longe');
 
         /* ---------- TRANCHE CIRCORA: as tochas do anel sobem para a banda nova ----------
          * Os braseiros do mundo (sagrado — mundo.js INTOCADO) nascem a
