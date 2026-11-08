@@ -3386,8 +3386,8 @@
       agendarPassoAuto(); return;
     }
     if (estado !== 'base') return;
-    if (atacou) { tratarAcao('encerrar'); return; }
-    if (autoAtaqueRecusado) { tratarAcao('encerrar'); return; }   // D-REC-01: sem outra acção ofensiva do controlador (Transformação e consumível nunca são automáticos), a vez encerra
+    if (atacou) { tratarAcao('encerrar'); agendarPassoAuto(); return; }   // P-A: um encerrar recusado (uma figura ainda a andar na cena) não pode matar o controlador — reagenda e tenta outra vez no seu ritmo, como já faz à espera da apresentação
+    if (autoAtaqueRecusado) { tratarAcao('encerrar'); agendarPassoAuto(); return; }   // D-REC-01: sem outra acção ofensiva do controlador (Transformação e consumível nunca são automáticos), a vez encerra — P-A: com reagendamento, como no ramo do atacou
     /* Alvo: o monstro vivo mais próximo por distanciaEntre; o
      * desempate é a ordem de `ordem` (a iteração segue essa ordem
      * e só um < estrito troca). Sem alvos vivos, pára estável —
@@ -3403,12 +3403,12 @@
     if (menor <= alcanceEmCasas(DADOS_COMBATE.ong.alcance)) {
       tratarAcao('atacar');
       if (estado === 'atacar') { autoAtaqueEmCurso = true; agendarPassoAuto(); }
-      else tratarAcao('encerrar');
+      else { tratarAcao('encerrar'); agendarPassoAuto(); }   // P-A: idem — o encerrar de recurso também reagenda
       return;
     }
-    if (autoJaMoveu) { tratarAcao('encerrar'); return; }
+    if (autoJaMoveu) { tratarAcao('encerrar'); agendarPassoAuto(); return; }   // P-A: idem
     const destino = escolherDestinoAuto(alvoId);
-    if (!destino) { try { supCritAutoSemDestino(); } catch (_) { supCritErrosCamada++; } tratarAcao('encerrar'); return; }
+    if (!destino) { try { supCritAutoSemDestino(); } catch (_) { supCritErrosCamada++; } tratarAcao('encerrar'); agendarPassoAuto(); return; }   // P-A: idem
     autoJaMoveu = true;
     /* O movimento automático é o do toque, tal e qual: estado
      * 'movendo', custo/caminho pendentes, view.move com a mesma
