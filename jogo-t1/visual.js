@@ -401,7 +401,7 @@
                 let amp = somaAlt(x0, y0, x1, y1) / ((x1 - x0) * (y1 - y0));
                 amp = Math.max(-3, Math.min(3, amp));
                 if (Math.abs(amp) < 0.05) continue;
-                const corr = amp * (((x + y) & 1) ? -1 : 1) * fM, p = (y * NM + x) * 4;
+                const corr = amp * fM, p = (y * NM + x) * 4;
                 dm[p] = Math.max(0, Math.min(255, dm[p] - corr));
                 dm[p + 1] = Math.max(0, Math.min(255, dm[p + 1] - corr));
                 dm[p + 2] = Math.max(0, Math.min(255, dm[p + 2] - corr));
@@ -409,7 +409,7 @@
             g.putImageData(imgM, 0, 0);
         }
         const texChao = new T.CanvasTexture(cv);
-        texChao.encoding = T.sRGBEncoding; texChao.anisotropy = 4;
+        texChao.encoding = T.sRGBEncoding; texChao.anisotropy = 8;
         const geoChao = new T.PlaneGeometry(120, 120, 112, 112); geoChao.rotateX(-Math.PI / 2);
         const pos = geoChao.attributes.position, cores = [];
         for (let i = 0; i < pos.count; i++) {
@@ -433,7 +433,7 @@
          * fundo até a textura chegar; __chaoPintadoPronto é o recibo. */
         window.__chaoPintadoPronto = false;
         new T.TextureLoader().load('textura-chao-pintado.jpg', t => {
-            t.encoding = T.sRGBEncoding; t.anisotropy = 4; // a mesma do chão que esta textura substitui
+            t.encoding = T.sRGBEncoding; t.anisotropy = 8; // a mesma do chão que esta textura substitui
             chao.material.map = t; chao.material.needsUpdate = true;
             window.__chaoPintadoPronto = true;
         });

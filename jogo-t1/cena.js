@@ -1041,7 +1041,7 @@
             }
             function baseWidth() {
                 if (mode === 'seguir')
-                    return width < height ? 9 : 8.4;
+                    return width < height ? 14.4 : 13.5;
                 if (mode === 'fixa' && width < height)
                     return Math.max(area.rows * CELL * 1.44, area.cols * CELL * Math.sin(.72) * 1.44 * width / Math.max(150, height - 110));
                 return Math.max(area.cols * CELL * 1.25, area.rows * CELL * Math.sin(1.12) * 1.25 * width / Math.max(150, height - 110));

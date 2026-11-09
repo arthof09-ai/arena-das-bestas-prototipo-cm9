@@ -92,21 +92,16 @@ window.CampoWorld = function (T, scene, area) {
         part(ico, i%4 ? wood : embers, [Math.cos(a)*r,.035,Math.sin(a)*r], [.05+rnd()*.18,.035,.06+rnd()*.14], [0,a,0]).castShadow=false;
     }
     const hearth = new T.PointLight(0xff6724,6.0,8,2); hearth.position.set(0,.45,0); scene.add(hearth);
-    const stones = [], grass = [], branches = [], trunks = [];
+    const stones = [];
     for (let i = 0; i < 480; i++) {
         const x = (rnd() - .5) * radius * 3, z = (rnd() - .5) * radius * 3, s = .025 + rnd() * .12;
         stones.push({ p: [x, height(x, z) + s * .2, z], s: [s * 2, s, s], r: [rnd(), rnd() * 6, rnd()] });
     }
-    for (let i = 0; i < 360; i++) {
-        const x = (rnd() - .5) * radius * 3, z = (rnd() - .5) * radius * 3;
-        grass.push({ p: [x, height(x, z) + .1, z], s: [.015, .13 + rnd() * .25, .035], r: [0, rnd() * 6, (rnd() - .5) * .8] });
-    }
-    for (let i = 0; i < 36; i++) {
-        const a = rnd() * Math.PI * 2, r = radius + 9 + rnd() * 52, x = Math.sin(a) * r, z = Math.cos(a) * r, h = height(x, z), s = 2 + rnd() * 3;
-        trunks.push({ p: [x, h + s / 2, z], s: [.16, s, .16], r: [0, rnd() * 6, .12] });
-        for (let k = 0; k < 2; k++)
-            branches.push({ p: [x + .18 + k * .15, h + s * (.6 + k*.2), z], s: [.05, s * .22, .05], r: [.2, k * .3, -.5] });
-    }
+    /* Tranche CAMERA/GRAVETOS (09/11/2026, queixa do Mestre): os
+       gravetos sairam por inteiro - os 36 troncos mortos de pe e os
+       72 ramos do anel exterior e as 360 relvas-palito (tambem dentro
+       da arena), todos com sombra. Ficam pedras, ruinas, braseiros e
+       a fogueira central. */
     // A paisagem continua antes/depois da área: afloramentos e muros gastos,
     // visíveis também no eixo longo da Fixa em retrato, sem delimitar um tabuleiro.
     for (let i=0;i<34;i++) {
@@ -115,9 +110,6 @@ window.CampoWorld = function (T, scene, area) {
         stones.push({p:[x,height(x,z)+s*.28,z],s:[s*1.3,s*.75,s],r:[rnd()*.3,rnd()*6,rnd()*.3]});
     }
     batch(ico, rock, stones);
-    batch(box, mat(0x867c5c), grass);
-    batch(cyl, wood, trunks);
-    batch(cyl, wood, branches);
     const ruins = [];
     for (let i = 0; i < 15; i++) {
         const x = -radius + i * 1.05, z = -radius * .8 + Math.sin(i*.8)*.35;
@@ -127,8 +119,6 @@ window.CampoWorld = function (T, scene, area) {
     // Icosaedros achatados: cantos quebrados, juntas irregulares, tons intercalados.
     batch(new T.IcosahedronGeometry(1,1), rock, ruins.filter((_,i)=>i%2));
     batch(new T.IcosahedronGeometry(1,1), mat(0x777369), ruins.filter((_,i)=>!(i%2)));
-    for (const [x, z, a] of [[-6, 3, .35], [5, -3, .3], [1, 4, .4]])
-        part(cyl, wood, [x, .12, z], [.12, 1.8, .12], [Math.PI / 2, 0, a]);
     for (const [x, z] of [[-area.cols * .75 - 1, -2], [area.cols * .75 + 1, 1], [1, -area.rows * .75 - 1]]) {
         const y = height(x, z), g = new T.Group();
         g.position.set(x, y, z);
