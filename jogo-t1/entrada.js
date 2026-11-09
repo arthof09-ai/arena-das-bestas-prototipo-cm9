@@ -1,31 +1,40 @@
-/* Entrada do protótipo — a porta do Mestre + a conta Google
- * (tranches t-entrada-mestre e t-entrada-google).
+/* Entrada do protótipo — entrar é SEMPRE com a conta Google, dentro
+ * dos botões (tranche t-entrada-google-nativa; antes: t-entrada-mestre
+ * e t-entrada-google).
  *
  * A página nasce neste ecrã (Layout de referência: LAYOUT-PAGINA-ENTRADA
  * + EMENDA de 06/11 21:02 — três botões, sem «Continuar») e o jogo NÃO
- * faz boot nem constrói nada até haver escolha: os scripts do jogo só
+ * faz boot nem constrói nada até haver entrada: os scripts do jogo só
  * são injectados, pela ordem original, depois de uma entrada.
  *
- * AS PORTAS (decisões do Mestre, 09/11):
- *  · Entrar e criar conta (primeira vez) é com a CONTA GOOGLE, para o
- *    Mestre e para as jogadoras; feito uma vez, o aparelho guarda o
- *    perfil (nome, e-mail, foto, papel) e as próximas entradas são um
- *    toque. A conta decide o papel: a conta do Mestre abre a vista do
- *    Mestre; qualquer outra conta abre a vista da Party (a jogadora
- *    NÃO tem senha — a conta Google é a conta dela).
- *  · A SENHA do Mestre fica como a segunda porta dele, e o Google é a
- *    recuperação e a troca dela («Esqueci a senha» → entrar com a
- *    conta dele → definir a senha nova; «Trocar a senha» nas
- *    Configurações da entrada, para quem já entrou neste aparelho).
+ * A PORTA (palavra do Mestre, 09/11/2026 11:22 — substitui a das
+ * 09:48): «entrar fica sempre como Google, e tem que ser algo nativo
+ * e integrado com o botão de entrar como mestre ou jogador». Logo:
+ *  · NÃO há botão «Entrar com Google» separado nem porta anónima: o
+ *    fluxo Google vive DENTRO dos botões «Entrar como Mestre» e
+ *    «Entrar como Jogadora».
+ *  · «Entrar como Mestre»: corre o fluxo Google; só a conta dele
+ *    (EMAIL_MESTRE) entra — outra conta é recusada com mensagem e não
+ *    entra em lado nenhum. Primeira vez = a entrada fica guardada;
+ *    com o perfil de Mestre guardado, o botão entra com um toque.
+ *  · «Entrar como Jogadora»: corre o fluxo Google; qualquer conta
+ *    entra na Party, com o perfil (nome, e-mail, foto) guardado no
+ *    aparelho; com o perfil de Jogadora guardado, um toque entra.
+ *    «Usar outra conta do Google» vive nas Configurações da entrada.
+ *  · Sem Google a responder, NÃO há entrada nenhuma (consequência
+ *    declarada da palavra dele) — e a entrada avisa, não fica muda.
+ *  · «Esquecer este aparelho» apaga o perfil e tudo o que o aparelho
+ *    lembra.
  *
- * A porta da senha: verificação por PBKDF2-HMAC-SHA256 (crypto.subtle;
- * 250 000 iterações; sal fixo). A senha NUNCA é escrita neste ficheiro
- * nem em lado nenhum — mora aqui só o RESUMO esperado, numa constante
- * única. Quando ele troca a senha neste aparelho, o resumo novo (mesmo
- * PBKDF2/sal) fica guardado NESTE aparelho e passa a ser o que a porta
- * aceita aqui; a constante continua a valer nos outros aparelhos até
- * uma republicação com o resumo novo (limite do protótipo, registado
- * no relatório da tranche).
+ * A SENHA DO MESTRE — CONFIRMADA POR ELE (09/11/2026 11:26, por
+ * toque na opção): «A senha fica, como segunda porta pequena do
+ * Mestre» — acesso secundário pequeno («Entrar com a senha») dentro
+ * da vista do Mestre, com «Esqueci a senha» e «Trocar a senha» como
+ * a REF_33 os fez. Vive nas secções marcadas «SENHA», isolada como
+ * limpeza de código. O grau de guarda é o já declarado nas REF_32/33
+ * (porta de organização por desenho dele): a guarda do aparelho
+ * posta por uma entrada com a senha também dá um toque no botão do
+ * Mestre.
  *
  * A verificação do token Google é a de protótipo: descodifica-se o ID
  * token e confere-se iss, aud (o Client ID desta página), exp e
@@ -38,20 +47,24 @@
  * Modo Mestre = a receita do antigo mestre.html: levantar
  * window.CAMPO_MESTRE = true ANTES de jogo.js carregar (o trinco de
  * arranque de jogo.js lê a bandeira uma vez e sela-a). Sem a bandeira,
- * o boot é o da Party, byte a byte o de hoje. */
+ * o boot é o da Party, byte a byte o de hoje — e o caminho da Party
+ * apaga qualquer bandeira pré-levantada fora da porta (guarda da
+ * REF_32, mantida). */
 (function () {
   'use strict';
   document.documentElement.classList.add('entrada-pendente');
 
   /* ---------- parâmetros de construção (constantes) ---------- */
+  var GOOGLE_CLIENT_ID = '138536166035-rmfvrhguihp5ec1oiat02m0uoil7sou1.apps.googleusercontent.com';
+  var EMAIL_MESTRE = 'arth.of.09@gmail.com';
+  var CHAVE_PERFIL_GOOGLE = 'entrada-google-perfil';
+  /* SENHA (confirmada por ele, 09/11 11:26): constantes da porta da
+   * senha — ver a secção «SENHA». */
   var RESUMO_MESTRE_HEX = '10689e70ce4c5dfc4e4150e051d993e2168c9318163a2128b176f0984d915f15';
   var SAL_MESTRE_HEX = 'a3f9c41d77e04b2c9d15f0e68b3a52c1';
   var ITERACOES_PBKDF2 = 250000;
   var CHAVE_APARELHO = 'entrada-mestre-aparelho';
   var CHAVE_RESUMO_APARELHO = 'entrada-mestre-resumo-aparelho';
-  var GOOGLE_CLIENT_ID = '138536166035-rmfvrhguihp5ec1oiat02m0uoil7sou1.apps.googleusercontent.com';
-  var EMAIL_MESTRE = 'arth.of.09@gmail.com';
-  var CHAVE_PERFIL_GOOGLE = 'entrada-google-perfil';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -59,63 +72,11 @@
   ];
 
   /* ---------- utilidades ---------- */
-  function hexParaBytes(hex) {
-    var b = new Uint8Array(hex.length / 2);
-    for (var i = 0; i < b.length; i++) b[i] = parseInt(hex.substr(i * 2, 2), 16);
-    return b;
-  }
-  function bytesParaHex(bytes) {
-    var s = '';
-    for (var i = 0; i < bytes.length; i++) s += ('0' + bytes[i].toString(16)).slice(-2);
-    return s;
-  }
-  /* Comparação sem atalhos: percorre sempre os dois resumos inteiros. */
-  function resumosIguais(a, b) {
-    if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
-    var dif = 0;
-    for (var i = 0; i < a.length; i++) dif |= a.charCodeAt(i) ^ b.charCodeAt(i);
-    return dif === 0;
-  }
-  function derivarResumoHex(senha) {
-    if (!window.crypto || !crypto.subtle || !crypto.subtle.importKey) {
-      return Promise.reject(new Error('sem-crypto-subtle'));
-    }
-    var enc = new TextEncoder();
-    return crypto.subtle.importKey('raw', enc.encode(senha), 'PBKDF2', false, ['deriveBits'])
-      .then(function (chave) {
-        return crypto.subtle.deriveBits(
-          { name: 'PBKDF2', hash: 'SHA-256', salt: hexParaBytes(SAL_MESTRE_HEX), iterations: ITERACOES_PBKDF2 },
-          chave, 256);
-      })
-      .then(function (bits) { return bytesParaHex(new Uint8Array(bits)); });
-  }
-
-  /* ---------- o resumo em vigor neste aparelho ----------
-   * Se ele trocou a senha neste aparelho, o resumo novo guardado
-   * manda; senão, manda a constante com que a página nasceu. A porta
-   * e a guarda do aparelho lêem sempre daqui — uma função só. */
-  function resumoEmVigor() {
-    try {
-      var r = localStorage.getItem(CHAVE_RESUMO_APARELHO);
-      if (r && /^[0-9a-f]{64}$/.test(r)) return r;
-    } catch (_) {}
-    return RESUMO_MESTRE_HEX;
-  }
-  /* Há um resumo trocado guardado neste aparelho? (Emenda I da
-   * bancada: este estado sozinho também torna o «Esquecer este
-   * aparelho» alcançável — sem perfil e sem guarda, o override órfão
-   * não pode ficar invisível.) */
-  function temOverride() {
-    try { return !!localStorage.getItem(CHAVE_RESUMO_APARELHO); } catch (_) { return false; }
-  }
-
-  /* ---------- o aparelho guarda (a entrada pela senha) ---------- */
-  function aparelhoLembra() {
-    try { return localStorage.getItem(CHAVE_APARELHO) === resumoEmVigor(); }
-    catch (_) { return false; }
-  }
-  function lembrarAparelho() {
-    try { localStorage.setItem(CHAVE_APARELHO, resumoEmVigor()); } catch (_) {}
+  function el(tag, classe, texto) {
+    var e = document.createElement(tag);
+    if (classe) e.className = classe;
+    if (texto != null) e.textContent = texto;
+    return e;
   }
 
   /* ---------- o perfil Google guardado neste aparelho ----------
@@ -125,10 +86,10 @@
     try {
       var p = JSON.parse(localStorage.getItem(CHAVE_PERFIL_GOOGLE) || 'null');
       if (p && typeof p.email === 'string' && (p.papel === 'mestre' || p.papel === 'jogadora')) {
-        /* Emenda A da bancada: TODAS as leituras do perfil passam por
-         * aqui, e o papel «mestre» guardado só vale com a conta dele.
-         * Uma etiqueta «mestre» escrita à mão com outro e-mail é
-         * perfil inválido: não entra, não destrava nada. */
+        /* Emenda A da bancada (REF_33): TODAS as leituras do perfil
+         * passam por aqui, e o papel «mestre» guardado só vale com a
+         * conta dele. Uma etiqueta «mestre» escrita à mão com outro
+         * e-mail é perfil inválido: não entra, não destrava nada. */
         if (p.papel === 'mestre' && p.email.toLowerCase() !== EMAIL_MESTRE) return null;
         return p;
       }
@@ -141,23 +102,25 @@
     return p;
   }
 
-  /* Esquecer este aparelho: apaga o perfil Google, a guarda da senha
-   * e o resumo trocado — o aparelho volta a não lembrar nada. */
+  /* Esquecer este aparelho: apaga o perfil Google e tudo o que o
+   * aparelho lembra (a guarda da senha e o resumo trocado incluídos)
+   * — o aparelho volta a não lembrar nada. */
   function esquecerAparelho() {
     try {
+      localStorage.removeItem(CHAVE_PERFIL_GOOGLE);
       localStorage.removeItem(CHAVE_APARELHO);
       localStorage.removeItem(CHAVE_RESUMO_APARELHO);
-      localStorage.removeItem(CHAVE_PERFIL_GOOGLE);
     } catch (_) {}
   }
 
-  /* O Mestre está lembrado neste aparelho se entrou pela senha (a
-   * guarda bate com o resumo em vigor) ou se o perfil Google guardado
-   * é o da conta dele, com o papel de Mestre. */
+  /* O Mestre está lembrado neste aparelho se o perfil Google guardado
+   * é o da conta dele com o papel de Mestre — ou, enquanto a senha
+   * existir (secção «SENHA»), se a guarda posta por uma entrada com a
+   * senha bate com o resumo em vigor. */
   function mestreLembrado() {
-    if (aparelhoLembra()) return true;
     var p = perfilGuardado();
-    return !!(p && p.papel === 'mestre');
+    if (p && p.papel === 'mestre') return true;
+    return typeof aparelhoLembra === 'function' ? aparelhoLembra() : false;
   }
 
   /* ---------- a conta Google: verificação do ID token (protótipo) --- */
@@ -200,20 +163,25 @@
   }
 
   /* ---------- o fluxo GIS: carrega quando é preciso ----------
-   * O script do Google só é pedido quando alguém aperta um botão do
-   * Google (a entrada não fala com a rede antes disso). O callback é
-   * único — window.__entradaGoogleCallback — e é o MESMO caminho que
-   * recebe o token verdadeiro e o token da prova do mecanismo. */
+   * O script do Google só é pedido quando alguém aperta um caminho
+   * do Google (a entrada não fala com a rede antes disso). O callback
+   * é único — window.__entradaGoogleCallback — e é o MESMO caminho
+   * que recebe o token verdadeiro e o token da prova do mecanismo.
+   * Usos: 'mestre' (botão/vista do Mestre) · 'jogadora' (botão da
+   * Jogadora) · 'entrar' (trocar de conta nas Configurações — a conta
+   * decide o papel) · 'recuperar' (SENHA: prova para a senha nova). */
   var gisCarregado = null;
-  var pendenteGoogle = null; /* { uso, aoFalhar } — uso: entrar | mestre-senha | recuperar */
+  var pendenteGoogle = null; /* { uso, aoFalhar } */
   var GIS_TIMEOUT_MS = 10000;
+  var MSG_GOOGLE_MORTO = 'Não foi possível falar com o Google agora. Tente outra vez.';
   function carregarGis() {
     if (window.google && google.accounts && google.accounts.id) return Promise.resolve();
     if (gisCarregado) return gisCarregado;
     gisCarregado = new Promise(function (resolve, reject) {
-      /* Emenda C da bancada: GIS pendurado não pode ser um botão morto
-       * e mudo — se o script nem carrega nem falha dentro do prazo, a
-       * promessa rejeita e quem chamou avisa na vista activa. */
+      /* Emenda C da bancada (REF_33): GIS pendurado não pode ser um
+       * botão morto e mudo — se o script nem carrega nem falha dentro
+       * do prazo, a promessa rejeita e quem chamou avisa na vista
+       * activa. */
       var estourou = false;
       var temporizador = setTimeout(function () {
         estourou = true;
@@ -239,22 +207,22 @@
         callback: function (resposta) { window.__entradaGoogleCallback(resposta); }
       });
       google.accounts.id.prompt(function (momento) {
-        /* Emenda C da bancada: o One Tap não-exibido ou suprimido
-         * (isNotDisplayed / isSkippedMoment) também avisa — um clique
-         * sem efeito e sem mensagem não é caminho. */
+        /* Emenda C da bancada (REF_33): o One Tap não-exibido ou
+         * suprimido (isNotDisplayed / isSkippedMoment) também avisa —
+         * um clique sem efeito e sem mensagem não é caminho. */
         if (momento && (momento.isNotDisplayed() || momento.isSkippedMoment())) {
           var p = pendenteGoogle;
           pendenteGoogle = null;
-          if (p && p.aoFalhar) p.aoFalhar('Não foi possível falar com o Google agora. Tente outra vez.');
+          if (p && p.aoFalhar) p.aoFalhar(MSG_GOOGLE_MORTO);
         }
       });
     }).catch(function () {
       pendenteGoogle = null;
-      if (aoFalhar) aoFalhar('Não foi possível falar com o Google agora. Tente outra vez.');
+      if (aoFalhar) aoFalhar(MSG_GOOGLE_MORTO);
     });
   }
 
-  /* ---------- boot do jogo (só depois da escolha) ---------- */
+  /* ---------- boot do jogo (só depois de uma entrada) ---------- */
   var arrancou = false;
   function arrancarJogo(comoMestre) {
     if (arrancou) return;
@@ -262,10 +230,10 @@
     if (comoMestre) {
       window.CAMPO_MESTRE = true;
     } else {
-      /* Emenda 1 da bancada (Vector B): no caminho da Jogadora,
-       * nenhuma bandeira levantada fora da porta pode vazar para o
-       * boot — apaga-se qualquer valor pré-existente e força-se o
-       * false explícito ANTES de injectar os scripts do jogo. */
+      /* Emenda 1 da bancada (Vector B, REF_32): no caminho da
+       * Jogadora, nenhuma bandeira levantada fora da porta pode vazar
+       * para o boot — apaga-se qualquer valor pré-existente e força-se
+       * o false explícito ANTES de injectar os scripts do jogo. */
       try { delete window.CAMPO_MESTRE; } catch (_) {}
       window.CAMPO_MESTRE = false;
     }
@@ -312,13 +280,6 @@
   }
 
   /* ---------- construção do ecrã ---------- */
-  function el(tag, classe, texto) {
-    var e = document.createElement(tag);
-    if (classe) e.className = classe;
-    if (texto != null) e.textContent = texto;
-    return e;
-  }
-
   var raiz = el('div');
   raiz.id = 'entrada';
   raiz.setAttribute('aria-label', 'Entrada do jogo');
@@ -328,40 +289,22 @@
   placa.appendChild(el('div', 'ent-faixa', 'Campo de batalha'));
   raiz.appendChild(placa);
 
-  /* Vista 1 — os três botões do layout + a porta do Google. */
+  /* Vista 1 — os três botões do layout. NÃO há botão do Google
+   * separado: o fluxo Google vive dentro dos dois botões de entrar. */
   var vistaBotoes = el('div');
-  var btnGoogle = el('button', 'ent-google'); btnGoogle.id = 'ent-google-btn'; btnGoogle.type = 'button';
-  var btnOutraConta = el('button', 'ent-outra-conta', 'Usar outra conta do Google');
-  btnOutraConta.id = 'ent-outra-conta'; btnOutraConta.type = 'button'; btnOutraConta.hidden = true;
-  var erroGoogleEntrada = el('p', 'ent-erro-google');
-  erroGoogleEntrada.setAttribute('role', 'alert');
+  var erroEntrada = el('p', 'ent-erro-entrada');
+  erroEntrada.setAttribute('role', 'alert');
   var btnMestre = el('button', 'ent-btn'); btnMestre.id = 'ent-mestre'; btnMestre.type = 'button';
-  var btnJogadora = el('button', 'ent-btn', 'Entrar como Jogadora');
-  btnJogadora.id = 'ent-jogadora'; btnJogadora.type = 'button';
+  var btnJogadora = el('button', 'ent-btn'); btnJogadora.id = 'ent-jogadora'; btnJogadora.type = 'button';
   var btnConfig = el('button', 'ent-btn', 'Configurações');
   btnConfig.id = 'ent-config'; btnConfig.type = 'button';
-  var ajuda = el('p', 'ent-ajuda', 'A sua conta fica guardada neste celular.');
-  vistaBotoes.appendChild(btnGoogle);
-  vistaBotoes.appendChild(btnOutraConta);
-  vistaBotoes.appendChild(erroGoogleEntrada);
+  var ajuda = el('p', 'ent-ajuda', 'Você entra com a sua conta Google. Ela fica guardada neste celular.');
+  vistaBotoes.appendChild(erroEntrada);
   vistaBotoes.appendChild(btnMestre);
   vistaBotoes.appendChild(btnJogadora);
   vistaBotoes.appendChild(btnConfig);
   vistaBotoes.appendChild(ajuda);
   raiz.appendChild(vistaBotoes);
-
-  function pintarBotaoGoogle() {
-    var p = perfilGuardado();
-    btnGoogle.textContent = '';
-    btnGoogle.appendChild(el('span', 'g-marca', 'G'));
-    if (p) {
-      btnGoogle.appendChild(el('span', null, 'Entrar como ' + (p.nome || p.email)));
-      btnOutraConta.hidden = false;
-    } else {
-      btnGoogle.appendChild(el('span', null, 'Entrar com Google'));
-      btnOutraConta.hidden = true;
-    }
-  }
 
   function pintarBotaoMestre() {
     var p = perfilGuardado();
@@ -369,98 +312,45 @@
     btnMestre.appendChild(el('span', null, 'Entrar como Mestre'));
     if (p && p.papel === 'mestre') {
       btnMestre.appendChild(el('span', 'sub', 'você já entrou como ' + (p.nome || p.email) + ' — um toque e entra'));
-    } else if (aparelhoLembra()) {
+    } else if (typeof aparelhoLembra === 'function' && aparelhoLembra()) {
       btnMestre.appendChild(el('span', 'sub', 'você já entrou neste aparelho — um toque e entra'));
     }
   }
+  function pintarBotaoJogadora() {
+    var p = perfilGuardado();
+    btnJogadora.textContent = '';
+    btnJogadora.appendChild(el('span', null, 'Entrar como Jogadora'));
+    if (p && p.papel === 'jogadora') {
+      btnJogadora.appendChild(el('span', 'sub', 'você já entrou como ' + (p.nome || p.email) + ' — um toque e entra'));
+    }
+  }
 
-  /* Vista 2 — a senha do Mestre (a segunda porta dele). */
-  var vistaSenha = el('form', 'ent-painel');
-  vistaSenha.hidden = true;
-  vistaSenha.appendChild(el('h2', null, 'Entrar como Mestre'));
-  var rotuloSenha = el('label', 'cl', 'A sua senha');
-  rotuloSenha.htmlFor = 'ent-senha-campo';
-  var campoSenha = el('input', 'ent-campo');
-  campoSenha.id = 'ent-senha-campo';
-  campoSenha.type = 'password';
-  campoSenha.setAttribute('autocomplete', 'current-password');
-  var erroSenha = el('p', 'ent-erro');
-  erroSenha.setAttribute('role', 'alert');
-  var linhaSenha = el('div', 'ent-linha-botoes');
-  var btnEntrarSenha = el('button', 'ent-accao', 'Entrar');
-  btnEntrarSenha.id = 'ent-entrar-senha'; btnEntrarSenha.type = 'submit';
-  var btnVoltarSenha = el('button', 'ent-accao sec', 'Voltar');
-  btnVoltarSenha.type = 'button';
-  linhaSenha.appendChild(btnEntrarSenha);
-  linhaSenha.appendChild(btnVoltarSenha);
-  var btnGoogleSenha = el('button', 'ent-google painel', 'Entrar com a sua conta Google');
-  btnGoogleSenha.id = 'ent-google-senha'; btnGoogleSenha.type = 'button';
-  var btnEsqueci = el('button', 'ent-ligacao', 'Esqueci a senha');
-  btnEsqueci.id = 'ent-esqueci'; btnEsqueci.type = 'button';
-  vistaSenha.appendChild(rotuloSenha);
-  vistaSenha.appendChild(campoSenha);
-  vistaSenha.appendChild(erroSenha);
-  vistaSenha.appendChild(linhaSenha);
-  vistaSenha.appendChild(btnGoogleSenha);
-  vistaSenha.appendChild(btnEsqueci);
-  raiz.appendChild(vistaSenha);
+  /* Vista 2 — a vista do Mestre: o Google é a porta (botão principal)
+   * e, enquanto a palavra dele sobre a senha não chega, o acesso
+   * pequeno «Entrar com a senha» (secção «SENHA» monta-se no
+   * anfitrião abaixo). */
+  var vistaMestre = el('div', 'ent-painel');
+  vistaMestre.hidden = true;
+  vistaMestre.appendChild(el('h2', null, 'Entrar como Mestre'));
+  vistaMestre.appendChild(el('p', 'ent-nota', 'Entre com a conta Google do Mestre.'));
+  var erroMestre = el('p', 'ent-erro');
+  erroMestre.setAttribute('role', 'alert');
+  vistaMestre.appendChild(erroMestre);
+  var btnGoogleMestre = el('button', 'ent-google painel', 'Entrar com a sua conta Google');
+  btnGoogleMestre.id = 'ent-google-mestre'; btnGoogleMestre.type = 'button';
+  vistaMestre.appendChild(btnGoogleMestre);
+  var zonaSenhaHost = el('div');
+  zonaSenhaHost.id = 'ent-zona-senha-host';
+  vistaMestre.appendChild(zonaSenhaHost);
+  var btnVoltarMestre = el('button', 'ent-accao sec', 'Voltar');
+  btnVoltarMestre.type = 'button';
+  btnVoltarMestre.style.marginTop = '10px';
+  btnVoltarMestre.style.width = '100%';
+  vistaMestre.appendChild(btnVoltarMestre);
+  raiz.appendChild(vistaMestre);
 
-  /* Vista 3 — a senha nova: recuperação (prova do Google primeiro) e
-   * troca (quem já entrou neste aparelho define directo). */
-  var vistaNovaSenha = el('form', 'ent-painel');
-  vistaNovaSenha.hidden = true;
-  var tituloNovaSenha = el('h2', null, 'Definir a nova senha');
-  vistaNovaSenha.appendChild(tituloNovaSenha);
-  var passoGoogle = el('div');
-  passoGoogle.appendChild(el('p', 'ent-nota',
-    'Para ter a certeza de que é você, entre primeiro com a sua conta Google. Depois define a senha nova.'));
-  var erroNovaGoogle = el('p', 'ent-erro');
-  erroNovaGoogle.setAttribute('role', 'alert');
-  var btnGoogleNova = el('button', 'ent-google painel', 'Entrar com a sua conta Google');
-  btnGoogleNova.id = 'ent-google-nova'; btnGoogleNova.type = 'button';
-  passoGoogle.appendChild(erroNovaGoogle);
-  passoGoogle.appendChild(btnGoogleNova);
-  vistaNovaSenha.appendChild(passoGoogle);
-  var passoCampos = el('div');
-  passoCampos.hidden = true;
-  var rotuloNova = el('label', 'cl', 'A senha nova');
-  rotuloNova.htmlFor = 'ent-nova-campo';
-  var campoNova = el('input', 'ent-campo');
-  campoNova.id = 'ent-nova-campo'; campoNova.type = 'password';
-  campoNova.setAttribute('autocomplete', 'new-password');
-  var rotuloNova2 = el('label', 'cl', 'Escreva outra vez a senha nova');
-  rotuloNova2.htmlFor = 'ent-nova-campo2';
-  var campoNova2 = el('input', 'ent-campo');
-  campoNova2.id = 'ent-nova-campo2'; campoNova2.type = 'password';
-  campoNova2.setAttribute('autocomplete', 'new-password');
-  var erroNova = el('p', 'ent-erro');
-  erroNova.setAttribute('role', 'alert');
-  var linhaNova = el('div', 'ent-linha-botoes');
-  var btnGuardarNova = el('button', 'ent-accao', 'Guardar a senha nova');
-  btnGuardarNova.id = 'ent-guardar-nova'; btnGuardarNova.type = 'submit';
-  linhaNova.appendChild(btnGuardarNova);
-  passoCampos.appendChild(rotuloNova);
-  passoCampos.appendChild(campoNova);
-  passoCampos.appendChild(rotuloNova2);
-  passoCampos.appendChild(campoNova2);
-  passoCampos.appendChild(erroNova);
-  passoCampos.appendChild(linhaNova);
-  passoCampos.appendChild(el('p', 'ent-nota',
-    'A senha nova passa a valer neste aparelho. Nos outros aparelhos, vale a senha antiga até o jogo ser actualizado com a nova.'));
-  vistaNovaSenha.appendChild(passoCampos);
-  var passoFeito = el('div');
-  passoFeito.hidden = true;
-  passoFeito.appendChild(el('p', 'ent-nota', 'Senha nova guardada neste aparelho.'));
-  var btnEntrarFeito = el('button', 'ent-accao', 'Entrar como Mestre');
-  btnEntrarFeito.id = 'ent-nova-entrar'; btnEntrarFeito.type = 'button';
-  passoFeito.appendChild(btnEntrarFeito);
-  vistaNovaSenha.appendChild(passoFeito);
-  var btnVoltarNova = el('button', 'ent-accao sec', 'Voltar');
-  btnVoltarNova.type = 'button';
-  btnVoltarNova.style.marginTop = '8px';
-  btnVoltarNova.style.width = '100%';
-  vistaNovaSenha.appendChild(btnVoltarNova);
-  raiz.appendChild(vistaNovaSenha);
+  /* Vista 3 — a senha nova (SENHA): construída na secção «SENHA». */
+  var vistaNovaSenha = null;
 
   /* Vista 4 — configurações (as do ⚙ que persistem) + o aparelho. */
   var vistaConfig = el('section', 'ent-painel');
@@ -471,6 +361,9 @@
   vistaConfig.appendChild(linhasDef);
   var notaAparelho = el('p', 'ent-nota');
   vistaConfig.appendChild(notaAparelho);
+  var btnOutraConta = el('button', 'ent-esquecer', 'Usar outra conta do Google');
+  btnOutraConta.id = 'ent-outra-conta'; btnOutraConta.type = 'button'; btnOutraConta.hidden = true;
+  vistaConfig.appendChild(btnOutraConta);
   var btnTrocar = el('button', 'ent-esquecer', 'Trocar a senha do Mestre');
   btnTrocar.id = 'ent-trocar-senha'; btnTrocar.type = 'button'; btnTrocar.hidden = true;
   vistaConfig.appendChild(btnTrocar);
@@ -521,65 +414,33 @@
     var p = perfilGuardado();
     var notas = [];
     if (p) notas.push('Este aparelho lembra a sua conta: ' + (p.nome || p.email) + ' (' + p.email + ').');
-    if (aparelhoLembra()) notas.push('Este aparelho lembra a sua entrada como Mestre pela senha.');
-    if (temOverride()) notas.push('Este aparelho guarda uma senha do Mestre trocada neste aparelho.');
+    if (typeof notasSenhaDoAparelho === 'function') notas = notas.concat(notasSenhaDoAparelho());
     if (!notas.length) notas.push('Este aparelho ainda não lembra nenhuma entrada.');
     notaAparelho.textContent = notas.join(' ');
+    btnOutraConta.hidden = !p;
     btnTrocar.hidden = !mestreLembrado();
-    /* Emenda I da bancada: o override órfão (sem perfil e sem guarda)
-     * também torna o «Esquecer este aparelho» visível — nenhum estado
-     * do aparelho fica inalcançável pela interface. */
-    btnEsquecer.hidden = !(p || aparelhoLembra() || temOverride());
+    /* Emenda I da bancada (REF_33): o override órfão (sem perfil e
+     * sem guarda) também torna o «Esquecer este aparelho» visível —
+     * nenhum estado do aparelho fica inalcançável pela interface. */
+    var temSenhaGuardada = typeof temOverride === 'function' && temOverride();
+    btnEsquecer.hidden = !(p || mestreLembrado() || temSenhaGuardada);
   }
 
   /* ---------- navegação entre vistas ---------- */
-  var modoNovaSenha = 'recuperar'; /* 'recuperar' | 'trocar' */
-  /* Emenda B da bancada: a autorização para guardar uma senha nova é
-   * uma bandeira de SESSÃO — variável em memória, nunca localStorage e
-   * nunca o estado visível/escondido do formulário. É posta SÓ pelo
-   * callback do Google com a conta dele, no fluxo de recuperação; no
-   * modo «trocar», a autorização é reconferida no acto de gravar. */
-  var autorizadaNovaSenha = false;
-  function abrirNovaSenha(modo) {
-    if (modo === 'trocar' && !mestreLembrado()) {
-      /* Emenda B: abrir a troca reverifica — um clique programático no
-       * botão escondido, num aparelho que não lembra o Mestre, não
-       * abre campo nenhum. */
-      return;
-    }
-    modoNovaSenha = modo;
-    autorizadaNovaSenha = false; /* cada abertura começa sem autorização */
-    tituloNovaSenha.textContent = modo === 'trocar' ? 'Trocar a senha' : 'Definir a nova senha';
-    erroNovaGoogle.textContent = '';
-    erroNova.textContent = '';
-    campoNova.value = '';
-    campoNova2.value = '';
-    passoGoogle.hidden = modo !== 'recuperar';
-    passoCampos.hidden = modo === 'recuperar';
-    passoFeito.hidden = true;
-    mostrar('novasenha');
-    if (modo === 'trocar') campoNova.focus();
-  }
   function mostrar(vista) {
     vistaBotoes.hidden = vista !== 'botoes';
-    vistaSenha.hidden = vista !== 'senha';
-    vistaNovaSenha.hidden = vista !== 'novasenha';
+    vistaMestre.hidden = vista !== 'mestre';
+    if (vistaNovaSenha) vistaNovaSenha.hidden = vista !== 'novasenha';
     vistaConfig.hidden = vista !== 'config';
-    if (vista === 'senha') { erroSenha.textContent = ''; campoSenha.value = ''; campoSenha.focus(); }
+    if (vista === 'mestre') {
+      erroMestre.textContent = '';
+      if (typeof fecharZonaSenha === 'function') fecharZonaSenha();
+    }
     if (vista === 'config') pintarConfig();
-    if (vista === 'botoes') { pintarBotaoMestre(); pintarBotaoGoogle(); }
+    if (vista === 'botoes') { pintarBotaoMestre(); pintarBotaoJogadora(); }
   }
 
   /* ---------- o que acontece com a conta Google, por uso ---------- */
-  function entrarComGoogle(dados) {
-    if (dados.email === EMAIL_MESTRE) {
-      guardarPerfil(dados, 'mestre');
-      arrancarJogo(true);
-    } else {
-      guardarPerfil(dados, 'jogadora');
-      arrancarJogo(false);
-    }
-  }
   window.__entradaGoogleCallback = function (resposta) {
     var pendente = pendenteGoogle;
     pendenteGoogle = null;
@@ -592,71 +453,174 @@
       return;
     }
     var uso = pendente ? pendente.uso : 'entrar';
-    if (uso === 'mestre-senha') {
+    if (uso === 'mestre') {
       if (v.dados.email === EMAIL_MESTRE) {
         guardarPerfil(v.dados, 'mestre');
         arrancarJogo(true);
       } else if (pendente.aoFalhar) {
-        pendente.aoFalhar('Esta conta não é a conta do Mestre. Entre com a conta dele ou use a senha.');
+        /* Recusa limpa: não entra, não guarda perfil nenhum. */
+        pendente.aoFalhar('Esta conta não é a conta do Mestre. Entre com a conta dele.');
       }
+      return;
+    }
+    if (uso === 'jogadora') {
+      guardarPerfil(v.dados, 'jogadora');
+      arrancarJogo(false);
       return;
     }
     if (uso === 'recuperar') {
-      if (v.dados.email === EMAIL_MESTRE) {
-        guardarPerfil(v.dados, 'mestre');
-        /* Emenda B: é ESTE acto — o callback do Google com a conta
-         * dele — que autoriza guardar a senha nova nesta sessão. */
-        autorizadaNovaSenha = true;
-        passoGoogle.hidden = true;
-        passoCampos.hidden = false;
-        passoFeito.hidden = true;
-        campoNova.focus();
-      } else if (pendente.aoFalhar) {
-        pendente.aoFalhar('Esta conta não é a conta do Mestre. A senha só muda com a conta dele.');
-      }
+      /* SENHA: a prova para definir a senha nova — tratada na
+       * secção «SENHA». */
+      if (typeof tratarRecuperacaoGoogle === 'function') tratarRecuperacaoGoogle(v.dados, pendente);
       return;
     }
-    entrarComGoogle(v.dados);
+    /* 'entrar' (trocar de conta): a conta decide o papel. */
+    if (v.dados.email === EMAIL_MESTRE) {
+      guardarPerfil(v.dados, 'mestre');
+      arrancarJogo(true);
+    } else {
+      guardarPerfil(v.dados, 'jogadora');
+      arrancarJogo(false);
+    }
   };
 
-  /* ---------- botões e formulários ---------- */
-  btnGoogle.addEventListener('click', function () {
-    var p = perfilGuardado();
-    if (p) { arrancarJogo(p.papel === 'mestre'); return; }
-    erroGoogleEntrada.textContent = '';
-    pedirGoogle('entrar', function (msg) { erroGoogleEntrada.textContent = msg; });
-  });
-  btnOutraConta.addEventListener('click', function () {
-    erroGoogleEntrada.textContent = '';
-    pedirGoogle('entrar', function (msg) { erroGoogleEntrada.textContent = msg; });
-  });
+  /* ---------- botões principais ---------- */
   btnMestre.addEventListener('click', function () {
     if (mestreLembrado()) { arrancarJogo(true); return; }
-    mostrar('senha');
+    erroEntrada.textContent = '';
+    mostrar('mestre');
   });
-  btnJogadora.addEventListener('click', function () { arrancarJogo(false); });
+  btnJogadora.addEventListener('click', function () {
+    var p = perfilGuardado();
+    if (p && p.papel === 'jogadora') { arrancarJogo(false); return; }
+    erroEntrada.textContent = '';
+    pedirGoogle('jogadora', function (msg) { erroEntrada.textContent = msg; });
+  });
+  btnGoogleMestre.addEventListener('click', function () {
+    erroMestre.textContent = '';
+    pedirGoogle('mestre', function (msg) { erroMestre.textContent = msg; });
+  });
   btnConfig.addEventListener('click', function () { mostrar('config'); });
-  btnVoltarSenha.addEventListener('click', function () { mostrar('botoes'); });
+  btnVoltarMestre.addEventListener('click', function () { mostrar('botoes'); });
   btnVoltarConfig.addEventListener('click', function () { mostrar('botoes'); });
-  btnVoltarNova.addEventListener('click', function () { mostrar(modoNovaSenha === 'trocar' ? 'config' : 'senha'); });
-  btnTrocar.addEventListener('click', function () { abrirNovaSenha('trocar'); });
-  btnEsqueci.addEventListener('click', function () { abrirNovaSenha('recuperar'); });
-  btnGoogleSenha.addEventListener('click', function () {
-    pedirGoogle('mestre-senha', function (msg) { erroSenha.textContent = msg; });
-  });
-  btnGoogleNova.addEventListener('click', function () {
-    erroNovaGoogle.textContent = '';
-    pedirGoogle('recuperar', function (msg) { erroNovaGoogle.textContent = msg; });
+  btnOutraConta.addEventListener('click', function () {
+    mostrar('botoes');
+    erroEntrada.textContent = '';
+    pedirGoogle('entrar', function (msg) { erroEntrada.textContent = msg; });
   });
   btnEsquecer.addEventListener('click', function () {
     esquecerAparelho();
     pintarConfig();
     pintarBotaoMestre();
-    pintarBotaoGoogle();
+    pintarBotaoJogadora();
   });
-  btnEntrarFeito.addEventListener('click', function () { arrancarJogo(true); });
 
-  vistaSenha.addEventListener('submit', function (ev) {
+  /* ================================================================
+   * SENHA — segunda porta do Mestre, confirmada por ele a
+   * 09/11/2026 11:26 (início da secção)
+   * A porta da senha do Mestre: PBKDF2-HMAC-SHA256 (crypto.subtle;
+   * 250 000 iterações; sal fixo). A senha NUNCA é escrita neste
+   * ficheiro nem em lado nenhum — mora aqui só o RESUMO esperado.
+   * Quando ele troca a senha neste aparelho, o resumo novo fica
+   * guardado NESTE aparelho e passa a ser o que a porta aceita aqui;
+   * a constante continua a valer nos outros aparelhos até uma
+   * republicação com o resumo novo (limite do protótipo, registado
+   * no relatório da tranche REF_33).
+   * ================================================================ */
+  function hexParaBytes(hex) {
+    var b = new Uint8Array(hex.length / 2);
+    for (var i = 0; i < b.length; i++) b[i] = parseInt(hex.substr(i * 2, 2), 16);
+    return b;
+  }
+  function bytesParaHex(bytes) {
+    var s = '';
+    for (var i = 0; i < bytes.length; i++) s += ('0' + bytes[i].toString(16)).slice(-2);
+    return s;
+  }
+  /* Comparação sem atalhos: percorre sempre os dois resumos inteiros. */
+  function resumosIguais(a, b) {
+    if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+    var dif = 0;
+    for (var i = 0; i < a.length; i++) dif |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return dif === 0;
+  }
+  function derivarResumoHex(senha) {
+    if (!window.crypto || !crypto.subtle || !crypto.subtle.importKey) {
+      return Promise.reject(new Error('sem-crypto-subtle'));
+    }
+    var enc = new TextEncoder();
+    return crypto.subtle.importKey('raw', enc.encode(senha), 'PBKDF2', false, ['deriveBits'])
+      .then(function (chave) {
+        return crypto.subtle.deriveBits(
+          { name: 'PBKDF2', hash: 'SHA-256', salt: hexParaBytes(SAL_MESTRE_HEX), iterations: ITERACOES_PBKDF2 },
+          chave, 256);
+      })
+      .then(function (bits) { return bytesParaHex(new Uint8Array(bits)); });
+  }
+  /* O resumo em vigor neste aparelho: se ele trocou a senha aqui, o
+   * resumo novo guardado manda; senão, a constante com que a página
+   * nasceu. A porta e a guarda lêem sempre daqui — uma função só. */
+  function resumoEmVigor() {
+    try {
+      var r = localStorage.getItem(CHAVE_RESUMO_APARELHO);
+      if (r && /^[0-9a-f]{64}$/.test(r)) return r;
+    } catch (_) {}
+    return RESUMO_MESTRE_HEX;
+  }
+  function temOverride() {
+    try { return !!localStorage.getItem(CHAVE_RESUMO_APARELHO); } catch (_) { return false; }
+  }
+  function aparelhoLembra() {
+    try { return localStorage.getItem(CHAVE_APARELHO) === resumoEmVigor(); }
+    catch (_) { return false; }
+  }
+  function lembrarAparelho() {
+    try { localStorage.setItem(CHAVE_APARELHO, resumoEmVigor()); } catch (_) {}
+  }
+  function notasSenhaDoAparelho() {
+    var notas = [];
+    if (aparelhoLembra()) notas.push('Este aparelho lembra a sua entrada como Mestre pela senha.');
+    if (temOverride()) notas.push('Este aparelho guarda uma senha do Mestre trocada neste aparelho.');
+    return notas;
+  }
+
+  /* --- a zona da senha dentro da vista do Mestre --- */
+  var btnSenhaLigacao = el('button', 'ent-ligacao', 'Entrar com a senha');
+  btnSenhaLigacao.id = 'ent-senha-ligacao'; btnSenhaLigacao.type = 'button';
+  zonaSenhaHost.appendChild(btnSenhaLigacao);
+  var formSenha = el('form', 'ent-zona-senha');
+  formSenha.hidden = true;
+  var rotuloSenha = el('label', 'cl', 'A sua senha');
+  rotuloSenha.htmlFor = 'ent-senha-campo';
+  var campoSenha = el('input', 'ent-campo');
+  campoSenha.id = 'ent-senha-campo';
+  campoSenha.type = 'password';
+  campoSenha.setAttribute('autocomplete', 'current-password');
+  var erroSenha = el('p', 'ent-erro');
+  erroSenha.setAttribute('role', 'alert');
+  var btnEntrarSenha = el('button', 'ent-accao', 'Entrar');
+  btnEntrarSenha.id = 'ent-entrar-senha'; btnEntrarSenha.type = 'submit';
+  btnEntrarSenha.style.width = '100%';
+  var btnEsqueci = el('button', 'ent-ligacao', 'Esqueci a senha');
+  btnEsqueci.id = 'ent-esqueci'; btnEsqueci.type = 'button';
+  formSenha.appendChild(rotuloSenha);
+  formSenha.appendChild(campoSenha);
+  formSenha.appendChild(erroSenha);
+  formSenha.appendChild(btnEntrarSenha);
+  formSenha.appendChild(btnEsqueci);
+  zonaSenhaHost.appendChild(formSenha);
+
+  function fecharZonaSenha() {
+    formSenha.hidden = true;
+    erroSenha.textContent = '';
+    campoSenha.value = '';
+  }
+  btnSenhaLigacao.addEventListener('click', function () {
+    var abrir = formSenha.hidden;
+    formSenha.hidden = !abrir;
+    if (abrir) { erroSenha.textContent = ''; campoSenha.focus(); }
+  });
+  formSenha.addEventListener('submit', function (ev) {
     ev.preventDefault();
     var senha = campoSenha.value;
     if (!senha) { erroSenha.textContent = 'Escreva a sua senha para entrar.'; return; }
@@ -678,13 +642,120 @@
     });
   });
 
+  /* --- Vista 3: a senha nova (recuperar com a prova do Google;
+   * trocar para quem já entrou neste aparelho) --- */
+  vistaNovaSenha = el('form', 'ent-painel');
+  vistaNovaSenha.hidden = true;
+  var tituloNovaSenha = el('h2', null, 'Definir a nova senha');
+  vistaNovaSenha.appendChild(tituloNovaSenha);
+  var passoGoogle = el('div');
+  passoGoogle.appendChild(el('p', 'ent-nota',
+    'Para ter a certeza de que é você, entre primeiro com a sua conta Google. Depois define a senha nova.'));
+  var erroNovaGoogle = el('p', 'ent-erro');
+  erroNovaGoogle.setAttribute('role', 'alert');
+  var btnGoogleNova = el('button', 'ent-google painel', 'Entrar com a sua conta Google');
+  btnGoogleNova.id = 'ent-google-nova'; btnGoogleNova.type = 'button';
+  passoGoogle.appendChild(erroNovaGoogle);
+  passoGoogle.appendChild(btnGoogleNova);
+  vistaNovaSenha.appendChild(passoGoogle);
+  var passoCampos = el('div');
+  passoCampos.hidden = true;
+  var rotuloNova = el('label', 'cl', 'A senha nova');
+  rotuloNova.htmlFor = 'ent-nova-campo';
+  var campoNova = el('input', 'ent-campo');
+  campoNova.id = 'ent-nova-campo'; campoNova.type = 'password';
+  campoNova.setAttribute('autocomplete', 'new-password');
+  var rotuloNova2 = el('label', 'cl', 'Escreva outra vez a senha nova');
+  rotuloNova2.htmlFor = 'ent-nova-campo2';
+  var campoNova2 = el('input', 'ent-campo');
+  campoNova2.id = 'ent-nova-campo2'; campoNova2.type = 'password';
+  campoNova2.setAttribute('autocomplete', 'new-password');
+  var erroNova = el('p', 'ent-erro');
+  erroNova.setAttribute('role', 'alert');
+  var btnGuardarNova = el('button', 'ent-accao', 'Guardar a senha nova');
+  btnGuardarNova.id = 'ent-guardar-nova'; btnGuardarNova.type = 'submit';
+  btnGuardarNova.style.width = '100%';
+  passoCampos.appendChild(rotuloNova);
+  passoCampos.appendChild(campoNova);
+  passoCampos.appendChild(rotuloNova2);
+  passoCampos.appendChild(campoNova2);
+  passoCampos.appendChild(erroNova);
+  passoCampos.appendChild(btnGuardarNova);
+  passoCampos.appendChild(el('p', 'ent-nota',
+    'A senha nova passa a valer neste aparelho. Nos outros aparelhos, vale a senha antiga até o jogo ser actualizado com a nova.'));
+  vistaNovaSenha.appendChild(passoCampos);
+  var passoFeito = el('div');
+  passoFeito.hidden = true;
+  passoFeito.appendChild(el('p', 'ent-nota', 'Senha nova guardada neste aparelho.'));
+  var btnEntrarFeito = el('button', 'ent-accao', 'Entrar como Mestre');
+  btnEntrarFeito.id = 'ent-nova-entrar'; btnEntrarFeito.type = 'button';
+  btnEntrarFeito.style.width = '100%';
+  passoFeito.appendChild(btnEntrarFeito);
+  vistaNovaSenha.appendChild(passoFeito);
+  var btnVoltarNova = el('button', 'ent-accao sec', 'Voltar');
+  btnVoltarNova.type = 'button';
+  btnVoltarNova.style.marginTop = '8px';
+  btnVoltarNova.style.width = '100%';
+  vistaNovaSenha.appendChild(btnVoltarNova);
+  raiz.appendChild(vistaNovaSenha);
+
+  var modoNovaSenha = 'recuperar'; /* 'recuperar' | 'trocar' */
+  /* Emenda B da bancada (REF_33): a autorização para guardar uma
+   * senha nova é uma bandeira de SESSÃO — variável em memória, nunca
+   * localStorage e nunca o estado visível/escondido do formulário. É
+   * posta SÓ pelo callback do Google com a conta dele, no fluxo de
+   * recuperação; no modo «trocar», a autorização é reconferida no
+   * acto de gravar. */
+  var autorizadaNovaSenha = false;
+  function abrirNovaSenha(modo) {
+    if (modo === 'trocar' && !mestreLembrado()) {
+      /* Emenda B: abrir a troca reverifica — um clique programático
+       * no botão escondido, num aparelho que não lembra o Mestre,
+       * não abre campo nenhum. */
+      return;
+    }
+    modoNovaSenha = modo;
+    autorizadaNovaSenha = false; /* cada abertura começa sem autorização */
+    tituloNovaSenha.textContent = modo === 'trocar' ? 'Trocar a senha' : 'Definir a nova senha';
+    erroNovaGoogle.textContent = '';
+    erroNova.textContent = '';
+    campoNova.value = '';
+    campoNova2.value = '';
+    passoGoogle.hidden = modo !== 'recuperar';
+    passoCampos.hidden = modo === 'recuperar';
+    passoFeito.hidden = true;
+    mostrar('novasenha');
+    if (modo === 'trocar') campoNova.focus();
+  }
+  function tratarRecuperacaoGoogle(dados, pendente) {
+    if (dados.email === EMAIL_MESTRE) {
+      guardarPerfil(dados, 'mestre');
+      /* Emenda B: é ESTE acto — o callback do Google com a conta
+       * dele — que autoriza guardar a senha nova nesta sessão. */
+      autorizadaNovaSenha = true;
+      passoGoogle.hidden = true;
+      passoCampos.hidden = false;
+      passoFeito.hidden = true;
+      campoNova.focus();
+    } else if (pendente && pendente.aoFalhar) {
+      pendente.aoFalhar('Esta conta não é a conta do Mestre. A senha só muda com a conta dele.');
+    }
+  }
+  btnEsqueci.addEventListener('click', function () { abrirNovaSenha('recuperar'); });
+  btnTrocar.addEventListener('click', function () { abrirNovaSenha('trocar'); });
+  btnGoogleNova.addEventListener('click', function () {
+    erroNovaGoogle.textContent = '';
+    pedirGoogle('recuperar', function (msg) { erroNovaGoogle.textContent = msg; });
+  });
+  btnVoltarNova.addEventListener('click', function () { mostrar(modoNovaSenha === 'trocar' ? 'config' : 'mestre'); });
+  btnEntrarFeito.addEventListener('click', function () { arrancarJogo(true); });
   vistaNovaSenha.addEventListener('submit', function (ev) {
     ev.preventDefault();
-    /* Emenda B da bancada: guardar exige autorização NO ACTO, não no
-     * ecrã — na recuperação, a bandeira de sessão posta pelo callback
-     * do Google com a conta dele; na troca, o aparelho a lembrar o
-     * Mestre neste momento. Um submit programático sem autorização
-     * não grava override nenhum. */
+    /* Emenda B da bancada (REF_33): guardar exige autorização NO
+     * ACTO, não no ecrã — na recuperação, a bandeira de sessão posta
+     * pelo callback do Google com a conta dele; na troca, o aparelho
+     * a lembrar o Mestre neste momento. Um submit programático sem
+     * autorização não grava override nenhum. */
     var autorizado = modoNovaSenha === 'trocar' ? mestreLembrado() : autorizadaNovaSenha;
     if (!autorizado) {
       erroNova.textContent = modoNovaSenha === 'trocar'
@@ -711,8 +782,9 @@
       erroNova.textContent = 'Este aparelho não conseguiu guardar a senha nova agora. Tente outra vez.';
     });
   });
+  /* ============ SENHA — fim da secção ============ */
 
   pintarBotaoMestre();
-  pintarBotaoGoogle();
+  pintarBotaoJogadora();
   document.body.appendChild(raiz);
 })();

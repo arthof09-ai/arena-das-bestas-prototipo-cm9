@@ -1,25 +1,32 @@
-/* Entrada do protótipo (tranche t-entrada-mestre): ecrã de entrada sobre
-   o Layout de referência oficial (LAYOUT-PAGINA-ENTRADA + EMENDA 06/11
-   21:02). Enquanto a entrada está pendente, o DOM do jogo nasce
-   escondido: o jogo não faz boot nem constrói nada antes da escolha.
-   Posições = as zonas medidas do layout (paisagem governa; retrato
-   espelha). Estilo = o da casa (ouro, painéis escuros, Georgia). */
+/* Entrada do protótipo (tranches t-entrada-mestre, t-entrada-google e
+   t-entrada-google-nativa) + CARA V12 (reconstrução por palavra dele,
+   09/11 12:24: «quero exatamente o mesmo título, as mesmas opções, no
+   mesmo estilo, no mesmo local»).
+   PAISAGEM: o fundo é a PRÓPRIA arte do layout v12 (o título pintado É
+   o título — nenhum texto HTML por cima) e os três botões reais são
+   placas ornamentadas que cobrem por completo os botões pintados, nas
+   caixas medidas em MEDICAO-V12.md. A entrada vira um PALCO com a
+   proporção da referência (1672:941), centrado; fora do palco, a mesma
+   cena desfocada e escurecida. RETRATO: sem referência — mantém-se a
+   composição anterior (cena limpa V17 em cover, título em texto,
+   placas empilhadas centradas em baixo), com o mesmo estilo de placa.
+   Enquanto a entrada está pendente, o DOM do jogo nasce escondido. */
 
 html.entrada-pendente body > *:not(#entrada) { display: none !important; }
 
 #entrada {
   position: fixed; inset: 0; z-index: 200; overflow: hidden;
   background:
-    linear-gradient(rgba(6, 8, 6, .80), rgba(6, 8, 6, .90)),
-    url('textura-chao-pintado.jpg') center / cover no-repeat #0a0f0a;
+    linear-gradient(rgba(4, 3, 2, .30), rgba(4, 3, 2, 0) 26%, rgba(4, 3, 2, 0) 68%, rgba(4, 3, 2, .42)),
+    url('cena-entrada-v17.webp') center / cover no-repeat #0a0f0a;
   color: var(--pergaminho, #efe6cf);
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
-/* ---------- placa do título (provisória: texto no estilo do jogo;
-   a arte pintada é da página final, com o vídeo) ---------- */
+/* ---------- placa do título (só retrato: em paisagem o título é o
+   pintado do fundo v12) ---------- */
 .ent-placa {
-  position: absolute; left: 29%; width: 42%; top: 4%; height: 17%;
+  position: absolute; left: 25%; width: 50%; top: 3.5%; height: 17%;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   text-align: center; pointer-events: none;
 }
@@ -34,45 +41,57 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   color: var(--ouro);
 }
 
-/* ---------- coluna de botões (Estado B do layout) ---------- */
+/* ---------- as três placas: placa escura hexagonal, moldura dourada
+   dupla com cantos ornamentados, letras douradas em caixa alta — o
+   estilo dos botões pintados do v12 (a moldura vai desenhada num SVG
+   de fundo, para seguir as pontas da placa) ---------- */
 .ent-btn {
-  position: absolute; left: 36.5%; width: 27%; min-height: 44px;
+  position: absolute; min-height: 44px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  background: rgba(28, 21, 12, .88); color: var(--pergaminho, #efe6cf);
-  border: 1px solid rgba(201, 162, 39, .8); border-radius: 8px;
-  font-size: clamp(14px, 2.4vh, 20px); font-weight: 700; cursor: pointer;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, .5);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 69' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%232b1f11'/%3E%3Cstop offset='.45' stop-color='%23130d07'/%3E%3Cstop offset='1' stop-color='%2321170c'/%3E%3C/linearGradient%3E%3CradialGradient id='r' cx='.5' cy='.5' r='.5'%3E%3Cstop offset='0' stop-color='%23ffbe5a' stop-opacity='.14'/%3E%3Cstop offset='1' stop-color='%23ffbe5a' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cpolygon points='16,2 304,2 318,34.5 304,67 16,67 2,34.5' fill='url(%23g)' stroke='%23d9b45f' stroke-width='2.5'/%3E%3Cpolygon points='21,7.5 299,7.5 311,34.5 299,61.5 21,61.5 9,34.5' fill='url(%23r)' stroke='%23a37f33' stroke-width='1'/%3E%3Cellipse cx='160' cy='3' rx='55' ry='2.6' fill='%23ffe9b0' opacity='.75'/%3E%3Cellipse cx='160' cy='66' rx='55' ry='2.6' fill='%23ffdf9a' opacity='.45'/%3E%3Cpolygon points='3,34.5 9,28.5 15,34.5 9,40.5' fill='%23e8c877'/%3E%3Cpolygon points='317,34.5 311,28.5 305,34.5 311,40.5' fill='%23e8c877'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  border: none; border-radius: 0;
+  color: #ecd28a;
+  font-family: Georgia, 'DejaVu Serif', serif; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .02em;
+  font-size: clamp(13px, 2.4vh, 19px);
+  cursor: pointer; text-align: center; padding: 6px 10px;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .55));
+  text-shadow: 0 1px 6px rgba(0, 0, 0, .9), 0 0 12px rgba(201, 162, 39, .30);
+  white-space: nowrap;
 }
-.ent-btn:active { background: rgba(52, 40, 18, .92); }
+.ent-btn:active { filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .55)) brightness(1.28); }
+/* a letra pintada é condensada (tipo Trajano): condensa-se o rótulo */
+.ent-btn > span:not(.sub) { display: block; transform: scaleX(.75); }
 .ent-btn .sub {
+  width: 100%; text-align: center;
+  font-family: 'Segoe UI', system-ui, sans-serif;
   font-size: clamp(10px, 1.7vh, 13px); font-weight: 600;
-  color: var(--ouro-claro); letter-spacing: .02em;
+  color: var(--pergaminho-fraco, #cbbd97); letter-spacing: .02em;
+  text-transform: none; white-space: normal;
 }
-/* O «Entrar como Mestre» ocupa a faixa do antigo Continuar: destaque. */
-#ent-mestre {
-  top: 50%; height: 10%;
-  background: linear-gradient(180deg, rgba(84, 62, 16, .92), rgba(52, 40, 14, .92));
-  border-color: var(--ouro-vivo); color: var(--ouro-claro);
-}
-#ent-jogadora { top: 62.5%; height: 8%; }
-#ent-config {
-  left: 41.5%; width: 17%; top: 73.5%; height: 6%;
-  font-size: clamp(12px, 2vh, 16px);
-}
+/* geometria base (retrato trata a sua mais abaixo) */
+#ent-mestre { left: 19.3%; bottom: 4.5%; width: 21%; }
+#ent-jogadora { left: 39.7%; bottom: 4.5%; width: 21%; }
+#ent-config { left: 59%; bottom: 4.5%; width: 21%; font-size: clamp(12px, 2vh, 16px); }
 .ent-ajuda {
-  position: absolute; left: 36.5%; width: 27%; top: 82.5%;
+  position: absolute; left: 25%; width: 50%; bottom: 1.2%;
   text-align: center; font-size: clamp(11px, 1.8vh, 14px);
   color: var(--pergaminho-fraco, #cbbd97);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, .9);
 }
 
-/* ---------- painéis (senha e configurações): mesma zona da coluna ---------- */
+/* ---------- painéis (senha e configurações) ---------- */
 .ent-painel {
   position: absolute; left: 31%; width: 38%; top: 34%;
   max-height: 62%; overflow-y: auto;
   background: rgba(16, 12, 7, .94); border: 1px solid rgba(201, 162, 39, .8);
   border-radius: 10px; padding: 16px 18px 14px;
   box-shadow: 0 10px 34px rgba(0, 0, 0, .6);
+  scrollbar-width: thin; scrollbar-color: rgba(201, 162, 39, .7) rgba(10, 8, 5, .6);
 }
+.ent-painel::-webkit-scrollbar { width: 6px; }
+.ent-painel::-webkit-scrollbar-thumb { background: rgba(201, 162, 39, .55); border-radius: 3px; }
+.ent-painel::-webkit-scrollbar-track { background: rgba(10, 8, 5, .5); }
 .ent-painel h2 {
   font-family: Georgia, 'DejaVu Serif', serif; font-size: 13px;
   letter-spacing: .18em; text-transform: uppercase; color: var(--ouro);
@@ -106,8 +125,8 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
 }
 .ent-painel .cfgrow { margin: 7px 0; }
 
-/* ---------- a porta do Google (tranche t-entrada-google) ---------- */
-/* Botão branco, no jeito que as pessoas reconhecem como «Google». */
+/* ---------- a porta do Google: o fluxo vive DENTRO dos botões de
+   entrar; não há botão do Google na vista 1 ---------- */
 .ent-google {
   display: flex; align-items: center; justify-content: center; gap: 10px;
   background: #fff; color: #1f1f1f; border: 1px solid rgba(0, 0, 0, .25);
@@ -115,46 +134,75 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   box-shadow: 0 4px 18px rgba(0, 0, 0, .5);
 }
 .ent-google:active { background: #e8e8e8; }
-.ent-google .g-marca {
-  font-family: Georgia, 'DejaVu Serif', serif; font-weight: 700; font-size: 1.15em;
-  color: #4285f4;
-}
-/* Na vista 1, o botão do Google fica na zona da cena, acima da coluna. */
-#ent-google-btn {
-  position: absolute; left: 36.5%; width: 27%; top: 24.5%; min-height: 46px;
-  padding: 6px 10px; font-size: clamp(13px, 2.2vh, 18px);
-}
-.ent-outra-conta {
-  position: absolute; left: 36.5%; width: 27%; top: 32.5%;
-  background: none; border: none; cursor: pointer; padding: 4px;
-  color: var(--ouro-claro); font-size: clamp(11px, 1.8vh, 13px);
-  text-decoration: underline; text-align: center;
-}
-.ent-erro-google {
-  position: absolute; left: 36.5%; width: 27%; top: 36.5%;
+.ent-google.painel { width: 100%; min-height: 46px; margin-top: 10px; padding: 0 12px; font-size: 15px; }
+.ent-erro-entrada {
+  position: absolute; left: 29.5%; width: 41%; bottom: 13.5%;
   min-height: 18px; margin: 0; text-align: center;
   font-size: 13px; color: #f0a596;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, .95), 0 0 18px rgba(0, 0, 0, .8);
 }
-/* Dentro dos painéis, o botão do Google é uma linha inteira. */
-.ent-google.painel { width: 100%; min-height: 46px; margin-top: 10px; padding: 0 12px; font-size: 15px; }
 .ent-ligacao {
   display: block; margin: 10px auto 0; background: none; border: none; cursor: pointer;
   color: var(--ouro-claro); font-size: 14px; font-weight: 700;
   text-decoration: underline; padding: 6px;
 }
+.ent-zona-senha { margin-top: 4px; }
 
-/* ---------- retrato: as mesmas bandas, espelhadas ---------- */
+/* ---------- PAISAGEM: o palco v12 ---------- */
+@media (orientation: landscape) {
+  /* fora do palco: a mesma cena, desfocada e escurecida */
+  html.entrada-pendente body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0;
+    background: url('fundo-v12.webp') center / cover no-repeat #070303;
+    filter: blur(14px) brightness(.45); transform: scale(1.07);
+  }
+  #entrada {
+    inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(100vw, 177.68vh); aspect-ratio: 1672 / 941; max-height: 100vh;
+    background: url('fundo-v12.webp') center / 100% 100% no-repeat #0a0505;
+    box-shadow: 0 0 60px rgba(0, 0, 0, .85);
+    container-type: size;
+  }
+  /* o título é o pintado: a placa HTML fica para leitores de ecrã */
+  .ent-placa {
+    left: 0; top: 0; width: 1px; height: 1px; overflow: hidden;
+    clip-path: inset(50%); white-space: nowrap;
+  }
+  /* a linha de ajuda não existe na referência: o subtítulo pintado
+     («ASSIMILAÇÃO · VERSÃO 0.5») ocupa o seu lugar */
+  .ent-ajuda { display: none; }
+  /* as placas reais SOBRE as pintadas (caixas de MEDICAO-V12.md) */
+  .ent-btn { top: 85.23%; bottom: auto; height: 7.33%; min-height: 0; font-size: 1.45cqw; padding: 2px 1.6cqw; }
+  .ent-btn .sub { font-size: 1.15cqw; }
+  /* com perfil guardado (rótulo + sub) a placa tem altura fixa da
+     pintura: os dois textos encolhem para caberem dentro dela */
+  .ent-btn:has(.sub) { font-size: 1.18cqw; }
+  .ent-btn:has(.sub) .sub { font-size: .95cqw; line-height: 1.12; }
+  #ent-mestre { left: 19.92%; width: 19.20%; }
+  #ent-jogadora { left: 40.79%; width: 19.14%; }
+  #ent-config { left: 60.83%; width: 19.14%; font-size: 1.45cqw; }
+  .ent-erro-entrada { left: 27%; width: 46%; bottom: 16.6%; }
+  /* painéis: sobem e ganham altura — F2 (Configurações com perfil a
+     1280×720 cortava «Esquecer»/«Voltar»): cabe, ou rola com a barra
+     fina dourada visível */
+  .ent-painel { left: 30%; width: 40%; top: 25%; max-height: 73.5%; padding: 13px 16px 12px; }
+  .ent-painel .cfgrow { margin: 4px 0; }
+}
+
+/* ---------- RETRATO: composição anterior (sem referência v12):
+   a cena limpa em cover (o centro fica: eclipse, Zhu Feng e a Wang);
+   as placas empilham centradas em baixo, sempre alcançáveis -------- */
 @media (orientation: portrait) {
-  .ent-placa { left: 8%; width: 84%; top: 5%; height: 11.5%; }
+  .ent-placa { left: 5%; width: 90%; top: 4%; height: 11.5%; }
   .ent-titulo { font-size: clamp(22px, 8.4vw, 40px); letter-spacing: .08em; }
   .ent-faixa { font-size: clamp(9px, 3.2vw, 13px); letter-spacing: .26em; }
-  .ent-btn { left: 21%; width: 58%; }
-  #ent-mestre { top: 46%; height: 8.5%; }
-  #ent-jogadora { top: 56.5%; height: 6.5%; }
-  #ent-config { left: 29.5%; width: 41%; top: 65%; height: 6.5%; }
-  .ent-ajuda { left: 21%; width: 58%; top: 73%; }
-  .ent-painel { left: 8%; width: 84%; top: 30%; max-height: 66%; }
-  #ent-google-btn { left: 21%; width: 58%; top: 19.5%; }
-  .ent-outra-conta { left: 21%; width: 58%; top: 27.5%; }
-  .ent-erro-google { left: 21%; width: 58%; top: 31%; }
+  .ent-btn { min-height: 46px; }
+  /* left E width vêm por ID (a regra base é por ID) — repetir por ID */
+  #ent-mestre, #ent-jogadora, #ent-config { left: 15%; width: 70%; }
+  #ent-config { bottom: 2.5%; }
+  #ent-jogadora { bottom: calc(2.5% + 56px); }
+  #ent-mestre { bottom: calc(2.5% + 112px); }
+  .ent-ajuda { left: 10%; width: 80%; bottom: calc(2.5% + 168px); }
+  .ent-painel { left: 8%; width: 84%; top: 24%; max-height: 70%; }
+  .ent-erro-entrada { left: 10%; width: 80%; bottom: calc(2.5% + 196px); }
 }
