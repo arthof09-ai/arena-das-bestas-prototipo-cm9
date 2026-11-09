@@ -1303,6 +1303,37 @@
         && vlabVidaOng() <= 0) return 'aMorrer';
     return null;
   }
+  /* ---------- consumo da cura nela (Q4) ----------
+   * Espelho do vlabAplicarAlvoDepois para o recibo de cura
+   * (vlabAplicarCura): é por aqui que uma cura que a tem por alvo
+   * entra no estado da casca. Regra Q4 do Mestre: sobre a
+   * estabilizada, a cura soma por cima do 1 de Vida que ela tem —
+   * o motor aplica-a normalmente a partir dessa Vida e o recibo
+   * traz a Vida depois; a marca de estabilizada é da casca e sai
+   * aqui: curou e ela ficou acima de 0 → a marca apaga-se, ela
+   * levanta-se na vista e a rotação volta a dar-lhe a vez quando
+   * lá chegar (passarVez já não a salta sem a marca). O motor só
+   * emite estadoMorte:null no recibo quando a cura parte de Vida
+   * 0 — com a marca Q4 ela está a 1, por isso quem limpa é este
+   * consumo, nos dois casos. Para outras figuras devolve null:
+   * nenhuma cura de monstro tem consumidor vivo nesta casca,
+   * como até aqui. */
+  function vlabAplicarCuraDepois(id, saida) {
+    const dep = (saida && saida.soDoMestre || {}).alvoDepois;
+    if (!dep || id !== PROPRIA) return null;
+    if (Number.isFinite(dep.vidaActual)) {
+      danoSofrido = FICHAS.ong.vida.total - dep.vidaActual;
+      atualizarChipVida();
+    }
+    if (dep.estadoMorte === null) ESTADO_VLAB.ong.estadoMorte = null;
+    const em = ESTADO_VLAB.ong.estadoMorte;
+    if (em && em.fase === 'estabilizado' && vlabVidaOng() > 0) {
+      ESTADO_VLAB.ong.estadoMorte = null;
+      view.setVivo(PROPRIA, true);   // levanta-se: a pose de caída sai
+      return 'levantou';
+    }
+    return null;
+  }
   /* Terminal de VITÓRIA (A01): os três monstros fora de combate
      na cena (a vista é a verdade da queda, como na rotação de vez
      e nos alvos vivos FID-R2). */
@@ -1371,7 +1402,20 @@
     ESTADO_VLAB.ong.estadoMorte = s.estadoMorte;
     supRegistar('accao', { acao: 'teste-de-morte', actor: PROPRIA,
       sucessos: s.estadoMorte.sucessos, falhas: s.estadoMorte.falhas, desfecho: s.desfecho });
-    if (s.desfecho === 'estabilizado') { fimDeBatalha('estabilizada'); return null; }
+    if (s.desfecho === 'estabilizado') {
+      /* Q4 (palavra do Mestre, 08/11/2026): estabilizar NÃO fecha
+         a batalha. Ela volta com 1 de Vida, continua caída (a vista
+         tem-na no chão desde entrarAMorrer — nada se levanta aqui)
+         e fica sem lutar até receber uma cura; a cura soma por
+         cima desse 1. A marca fica em estadoMorte com a fase
+         'estabilizado' que o motor devolveu: este relógio só corre
+         em 'aMorrer' (os testes param) e passarVez salta a vez
+         dela enquanto a marca durar. A frase é a da regra, a mesma
+         que o terminal antigo anunciava — agora sem fim. */
+      danoSofrido = FICHAS.ong.vida.total - 1;
+      atualizarChipVida();
+      return 'A <b>Ong</b> caiu, mas estabilizou — ela volta com <b>1 de Vida</b> e fica caída, sem lutar, até receber uma cura. A cura soma por cima desse 1.';
+    }
     if (s.desfecho === 'morreu') { fimDeBatalha('morte'); return null; }
     return s.sucesso
       ? 'A <b>Ong</b>, caída, aguenta-se — continua a respirar.'
@@ -2128,6 +2172,18 @@
         if (ordem[indiceVez] === PROPRIA) return;   // sem monstro vivo com vez (defensivo; o terminal trata)
         iniciarVezIA(ordem[indiceVez], true);
         if (fraseMorte) say(fraseMorte + ` Vez de <b>${nomeCena(ordem[indiceVez])}</b>.`);
+        return;
+      }
+      if (ESTADO_VLAB.ong.estadoMorte && ESTADO_VLAB.ong.estadoMorte.fase === 'estabilizado') {
+        /* Q4: estabilizada, a vez dela SALTA — continua caída com
+           1 de Vida, sem agir e sem testes de morte, até uma cura
+           a levantar (a marca sai no consumo da cura,
+           vlabAplicarCuraDepois). A vez passa ao próximo monstro
+           vivo, pelo mesmo caminho do ramo da corrida de morte. */
+        avancarParaFiguraComVez();
+        if (ordem[indiceVez] === PROPRIA) return;   // sem monstro vivo com vez (defensivo; o terminal trata)
+        iniciarVezIA(ordem[indiceVez], true);
+        say(`A <b>Ong</b> continua caída — estabilizou, mas só uma cura a levanta. Vez de <b>${nomeCena(ordem[indiceVez])}</b>.`);
         return;
       }
       iniciarVez(PROPRIA);
@@ -4357,8 +4413,17 @@
        inválido (antes bastava ser finito). */
     if (!inteiro(o.danoSofrido) || o.danoSofrido < 0 || o.danoSofrido > 999) return INV;
     /* danoSofrido coerente com vivo: viva ⇒ dano < Vida total;
-       morta ⇒ dano >= Vida total (é assim que fimDeBatalha nasce). */
-    if (ongU.vivo ? o.danoSofrido >= FICHAS.ong.vida.total
+       morta ⇒ dano >= Vida total (é assim que fimDeBatalha nasce).
+       Q4 (08/11/2026): a estabilizada é a excepção desenhada —
+       caída na vista (vivo false) com 1 de Vida (dano = total − 1)
+       e a marca 'estabilizado' no bloco do motor, que o validador
+       do bloco (validarVlabUnidade) já aceitava; sem a marca, ou
+       com outro dano, vale a régua antiga. */
+    const emSaveOng = e.vlab && e.vlab.ong ? e.vlab.ong.estadoMorte : null;
+    const saveEstabilizada = !!(emSaveOng && emSaveOng.fase === 'estabilizado');
+    if (saveEstabilizada) {
+      if (ongU.vivo || o.danoSofrido !== FICHAS.ong.vida.total - 1) return INV;
+    } else if (ongU.vivo ? o.danoSofrido >= FICHAS.ong.vida.total
                   : o.danoSofrido < FICHAS.ong.vida.total) return INV;
     if (!inteiro(o.paGasto) || o.paGasto < 0 || o.paGasto > FICHAS.ong.alma.total) return INV;
     if (typeof o.transformada !== 'boolean' || typeof o.atacou !== 'boolean') return INV;
@@ -4377,7 +4442,8 @@
        fase não é 'vez-ia': é a mesma porta, vista dos dois lados). */
     if ((e.fase === 'fim') !== e.batalhaFim) return INV;
     if (e.fase === 'vez-ia' && e.vez === PROPRIA) return INV;
-    if (e.batalhaFim !== !ongU.vivo) return INV;     // batalhaFim coerente
+    if (saveEstabilizada) { if (e.batalhaFim || ongU.vivo) return INV; }   // Q4: caída com a batalha a correr
+    else if (e.batalhaFim !== !ongU.vivo) return INV;     // batalhaFim coerente
     /* consumiveis (correcção nomeada 5): a v2 NÃO tem inventário —
        lista não-vazia é REJEITADA, nunca descartada em silêncio. */
     if (!Array.isArray(e.consumiveis) || e.consumiveis.length !== 0) return INV;
