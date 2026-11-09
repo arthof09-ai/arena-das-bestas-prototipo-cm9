@@ -298,7 +298,7 @@
                 return true;
             }
             function ambReaplicar() { if (ambDerivados) ambEscrever(ambAmostra(ambActual.hora), ambActual.chuva, 0); }
-            let width = 1, height = 1, selected = null, mode = 'fixa', quality = 'alta', disposed = false, raf, last = performance.now(), fps = 0, fpsAt = last, frames = 0, shadowAt = 0, yaw = 0, pitch = 1.05, viewWidth = 20;
+            let width = 1, height = 1, selected = null, mode = 'fixa', quality = 'alta', disposed = false, raf, last = performance.now(), fps = 0, fpsAt = last, frames = 0, shadowAt = 0, yaw = 0, pitch = 1.05, viewWidth = 20, primeiraVista = true;
             const zoom = { fixa: 1.5, seguir: 1, '360': 1 }, units = new Map(), events = new EventTarget(), times = [];
             let presentation = null;
             const emit = (type, detail) => events.dispatchEvent(new CustomEvent(type, { detail })), publicUnit = u => ({ id: u.id, nome: u.nome, posicao: { x: u.x, y: u.z }, altitude: u.altitude, vivo: u.vivo });
@@ -748,7 +748,7 @@
                 if (disposed)
                     return;
                 raf = requestAnimationFrame(animate);
-                const dt = Math.min(.08, (now - last) / 1000);
+                const dt = Math.min(.08, Math.max(0, (now - last) / 1000));
                 last = now;
                 if (document.hidden)
                     return;
@@ -803,6 +803,10 @@
                 const p = mode === '360' ? pitch : mode === 'seguir' ? 1 : width < height ? .72 : 1.12, a = mode === '360' ? yaw : mode === 'fixa' && width < height ? Math.PI / 2 : 0, distance = Math.max(45, extent * 2);
                 camera.position.set(target.x + Math.sin(a) * Math.cos(p) * distance, target.y + Math.sin(p) * distance, target.z + Math.cos(a) * Math.cos(p) * distance);
                 camera.lookAt(target);
+                if (primeiraVista) {
+                    viewWidth = baseWidth() / zoom[mode];
+                    primeiraVista = false;
+                }
                 viewWidth = T.MathUtils.lerp(viewWidth, baseWidth() / zoom[mode], 1 - Math.exp(-dt * 10));
                 camera.left = -viewWidth / 2;
                 camera.right = viewWidth / 2;
