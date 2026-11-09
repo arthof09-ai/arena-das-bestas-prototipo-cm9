@@ -1514,8 +1514,7 @@
         const st = document.createElement('style');
         st.textContent = '#visual3-filme{position:absolute;inset:0;pointer-events:none;z-index:1;overflow:hidden}'
             + '#visual3-filme .vig{position:absolute;inset:0;background-size:100% 100%}'
-            + '#visual3-filme .calor{position:absolute;inset:0;mix-blend-mode:soft-light;background:linear-gradient(115deg, rgba(255,170,80,0.55) 0%, rgba(0,0,0,0) 42%)}'
-            + '#visual3-filme .grao{position:absolute;inset:-140px;background-repeat:repeat;opacity:.07;mix-blend-mode:overlay;animation:visual3grao .9s steps(6) infinite}'
+                       + '#visual3-filme .grao{position:absolute;inset:-140px;background-repeat:repeat;opacity:.07;mix-blend-mode:overlay;animation:visual3grao .9s steps(6) infinite}'
             + '@keyframes visual3grao{0%{transform:translate(0,0)}20%{transform:translate(-38px,22px)}40%{transform:translate(24px,-30px)}60%{transform:translate(-14px,-44px)}80%{transform:translate(42px,12px)}100%{transform:translate(0,0)}}'
             + '#mapa .etiquetas{z-index:2}';
         document.head.appendChild(st);
@@ -1541,11 +1540,10 @@
         const div = document.createElement('div'); div.id = 'visual3-filme';
         const vig = document.createElement('div'); vig.className = 'vig';
         vig.style.backgroundImage = 'url(' + vc.toDataURL() + ')';
-        const calor = document.createElement('div'); calor.className = 'calor';
         /* VOLTA 3: o GRÃO animado sai — foi condenado como filtro uniforme
          * sobre a imagem inteira (Disfarce N1; Pintura: «grão não conta»).
          * Ficam a vinheta irregular e o sopro quente. */
-        div.appendChild(vig); div.appendChild(calor);
+        div.appendChild(vig);
         mapa.appendChild(div);
     };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', injectarFilme);

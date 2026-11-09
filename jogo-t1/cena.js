@@ -59,7 +59,7 @@
             const scene = new T.Scene();
             scene.background = C(0x353b48);
             scene.fog = new T.Fog(C(0x353b48), 130, 270);
-            scene.add(new T.HemisphereLight(0x96b4df, 0x222632, .40));
+            const hemi = new T.HemisphereLight(0x96b4df, 0x222632, .40); scene.add(hemi);
             const sun = new T.DirectionalLight(0xffb16b, 1.35);
             sun.position.set(-24, 12, -18);
             sun.castShadow = true;
@@ -70,6 +70,234 @@
             sun.shadow.normalBias = .04;
             scene.add(sun);
             const world = CampoWorld(T, scene, area), camera = new T.OrthographicCamera(-10, 10, 10, -10, .1, 1600), target = new T.Vector3(), ray = new T.Raycaster();
+            /* ---------- AMBIENTE (tranche AMBIENTE — desenho LIBERA 05/11) ----------
+             * aplicarAmbiente(estado) é o ÚNICO escritor de: exposição ·
+             * hemisférica · sol · fundo · cor da névoa · bases do mundo
+             * (fontes D-AMB-01) · chamas · chuva · chão molhado. A âncora
+             * Noite (23,0 h) devolve EXACTAMENTE os valores que a cena e a
+             * camada pintada fixaram (medidos na REF_23) e, assentada e
+             * seca, o MESMO objecto de fundo original. A densidade da
+             * névoa nunca é tocada por esta tranche. */
+            const AMB_ANCORAS = [
+                { hora: 3.5, exp: .88, hemiInt: .34, hemiCeu: 0x5f7896, hemiChao: 0x23211e, solInt: .50, solCor: 0xcfd8e8, solPos: [-18, 27, -13.5], horizonte: 0x2c3a4c, fogueira: 4.5, tochas: 7.5, chamas: 1 },
+                { hora: 6.5, exp: .98, hemiInt: .52, hemiCeu: 0x9db3c4, hemiChao: 0x33302a, solInt: .82, solCor: 0xf5e0c8, solPos: [24, 13, -10], horizonte: 0x8fa3b5, fogueira: 3, tochas: 3.5, chamas: .55 },
+                { hora: 12.5, exp: 1.02, hemiInt: .85, hemiCeu: 0xbfd4e6, hemiChao: 0x59544a, solInt: 1.32, solCor: 0xfff2dd, solPos: [6, 34, 8], horizonte: 0xa8bfd2, fogueira: 0, tochas: 0, chamas: 0 },
+                { hora: 18, exp: .97, hemiInt: .50, hemiCeu: 0x8d90a8, hemiChao: 0x35302a, solInt: .98, solCor: 0xf3c298, solPos: [-25, 14, 6], horizonte: 0xb98a63, fogueira: 5, tochas: 6.5, chamas: .8 },
+                { hora: 23, exp: .92, hemiInt: .40, hemiCeu: 0x7d9ab8, hemiChao: 0x2e2a24, solInt: .98, solCor: 0xffe3c0, solPos: [-18, 27, -13.5], horizonte: 0x35485e, fogueira: 6, tochas: 7.5, chamas: 1 }
+            ];
+            const AMB_CEUS = [
+                { paradas: [[0, '#070d16'], [.5, '#14202f'], [.78, '#22334a'], [1, '#2c3a4c']], claro: false },
+                { paradas: [[0, '#2c4258'], [.45, '#5d768c'], [.75, '#87a0b4'], [1, '#8fa3b5']], claro: false },
+                { paradas: [[0, '#5b97d6'], [.5, '#8ab6e0'], [.8, '#a5c2dc'], [1, '#a8bfd2']], claro: true },
+                { paradas: [[0, '#232c4c'], [.5, '#5c5570'], [.78, '#96796b'], [1, '#b98a63']], claro: false },
+                { paradas: [[0, '#0b1220'], [.5, '#182636'], [.78, '#27394c'], [.93, '#4a4438'], [1, '#35485e']], claro: false }
+            ];
+            const AMB_CHUVA = { cinzento: [0, .35, .6], molhado: [1, .97, .94], tochas: [1, 1, .8], gotas: [0, 1200, 3000], gotasBaixa: [0, 800, 800], opacidade: [0, .55, .85] };
+            const ambCor = h => C(h);
+            const ambNivel = (tab, cf) => { const i = Math.min(1, Math.floor(cf)), f = cf - i; return tab[i] + (tab[i + 1] - tab[i]) * f; };
+            function ambAmostra(hora) {
+                const A = AMB_ANCORAS;
+                let i = 0, t = 0;
+                if (hora < A[0].hora || hora >= A[A.length - 1].hora) {
+                    i = A.length - 1;
+                    const h = hora < A[0].hora ? hora + 24 : hora;
+                    t = (h - A[i].hora) / (A[0].hora + 24 - A[i].hora);
+                } else {
+                    while (i < A.length - 2 && hora >= A[i + 1].hora) i++;
+                    t = (hora - A[i].hora) / (A[i + 1].hora - A[i].hora);
+                }
+                const a = A[i], b = A[(i + 1) % A.length], L = (x, y) => x + (y - x) * t;
+                const cor = (x, y) => C(x).lerp(C(y), t);
+                return { i, t, exp: L(a.exp, b.exp), hemiInt: L(a.hemiInt, b.hemiInt), hemiCeu: cor(a.hemiCeu, b.hemiCeu), hemiChao: cor(a.hemiChao, b.hemiChao), solInt: L(a.solInt, b.solInt), solCor: cor(a.solCor, b.solCor), solPos: [L(a.solPos[0], b.solPos[0]), L(a.solPos[1], b.solPos[1]), L(a.solPos[2], b.solPos[2])], horizonte: cor(a.horizonte, b.horizonte), fogueira: L(a.fogueira, b.fogueira), tochas: L(a.tochas, b.tochas), chamas: L(a.chamas, b.chamas) };
+            }
+            function ambPintarCeu(idx, nivelChuva) {
+                const pal = AMB_CEUS[idx], cv = document.createElement('canvas');
+                cv.width = 1024; cv.height = 512;
+                const cx = cv.getContext('2d'), g = cx.createLinearGradient(0, 0, 0, 512);
+                for (const [p, c] of pal.paradas) g.addColorStop(p, c);
+                cx.fillStyle = g; cx.fillRect(0, 0, 1024, 512);
+                let s = 1000 + idx * 77 + nivelChuva * 131;
+                const rr = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+                for (let n = 0; n < 4; n++) {
+                    const nx = 120 + rr() * 760, ny = 40 + rr() * 190;
+                    for (let k = 0; k < 26; k++) {
+                        const r = 22 + rr() * 66, x = nx + (rr() - .5) * 230, y = ny + (rr() - .5) * 44;
+                        const gr = cx.createRadialGradient(x, y, 0, x, y, r);
+                        const tinta = pal.claro ? '255,255,255' : '8,13,22';
+                        gr.addColorStop(0, 'rgba(' + tinta + ',' + (.05 + rr() * .07) + ')'); gr.addColorStop(1, 'rgba(' + tinta + ',0)');
+                        cx.fillStyle = gr; cx.fillRect(x - r, y - r, r * 2, r * 2);
+                    }
+                }
+                for (let k = 0; k < 90; k++) {
+                    const y = rr() * 512, w = 80 + rr() * 500, x = rr() * 1024;
+                    cx.fillStyle = (rr() > .5 ? 'rgba(255,255,255,' : 'rgba(0,0,0,') + (.02 + rr() * .04) + ')';
+                    cx.fillRect(x, y, w, 1 + rr() * 3);
+                }
+                if (nivelChuva > 0) {
+                    cx.fillStyle = 'rgba(138,147,156,' + (nivelChuva === 1 ? '.28' : '.48') + ')';
+                    cx.fillRect(0, 0, 1024, 400);
+                    cx.fillStyle = 'rgba(138,147,156,' + (nivelChuva === 1 ? '.12' : '.22') + ')';
+                    cx.fillRect(0, 400, 1024, 112);
+                }
+                return cv;
+            }
+            const ambCeus = AMB_ANCORAS.map((_, i) => [0, 1, 2].map(n => ambPintarCeu(i, n)));
+            const ambCeuCv = document.createElement('canvas'); ambCeuCv.width = 1024; ambCeuCv.height = 512;
+            const ambCeuCtx = ambCeuCv.getContext('2d');
+            const ambCeuTex = new T.CanvasTexture(ambCeuCv); ambCeuTex.encoding = T.sRGBEncoding;
+            let ambFundoOriginal, ambCeuChave = '';
+            function ambDesenharCeu(amostra, cf, pulsoE) {
+                const nivel = Math.round(cf);
+                const chave = amostra.i + ':' + Math.round(amostra.t * 20) + ':' + nivel + ':' + Math.round(pulsoE * 10);
+                if (chave === ambCeuChave) return;
+                ambCeuChave = chave;
+                ambCeuCtx.globalAlpha = 1;
+                ambCeuCtx.drawImage(ambCeus[amostra.i][nivel], 0, 0);
+                if (amostra.t > 0) { ambCeuCtx.globalAlpha = amostra.t; ambCeuCtx.drawImage(ambCeus[(amostra.i + 1) % AMB_ANCORAS.length][nivel], 0, 0); }
+                if (pulsoE > 0) { ambCeuCtx.globalAlpha = .3 * pulsoE; ambCeuCtx.fillStyle = '#e8eef7'; ambCeuCtx.fillRect(0, 0, 1024, 512); }
+                ambCeuCtx.globalAlpha = 1;
+                ambCeuTex.needsUpdate = true;
+            }
+            /* Fontes decorativas da camada pintada (brilhos das tochas):
+               identificadas pela assinatura que a própria casa usa —
+               PointLight 0xff8f3f/dist 6,5 e sprites junto aos braseiros.
+               Guardam-se as bases; o ambiente só as escala pelo factor
+               de chama (1 no ritual = valores intactos). */
+            let ambDecor = null;
+            function ambCapturarDecor() {
+                const posTochas = world.fontes ? world.fontes.tochas.map(l => l.position) : [];
+                const luzes = [], sprites = [];
+                scene.traverse(o => {
+                    if (o.isPointLight && o.color.getHex() === 0xff8f3f && Math.abs(o.distance - 6.5) < .01) luzes.push({ o, base: o.intensity });
+                    else if (o.isSprite && posTochas.some(p => Math.abs(o.position.x - p.x) < 1.2 && Math.abs(o.position.z - p.z) < 1.2)) sprites.push({ o, base: o.material.opacity });
+                });
+                ambDecor = { luzes, sprites };
+            }
+            const CHUVA_MAX = 3000;
+            const chuvaGeo = new T.BufferGeometry();
+            {
+                const pos = new Float32Array(CHUVA_MAX * 3);
+                let s = 9182;
+                const rr = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+                for (let i = 0; i < CHUVA_MAX; i++) {
+                    const r = Math.sqrt(rr()) * 46, a = rr() * Math.PI * 2;
+                    pos[i * 3] = Math.cos(a) * r; pos[i * 3 + 1] = rr() * 30; pos[i * 3 + 2] = Math.sin(a) * r;
+                }
+                chuvaGeo.setAttribute('position', new T.BufferAttribute(pos, 3));
+                chuvaGeo.setDrawRange(0, 0);
+            }
+            const chuvaMat = new T.ShaderMaterial({
+                uniforms: { uTempo: { value: 0 }, uTamanho: { value: 9 }, uOpacidade: { value: 0 } },
+                vertexShader: 'uniform float uTempo; uniform float uTamanho; void main() { vec3 p = position; p.y = mod(p.y - uTempo * 17.0, 30.0); gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); gl_PointSize = uTamanho; }',
+                fragmentShader: 'uniform float uOpacidade; void main() { float d = length(gl_PointCoord - vec2(0.5)); float a = smoothstep(0.5, 0.28, d) * uOpacidade; if (a < 0.012) discard; gl_FragColor = vec4(0.78, 0.85, 0.92, a); }',
+                transparent: true, depthWrite: false
+            });
+            const chuvaPts = new T.Points(chuvaGeo, chuvaMat);
+            chuvaPts.frustumCulled = false; chuvaPts.visible = false; chuvaPts.renderOrder = 5;
+            scene.add(chuvaPts);
+            let ambAlvo = { hora: 23, chuva: 0, raios: false };
+            let ambActual = { hora: 23, chuva: 0 };
+            let ambTrans = null, ambPulsoT0 = -1, ambUltimoRaio = -1e9, ambCapChuva = null;
+            let ambDerivados = null, ambUltimaAmostra = null, ambUltimoHor = null;
+            const ambDeltaHora = (de, para) => ((para - de + 36) % 24) - 12;
+            function ambEscrever(amostra, cf, pulsoE) {
+                const cinz = ambNivel(AMB_CHUVA.cinzento, cf);
+                const ceuFinal = amostra.hemiCeu.clone().lerp(ambCor(0x8a939c), cinz);
+                const horFinal = amostra.horizonte.clone().lerp(ambCor(0x8a939c), cinz);
+                renderer.toneMappingExposure = amostra.exp;
+                hemi.intensity = amostra.hemiInt + .38 * pulsoE;
+                hemi.color.copy(ceuFinal);
+                hemi.groundColor.copy(amostra.hemiChao);
+                sun.intensity = amostra.solInt;
+                sun.color.copy(amostra.solCor);
+                sun.position.set(amostra.solPos[0], amostra.solPos[1], amostra.solPos[2]);
+                scene.fog.color.copy(horFinal).lerp(ambCor(0xd7dee8), .55 * pulsoE);
+                world.ambienteBases.fogueira = amostra.fogueira;
+                if (world.fontes) world.fontes.fogueira.intensity = amostra.fogueira;
+                world.ambienteBases.tochas = amostra.tochas * ambNivel(AMB_CHUVA.tochas, cf);
+                if (world.fontes) for (const m of world.fontes.chamas) m.visible = amostra.chamas > .02;
+                if (ambDecor) {
+                    for (const d of ambDecor.luzes) d.o.intensity = d.base * amostra.chamas;
+                    for (const d of ambDecor.sprites) { d.o.material.opacity = d.base * amostra.chamas; d.o.visible = amostra.chamas > .02; }
+                }
+                if (!ambTrans && cf === 0 && ambAlvo.hora === 23 && pulsoE === 0) {
+                    if (ambFundoOriginal !== undefined && scene.background !== ambFundoOriginal) scene.background = ambFundoOriginal;
+                } else {
+                    if (ambFundoOriginal === undefined) ambFundoOriginal = scene.background;
+                    if (scene.background !== ambCeuTex) scene.background = ambCeuTex;
+                    ambDesenharCeu(amostra, cf, pulsoE);
+                }
+                const tabela = quality === 'baixa' ? AMB_CHUVA.gotasBaixa : AMB_CHUVA.gotas;
+                let gotas = Math.round(ambNivel(tabela, cf));
+                if (ambCapChuva != null) gotas = Math.min(gotas, ambCapChuva);
+                chuvaGeo.setDrawRange(0, gotas);
+                chuvaPts.visible = gotas > 0;
+                chuvaMat.uniforms.uOpacidade.value = ambNivel(AMB_CHUVA.opacidade, cf);
+                chuvaMat.uniforms.uTamanho.value = quality === 'baixa' ? 6 : quality === 'media' ? 8 : 10;
+                if (world.ground && world.ground.material && world.ground.material.color) world.ground.material.color.setScalar(ambNivel(AMB_CHUVA.molhado, cf));
+                ambDerivados = { exposicao: amostra.exp, hemiInt: amostra.hemiInt, solInt: amostra.solInt, fogueiraBase: amostra.fogueira, tochasBase: world.ambienteBases.tochas, chamas: amostra.chamas, gotas };
+                ambUltimaAmostra = amostra; ambUltimoHor = horFinal;
+            }
+            function ambAplicarPulso(e) {
+                if (!ambUltimaAmostra) return;
+                hemi.intensity = ambUltimaAmostra.hemiInt + .38 * e;
+                if (ambUltimoHor) scene.fog.color.copy(ambUltimoHor).lerp(ambCor(0xd7dee8), .55 * e);
+                if (e > 0) {
+                    if (ambFundoOriginal === undefined) ambFundoOriginal = scene.background;
+                    if (scene.background !== ambCeuTex) scene.background = ambCeuTex;
+                    ambDesenharCeu(ambUltimaAmostra, ambActual.chuva, e);
+                } else if (!ambTrans && ambActual.chuva === 0 && ambAlvo.hora === 23) {
+                    if (ambFundoOriginal !== undefined && scene.background !== ambFundoOriginal) scene.background = ambFundoOriginal;
+                    ambCeuChave = '';
+                } else ambDesenharCeu(ambUltimaAmostra, ambActual.chuva, 0);
+            }
+            function aplicarAmbiente(estado, opcoes = {}) {
+                if (!estado || !Number.isFinite(estado.hora) || estado.hora < 0 || estado.hora >= 24) throw new RangeError('Ambiente: hora fora de [0,24).');
+                if (![0, 1, 2].includes(estado.chuva)) throw new RangeError('Ambiente: chuva fora de {0,1,2}.');
+                if (typeof estado.raios !== 'boolean') throw new TypeError('Ambiente: raios booleano obrigatório.');
+                if (!ambDecor) ambCapturarDecor();
+                ambAlvo = { hora: estado.hora, chuva: estado.chuva, raios: estado.raios };
+                ambPulsoT0 = -1;
+                if (opcoes.imediato) {
+                    ambTrans = null;
+                    ambActual = { hora: ambAlvo.hora, chuva: ambAlvo.chuva };
+                    ambEscrever(ambAmostra(ambActual.hora), ambActual.chuva, 0);
+                    renderer.shadowMap.needsUpdate = true;
+                    emit('ambiente', { ...ambAlvo });
+                    return { ...ambAlvo };
+                }
+                ambTrans = { deHora: ambActual.hora, deChuva: ambActual.chuva, t0: performance.now() };
+                return { ...ambAlvo };
+            }
+            function ambTick(now) {
+                chuvaMat.uniforms.uTempo.value = now / 1000;
+                if (ambTrans) {
+                    const ph = Math.min(1, (now - ambTrans.t0) / 7000), pc = Math.min(1, (now - ambTrans.t0) / 2500);
+                    const eh = ph * ph * (3 - 2 * ph), ec = pc * pc * (3 - 2 * pc);
+                    ambActual.hora = ((ambTrans.deHora + ambDeltaHora(ambTrans.deHora, ambAlvo.hora) * eh) % 24 + 24) % 24;
+                    ambActual.chuva = ambTrans.deChuva + (ambAlvo.chuva - ambTrans.deChuva) * ec;
+                    if (ph >= 1 && pc >= 1) {
+                        ambTrans = null;
+                        ambActual = { hora: ambAlvo.hora, chuva: ambAlvo.chuva };
+                        ambEscrever(ambAmostra(ambActual.hora), ambActual.chuva, 0);
+                        renderer.shadowMap.needsUpdate = true;
+                        emit('ambiente', { ...ambAlvo });
+                    } else ambEscrever(ambAmostra(ambActual.hora), ambActual.chuva, 0);
+                }
+                if (ambPulsoT0 >= 0) {
+                    const t = (now - ambPulsoT0) / 1000;
+                    if (t >= .2) { ambPulsoT0 = -1; ambAplicarPulso(0); }
+                    else ambAplicarPulso(t < .03 ? t / .03 : Math.max(0, 1 - (t - .03) / .15));
+                }
+            }
+            function dispararRaio() {
+                const now = performance.now();
+                if (ambTrans || now - ambUltimoRaio < 5000) return false;
+                ambUltimoRaio = now; ambPulsoT0 = now;
+                emit('raio', { instante: now });
+                return true;
+            }
+            function ambReaplicar() { if (ambDerivados) ambEscrever(ambAmostra(ambActual.hora), ambActual.chuva, 0); }
             let width = 1, height = 1, selected = null, mode = 'fixa', quality = 'alta', disposed = false, raf, last = performance.now(), fps = 0, fpsAt = last, frames = 0, shadowAt = 0, yaw = 0, pitch = 1.05, viewWidth = 20;
             const zoom = { fixa: 1.5, seguir: 1, '360': 1 }, units = new Map(), events = new EventTarget(), times = [];
             let presentation = null;
@@ -438,6 +666,7 @@
                 renderer.shadowMap.enabled = q !== 'baixa';
                 sun.castShadow = q !== 'baixa';
                 world.quality(q);
+                ambReaplicar();
                 resize();
                 renderer.shadowMap.needsUpdate = true;
                 emit('quality', { qualidade: q });
@@ -586,6 +815,7 @@
                 camera.updateMatrixWorld();
                 scene.fog.near = distance + 90;
                 scene.fog.far = distance + 240;
+                ambTick(now);
                 renderer.render(scene, camera);
                 const boxes = [];
                 const bodies = [...units.values()].map(u => unitRect(u)).filter(Boolean);
@@ -635,6 +865,17 @@
                     u.queue = [];
                     u.step = null;
                     pose(u);
+                }, aplicarAmbiente, getAmbienteAplicado() {
+                    return { hora: ambActual.hora, chuva: ambActual.chuva, raios: ambAlvo.raios, emTransicao: !!ambTrans, derivados: ambDerivados };
+                }, dispararRaio, setCapChuva(n) {
+                    ambCapChuva = n == null ? null : Math.max(0, Math.floor(n));
+                    ambReaplicar();
+                }, setTremulacao(on) {
+                    /* EM-AMB-B1: repassa a opção do Mestre ao mundo. */
+                    if (world && typeof world.setTremulacao === 'function') world.setTremulacao(on);
+                }, setDprSessao(dpr) {
+                    renderer.setPixelRatio(dpr == null ? Math.min(window.devicePixelRatio || 1, quality === 'alta' ? 2 : quality === 'media' ? 1.5 : 1) : dpr);
+                    resize();
                 }, setGridVisible(v) {
                     grid.visible = !!v;
                 }, showHover: p => mark(hover, p), orbit(dx, dy) {
@@ -654,6 +895,7 @@
                     observer.disconnect();
                     renderer.domElement.removeEventListener('webglcontextlost', contextLost);
                     [...units.keys()].forEach(removeUnit);
+                    chuvaGeo.dispose(); chuvaMat.dispose(); ambCeuTex.dispose();
                     release(scene);
                     sun.shadow.map?.dispose();
                     renderer.dispose();

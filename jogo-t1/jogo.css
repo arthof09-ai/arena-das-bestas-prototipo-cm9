@@ -294,3 +294,26 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 @media (prefers-reduced-motion:reduce){
   *{transition:none!important;animation:none!important}
 }
+
+/* ---------- Ambiente (tranche AMBIENTE): só adições amb-* ----------
+   Pele do painel «Ambiente» do ⚙ (criado por jogo.js, só na vista
+   do Mestre) e do ponto indicador na engrenagem. As linhas usam as
+   classes da casa (.cfgrow/.cl/.seg/.tog); aqui vive só o que é
+   próprio do ambiente: a linha de estado, o deslizador da hora
+   exacta com a sua leitura, o estado pendente do raio e o ponto. */
+.amb-estado{font-size:11px;line-height:1.4;color:var(--pergaminho-fraco);
+  overflow-wrap:break-word;padding:4px 0}
+.amb-seg button{flex:1;padding:0 2px;font-size:10px;white-space:nowrap}
+.amb-slider-row .amb-range{flex:1;min-width:0;min-height:44px;accent-color:var(--ouro)}
+.amb-leitura{font-size:11px;font-weight:700;color:#fff3d0;min-width:38px;
+  text-align:right;font-variant-numeric:tabular-nums}
+.amb-raio-btn:disabled{opacity:.45;cursor:default}
+.amb-raio-btn.amb-pendente{background:var(--ouro);color:#1c1508;
+  animation:ambPendentePulso 1s ease-in-out infinite alternate}
+@keyframes ambPendentePulso{from{opacity:1}to{opacity:.55}}
+.amb-ponto{position:absolute;top:3px;right:3px;width:10px;height:10px;border-radius:50%;
+  background:var(--ouro-vivo);box-shadow:0 0 6px rgba(255,217,77,.8);pointer-events:none}
+.amb-ponto[hidden]{display:none}
+@media (max-height:560px) and (min-width:600px){
+  .amb-estado{grid-column:1 / -1}
+}

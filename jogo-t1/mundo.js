@@ -138,19 +138,35 @@ window.CampoWorld = function (T, scene, area) {
         part(new T.CylinderGeometry(.46, .25, .3, 8), rust, [0, 1.12, 0], [1, 1, 1], [0, 0, 0], g);
         const flame = part(ico, new T.MeshBasicMaterial({ color: C(0xff631d), toneMapped: false }), [0, 1.65, 0], [.25, .65, .24], [0, 0, .14], g);
         flame.castShadow = false;
-        part(ico, new T.MeshBasicMaterial({ color: C(0xffdf8e), toneMapped: false }), [0, 1.43, .12], [.14, .3, .15], [0, 0, 0], g).castShadow = false;
+        const core = part(ico, new T.MeshBasicMaterial({ color: C(0xffdf8e), toneMapped: false }), [0, 1.43, .12], [.14, .3, .15], [0, 0, 0], g);
+        core.castShadow = false;
         const light = new T.PointLight(0xff792b, 7.5, 11, 2);
         light.position.set(x, y + 1.8, z);
         scene.add(light);
-        fires.push({ flame, light });
+        fires.push({ flame, core, light });
         // O solo recebe luz real; sem discos que se leiam como tapetes.
     }
-    return { ground, height, radius, update(time) {
+    /* D-AMB-01 (tranche AMBIENTE): interface nomeada de fontes — a
+       fogueira, as tochas e as chamas do mundo, e as BASES que o
+       aplicarAmbiente da cena escreve. O update lê as bases: tochas =
+       base + f·(base·0,4), que com a base 7,5 reproduz ao bit o
+       histórico 7,5 + 3f. Sem chamador do ambiente, as bases nascem
+       nos valores aprovados e nada muda. */
+    const ambienteBases = { fogueira: 6.0, tochas: 7.5 };
+    /* EM-AMB-B1 (bancada do AMBIENTE): a tremulação liga/desliga pela
+       opção do Mestre no ⚙ (palavra dele de 06/11). Ligada (omissão) =
+       a fórmula histórica ao bit; desligada = termo f = 0: chamas
+       estáticas (escala .65, sem rotação) e tochas na base. */
+    let ambTremulacao = true;
+    const fontes = { fogueira: hearth, tochas: fires.map(f => f.light), chamas: fires.flatMap(f => [f.flame, f.core]) };
+    return { ground, height, radius, fontes, ambienteBases, setTremulacao(on) {
+            ambTremulacao = !!on;
+        }, update(time) {
             fires.forEach(({ flame, light }, i) => {
-                const f = Math.sin(time * 9 + i) * .1 + Math.sin(time * 17) * .06;
+                const f = ambTremulacao ? Math.sin(time * 9 + i) * .1 + Math.sin(time * 17) * .06 : 0;
                 flame.scale.y = .65 + f;
-                flame.rotation.y = time * .4;
-                light.intensity = 7.5 + f * 3;
+                if (ambTremulacao) flame.rotation.y = time * .4;
+                light.intensity = ambienteBases.tochas + f * (ambienteBases.tochas * 0.4);
             });
         }, quality(nivel) {
             /* Densidade do cenário por perfil de qualidade:

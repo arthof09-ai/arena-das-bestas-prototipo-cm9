@@ -291,6 +291,300 @@
     return;
   }
 
+  /* ---------- Ambiente da partida (tranche AMBIENTE) ----------
+   * Estado SEMÂNTICO da partida (desenho DESENHO-PAINEL-AMBIENTE +
+   * MAPA-DE-TOQUE): { hora em [0,24) · chuva 0|1|2 · raios bool }.
+   * Quem o comanda é o Mestre; quem o DERIVA em luz/chuva/clarão é
+   * a vista, por view.aplicarAmbiente (contrato congelado). Aqui
+   * mora o estado, a precedência de arranque, o painel do ⚙ (só
+   * Mestre, mais abaixo), os sons, o relógio de raios e a escada
+   * de degradação. A noite do ritual — {23, 0, false} — é a casa. */
+  const AMBIENTE_RITUAL = Object.freeze({ hora: 23, chuva: 0, raios: false });
+  const AMBIENTE_ANcoras = [   // nome → hora exacta (tabela de aliases do painel)
+    { nome: 'Madrugada', hora: 3.5 }, { nome: 'Amanhecer', hora: 6.5 },
+    { nome: 'Dia', hora: 12.5 }, { nome: 'Entardecer', hora: 18.0 },
+    { nome: 'Noite', hora: 23.0 }
+  ];
+  function ambDominioValido(a) {
+    return !!a && typeof a === 'object'
+      && typeof a.hora === 'number' && Number.isFinite(a.hora) && a.hora >= 0 && a.hora < 24
+      && (a.chuva === 0 || a.chuva === 1 || a.chuva === 2)
+      && typeof a.raios === 'boolean';
+  }
+  function ambNomeHora(hora) {   // âncora mais próxima (distância circular em 24 h)
+    let melhor = AMBIENTE_ANcoras[AMBIENTE_ANcoras.length - 1], md = Infinity;
+    for (const a of AMBIENTE_ANcoras) {
+      let d = Math.abs(hora - a.hora); d = Math.min(d, 24 - d);
+      if (d < md) { md = d; melhor = a; }
+    }
+    return melhor.nome;
+  }
+  const ambFmtHora = h => (Math.round(h * 10) / 10).toFixed(1).replace('.', ',') + 'h';
+  function ambTextoEstado(e) {
+    const chuvaTxt = e.chuva === 2 ? 'Chuva forte' : e.chuva === 1 ? 'Chuva pouca' : 'Sem chuva';
+    return `Ambiente: ${ambNomeHora(e.hora)} · ${chuvaTxt} · ${e.raios ? 'Raios ligados' : 'Raios desligados'}`;
+  }
+  /* Precedência de arranque (MAPA-DE-TOQUE §Limites): preferência
+   * «último ambiente» do Mestre (só MODO_MESTRE, validada no
+   * domínio; inválida ignora-se) → Noite seca do ritual. */
+  function ambLerUltimoAmbiente() {
+    if (!MODO_MESTRE) return null;
+    try {
+      const j = JSON.parse(localStorage.getItem('hudt1-ultimo-ambiente') || 'null');
+      if (ambDominioValido(j)) return { hora: j.hora, chuva: j.chuva, raios: j.raios };
+    } catch (_) {}
+    return null;
+  }
+  let ambientePartida = ambLerUltimoAmbiente() || { ...AMBIENTE_RITUAL };
+  function ambGravarPreferencia() {
+    if (!MODO_MESTRE) return;   // a preferência é do aparelho/perfil do Mestre — nunca da Party, nunca de save
+    try { localStorage.setItem('hudt1-ultimo-ambiente', JSON.stringify(ambientePartida)); } catch (_) {}
+  }
+  /* Som do ambiente: opção PESSOAL de cada aparelho (nunca difundida,
+   * nunca guardada em save) — 'hudt1-ambiente-som', ligada por omissão. */
+  let ambSomLigado = true;
+  try { ambSomLigado = localStorage.getItem('hudt1-ambiente-som') !== 'desligado'; } catch (_) {}
+  /* Tremulação do fogo: opção PESSOAL de cada aparelho, como o Som do
+   * ambiente (nunca difundida, nunca guardada em save) —
+   * 'hudt1-ambiente-tremulacao', ligada por omissão. EM-AMB-B1:
+   * ligada = o fogo e a luz a tremular como sempre; desligada =
+   * chamas estáticas e tochas na base. */
+  let ambTremulacaoLigada = true;
+  try { ambTremulacaoLigada = localStorage.getItem('hudt1-ambiente-tremulacao') !== 'desligado'; } catch (_) {}
+  function ambAplicarTremulacao() {
+    if (!view || typeof view.setTremulacao !== 'function') return;
+    try { view.setTremulacao(ambTremulacaoLigada); } catch (_) {}
+  }
+  /* Superfície do painel (preenchida só no Mestre, mais abaixo) e
+   * estado interno da degradação nomeada (apresentação local). */
+  const ambUI = { estadoEl: null, ponto: null, botoesHora: [], botoesChuva: [],
+    deslizador: null, leitura: null, togRaios: null, btnRaio: null, togSom: null, togTremulacao: null };
+  let ambDegrau = 0;                       // escada só-desce, por sessão
+  const AMB_DEGRAUS = ['', 'POUCA', 'MÍNIMA', 'SÓ_SOM', 'DPR 1'];
+  const ambAmostrasFps = [];
+  let ambVigiasBaixas = 0;
+  /* Única porta da casca para a vista: valida já aconteceu a montante;
+   * vista sem o contrato (cena anterior) degrada em silêncio — a
+   * página nunca parte por o ambiente ainda não existir do outro lado. */
+  function ambAplicarVista(e, imediato) {
+    if (!view || typeof view.aplicarAmbiente !== 'function') return false;
+    try { view.aplicarAmbiente({ hora: e.hora, chuva: e.chuva, raios: e.raios }, { imediato: !!imediato }); return true; }
+    catch (_) { return false; }
+  }
+  /* Assentar = gravar o estado da partida + aplicar + gravar a
+   * preferência do Mestre + refrescar som, raios e painel. */
+  function ambAssentar(novo, opcoes) {
+    if (!ambDominioValido(novo)) return false;
+    ambientePartida = { hora: novo.hora, chuva: novo.chuva, raios: novo.raios };
+    ambAplicarVista(ambientePartida, !!(opcoes && opcoes.imediato));
+    ambGravarPreferencia();
+    ambAudioSincronizarChuva();
+    ambAoMudarRaios();
+    ambSincronizarPainel();
+    return true;
+  }
+  /* Arranque: o ambiente inicial aplica-se JÁ (imediato), sem transição. */
+  ambAplicarVista(ambientePartida, true);
+  ambAplicarTremulacao();
+
+  /* ---------- Sons do ambiente (WebAudio) ----------
+   * Contexto PREGUIÇOSO: nasce só no primeiro gesto real
+   * (pointerdown/keydown) e só vale com state==='running' — até lá,
+   * mudo sem erro e sem sons «em dívida» (nada se agenda para
+   * tocar depois). Chuva: buffer de ruído em loop PRÉ-GERADO (2 s)
+   * com 2 ganhos (Pouca/Forte) em crossfade de 2,5 s. Trovão: 3
+   * variantes PRÉ-GERADAS na criação do contexto (ruído com
+   * decaimento e passa-baixos à reprodução) — nunca sintetizadas
+   * na hora do raio. Volumes baixos: sempre abaixo da voz. */
+  const ambAudio = { ctx: null, master: null, ganhoPouca: null, ganhoForte: null,
+    trovoes: [], desbloqueado: false };
+  function ambGerarRuidoChuva(ctx) {
+    const len = ctx.sampleRate * 2, buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    let lento = 0;
+    for (let i = 0; i < len; i++) {
+      const branco = Math.random() * 2 - 1;
+      lento = (lento + 0.03 * branco) / 1.03;         // corpo grave do ruído
+      d[i] = Math.max(-1, Math.min(1, branco * 0.32 + lento * 2.6));
+    }
+    return buf;
+  }
+  function ambGerarTrovao(ctx, dur, aperto) {
+    const len = Math.floor(ctx.sampleRate * dur), buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    let lento = 0;
+    for (let i = 0; i < len; i++) {
+      const t = i / len, branco = Math.random() * 2 - 1;
+      lento = (lento + aperto * branco) / (1 + aperto);
+      const env = Math.min(1, t * 40) * Math.exp(-3.2 * t) * (0.75 + 0.25 * Math.sin(t * 9 + aperto * 7));
+      d[i] = Math.max(-1, Math.min(1, lento * 3.4 * env));
+    }
+    return buf;
+  }
+  function ambAudioGarantir() {
+    if (ambAudio.ctx) return ambAudio.ctx;
+    const AC = typeof window !== 'undefined' ? (window.AudioContext || window.webkitAudioContext) : null;
+    if (!AC) return null;
+    try {
+      const ctx = new AC();
+      ambAudio.ctx = ctx;
+      ambAudio.master = ctx.createGain();
+      ambAudio.master.gain.value = ambSomLigado ? 0.9 : 0;
+      ambAudio.master.connect(ctx.destination);
+      const fonte = ctx.createBufferSource();
+      fonte.buffer = ambGerarRuidoChuva(ctx); fonte.loop = true;
+      const filtro = ctx.createBiquadFilter(); filtro.type = 'lowpass'; filtro.frequency.value = 1400;
+      ambAudio.ganhoPouca = ctx.createGain(); ambAudio.ganhoPouca.gain.value = 0;
+      ambAudio.ganhoForte = ctx.createGain(); ambAudio.ganhoForte.gain.value = 0;
+      fonte.connect(filtro); filtro.connect(ambAudio.ganhoPouca); filtro.connect(ambAudio.ganhoForte);
+      ambAudio.ganhoPouca.connect(ambAudio.master); ambAudio.ganhoForte.connect(ambAudio.master);
+      fonte.start();
+      ambAudio.trovoes = [ambGerarTrovao(ctx, 1.9, 0.05), ambGerarTrovao(ctx, 2.6, 0.03), ambGerarTrovao(ctx, 3.2, 0.02)];
+    } catch (_) { ambAudio.ctx = null; }
+    return ambAudio.ctx;
+  }
+  function ambAudioSincronizarChuva() {
+    const ctx = ambAudio.ctx;
+    if (!ctx || !ambAudio.ganhoPouca || !ambAudio.ganhoForte) return;
+    try {
+      if (ambAudio.master) ambAudio.master.gain.setTargetAtTime(ambSomLigado ? 0.9 : 0, ctx.currentTime, 0.1);
+      const activo = ambAudio.desbloqueado && ambSomLigado;
+      const alvoP = activo && ambientePartida.chuva === 1 ? 0.14 : 0;
+      const alvoF = activo && ambientePartida.chuva === 2 ? 0.32 : 0;
+      const agora = ctx.currentTime;   // crossfade de 2,5 s nos dois ganhos
+      for (const par of [[ambAudio.ganhoPouca, alvoP], [ambAudio.ganhoForte, alvoF]]) {
+        par[0].gain.cancelScheduledValues(agora);
+        par[0].gain.setValueAtTime(par[0].gain.value, agora);
+        par[0].gain.linearRampToValueAtTime(par[1], agora + 2.5);
+      }
+    } catch (_) {}
+  }
+  function ambTentarDesbloquearAmbiente() {
+    if (ambAudio.desbloqueado) return;
+    const ctx = ambAudioGarantir();
+    if (!ctx) return;
+    const marcar = () => { if (ctx.state === 'running') { ambAudio.desbloqueado = true; ambAudioSincronizarChuva(); } };
+    if (ctx.state === 'running') { marcar(); return; }
+    if (typeof ctx.resume === 'function') {
+      try { const p = ctx.resume(); if (p && typeof p.then === 'function') p.then(marcar).catch(() => {}); } catch (_) {}
+    }
+  }
+  if (typeof document !== 'undefined') {
+    document.addEventListener('pointerdown', ambTentarDesbloquearAmbiente);
+    document.addEventListener('keydown', ambTentarDesbloquearAmbiente);
+  }
+  function ambTocarTrovao() {
+    const ctx = ambAudio.ctx;
+    if (!ctx || !ambAudio.desbloqueado || !ambSomLigado) return;   // sem desbloqueio: só clarão, sem dívida
+    if (typeof document !== 'undefined' && document.hidden) return;   // trovão em fundo: não
+    const buf = ambAudio.trovoes[Math.floor(Math.random() * ambAudio.trovoes.length)];
+    if (!buf) return;
+    try {
+      const s = ctx.createBufferSource(); s.buffer = buf;
+      const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 420;
+      const g = ctx.createGain(); g.gain.value = 0.85;
+      s.connect(f); f.connect(g); g.connect(ambAudio.master); s.start();
+    } catch (_) {}
+  }
+
+  /* ---------- Raios: relógio, janela de protecção, pendente ----------
+   * Automático raro (30–90 s sorteados) e manual («⚡ Raio agora»),
+   * os dois sob a MESMA janela de protecção: nunca durante uma
+   * apresentação de ataque nem enquanto um número de dano vive.
+   * Bloqueado: o automático adia (nova tentativa em 3 s); o manual
+   * fica PENDENTE visível e dispara no primeiro instante permitido
+   * (vigia de 250 ms); tecto/transição da vista (dispararRaio
+   * devolve false) mantém o pendente. O relógio é do hospedeiro —
+   * só corre na vista do Mestre. Em fundo (document.hidden) o
+   * agendador pausa; ao voltar, sorteia de novo. */
+  let ambRaioPendente = false, ambRelogioAutoRaio = null, ambVigiaPendente = null;
+  function ambJanelaRaioLivre() {
+    if (apresentacaoEmCurso) return false;
+    try {
+      const st = typeof view.getStats === 'function' ? view.getStats() : null;
+      if (st && st.presentation) return false;
+    } catch (_) {}
+    const agora = performance.now();
+    for (const f of flutuantes)   // número de dano vivo: nascimento t0 + atraso + duração
+      if (f.tipo === 'dano' && agora < f.t0 + f.atraso + f.dur) return false;
+    return true;
+  }
+  function ambDispararRaioVista() {
+    if (!view || typeof view.dispararRaio !== 'function') return false;
+    try { return view.dispararRaio() === true; } catch (_) { return false; }
+  }
+  function ambLimparRelogioAutoRaio() {
+    if (ambRelogioAutoRaio) { clearTimeout(ambRelogioAutoRaio); ambRelogioAutoRaio = null; }
+  }
+  function ambAgendarAutoRaio() {
+    ambLimparRelogioAutoRaio();
+    if (!MODO_MESTRE) return;
+    if (!ambientePartida.raios || ambientePartida.chuva === 0) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+    ambRelogioAutoRaio = setTimeout(() => { ambRelogioAutoRaio = null; ambTentativaAutoRaio(); },
+      30000 + Math.random() * 60000);
+  }
+  function ambTentativaAutoRaio() {
+    if (!MODO_MESTRE || !ambientePartida.raios || ambientePartida.chuva === 0) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+    if (!view || typeof view.dispararRaio !== 'function') { ambAgendarAutoRaio(); return; }
+    if (!ambJanelaRaioLivre() || !ambDispararRaioVista()) {
+      ambRelogioAutoRaio = setTimeout(() => { ambRelogioAutoRaio = null; ambTentativaAutoRaio(); }, 3000);
+      return;
+    }
+    ambAgendarAutoRaio();
+  }
+  function ambPararVigiaPendente() {
+    if (ambVigiaPendente) { clearInterval(ambVigiaPendente); ambVigiaPendente = null; }
+  }
+  function ambDefinirRaioPendente(p) {
+    ambRaioPendente = !!p;
+    if (!ambRaioPendente) ambPararVigiaPendente();
+    ambSincronizarPainel();
+  }
+  function ambPedirRaioManual() {
+    if (!ambientePartida.raios || ambientePartida.chuva === 0) return;
+    if (ambJanelaRaioLivre() && ambDispararRaioVista()) { ambDefinirRaioPendente(false); return; }
+    ambDefinirRaioPendente(true);
+    if (!ambVigiaPendente) ambVigiaPendente = setInterval(ambVigiaRaioPendente, 250);
+  }
+  function ambVigiaRaioPendente() {
+    if (!ambRaioPendente) { ambPararVigiaPendente(); return; }
+    if (!ambientePartida.raios || ambientePartida.chuva === 0) { ambDefinirRaioPendente(false); return; }
+    if (!ambJanelaRaioLivre()) return;
+    if (ambDispararRaioVista()) ambDefinirRaioPendente(false);   // recusado (tecto): continua pendente
+  }
+  function ambAoMudarRaios() {
+    if ((!ambientePartida.raios || ambientePartida.chuva === 0) && ambRaioPendente)
+      ambDefinirRaioPendente(false);
+    ambAgendarAutoRaio();
+  }
+
+  /* ---------- Degradação nomeada (apresentação local) ----------
+   * Vigia a mediana de 5 amostras de FPS do evento 'stats' da
+   * vista; mediana <24 sustentada em 3 vigias seguidas desce UM
+   * degrau; a escada só desce na sessão e o estado da mesa não
+   * muda: Forte→Pouca (teto 1200) → MÍNIMA (400) → SÓ_SOM (0)
+   * → DPR de sessão 1. Cada descida nomeia-se na linha de estado. */
+  function ambDegradacaoAmostra(fps) {
+    if (typeof fps !== 'number' || !Number.isFinite(fps)) return;
+    if (ambDegrau >= AMB_DEGRAUS.length - 1) return;
+    ambAmostrasFps.push(fps);
+    if (ambAmostrasFps.length > 5) ambAmostrasFps.shift();
+    if (ambAmostrasFps.length < 5) return;
+    const ord = [...ambAmostrasFps].sort((a, b) => a - b), mediana = ord[2];
+    ambVigiasBaixas = mediana < 24 ? ambVigiasBaixas + 1 : 0;
+    if (ambVigiasBaixas < 3) return;
+    ambVigiasBaixas = 0; ambAmostrasFps.length = 0; ambDegrau++;
+    try {
+      if (ambDegrau === 1 && typeof view.setCapChuva === 'function') view.setCapChuva(1200);
+      else if (ambDegrau === 2 && typeof view.setCapChuva === 'function') view.setCapChuva(400);
+      else if (ambDegrau === 3 && typeof view.setCapChuva === 'function') view.setCapChuva(0);
+      else if (ambDegrau === 4 && typeof view.setDprSessao === 'function') view.setDprSessao(1);
+    } catch (_) {}
+    ambSincronizarPainel();
+  }
+
   /* ---------- ÚNICO adaptador de coordenadas ----------
    * O motor/casca falam (x,y) no chão; a vista fala (x,z) no chão.
    * Toda a conversão vive aqui — nenhum outro sítio traduz casas. */
@@ -1750,6 +2044,7 @@
     try { promessa = view.apresentarAtaque(atacante, alvo); }
     catch (_) { return Promise.resolve(false); }   // throw síncrono do contrato: sem gesto, sem tocar na resolução
     apresentacaoEmCurso = true;
+    fecharCfg();   // AMBIENTE: o painel ⚙ fecha-se sozinho ao arrancar uma apresentação de combate
     const accEntrada = supCrit.acc;   // §13 (resíduo R1-Fidelidade): o acumulador DESTE segmento, capturado à entrada — um restauro a meio do gesto troca supCrit.acc e a promessa abandonada não pode registar no segmento novo
     let gestoArrancou = false;
     const vigia = setInterval(() => {
@@ -3680,7 +3975,12 @@
          — voltar a um turno anterior repõe o combate inteiro, não
          só a casca clássica. Cópia profunda: o snapshot é um valor,
          nunca uma referência viva. */
-      vlab: JSON.parse(JSON.stringify(ESTADO_VLAB))
+      vlab: JSON.parse(JSON.stringify(ESTADO_VLAB)),
+      /* Tranche AMBIENTE: o ambiente é estado da PARTIDA — entra no
+         snapshot como cópia do estado semântico, com a versão da
+         curva registada (só registo; os derivados recalculam-se). */
+      ambiente: { ...ambientePartida },
+      ambienteCurva: 'v1'
     };
   }
   function supSnapshot() {
@@ -3770,6 +4070,17 @@
       e.estadoMorte = sv.estadoMorte ? { ...sv.estadoMorte } : null;
     }
     partidaPendente = null; correrUsado = false; opcoesMovimento.desvincular = false;
+    /* Tranche AMBIENTE: o ambiente do snapshot volta com o resto —
+       válido aplica-se JÁ (imediato); ausente/inválido repõe a
+       Noite seca do ritual e DECLARA-SE no registo (sem silêncio). */
+    if (snap.ambiente && ambDominioValido(snap.ambiente)) {
+      ambAssentar({ hora: snap.ambiente.hora, chuva: snap.ambiente.chuva, raios: snap.ambiente.raios }, { imediato: true });
+    } else {
+      ambAssentar({ ...AMBIENTE_RITUAL }, { imediato: true });
+      supRegistar('ambiente', { origem: 'supRestaurar',
+        razao: snap.ambiente ? 'Ambiente do snapshot inválido — Noite seca do ritual aplicada'
+                             : 'Snapshot sem ambiente — Noite seca do ritual declarada' });
+    }
     /* C-39: declarações de reacção são decisões da linha do tempo
        abandonada — o restauro apaga-as todas, como o Continuar. */
     for (const idDecl of Object.keys(REACCOES_DECLARADAS)) delete REACCOES_DECLARADAS[idDecl];
@@ -3959,7 +4270,11 @@
     const chavesEstado = ['rodada', 'indiceVez', 'vez', 'ordem', 'fase',
       'unidades', 'ong', 'batalhaFim', 'consumiveis', 'dados', 'vlab'];
     for (const c of chavesEstado) if (!(c in e)) return FALTA;
-    if (Object.keys(e).some(k => !chavesEstado.includes(k))) return INV;
+    /* Tranche AMBIENTE: 'ambiente'/'ambienteCurva' são campos
+       OPCIONAIS do estado (save antigo sem eles é válido — carrega
+       com Noite seca declarada no aplicar); qualquer outra chave
+       fora da lista continua inválida. */
+    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva')) return INV;
     const ids = ELENCO.map(u => u.id);
     const inteiro = n => Number.isInteger(n);
     const finito = n => typeof n === 'number' && Number.isFinite(n);
@@ -4033,6 +4348,20 @@
     if (Object.keys(d).some(k => !['estado', 'roladas'].includes(k))) return INV;
     if (!inteiro(d.estado) || d.estado < 0 || d.estado > 4294967295) return INV;
     if (!inteiro(d.roladas) || d.roladas < 0 || d.roladas > 1000000) return INV;
+    /* Tranche AMBIENTE: o campo, QUANDO PRESENTE, confere-se no
+       domínio semântico — hora finita em [0,24), chuva ∈ {0,1,2},
+       raios booleano, sem chaves estranhas; fora do domínio é
+       SAVE_ESTADO_INVALIDO (erro nomeado), nunca clamp silencioso.
+       A versão da curva, quando presente, tem de ser 'v1'. */
+    if ('ambiente' in e) {
+      const a = e.ambiente;
+      if (!a || typeof a !== 'object') return INV;
+      if (Object.keys(a).some(k => !['hora', 'chuva', 'raios'].includes(k))) return INV;
+      if (!finito(a.hora) || a.hora < 0 || a.hora >= 24) return INV;
+      if (!(a.chuva === 0 || a.chuva === 1 || a.chuva === 2)) return INV;
+      if (typeof a.raios !== 'boolean') return INV;
+    }
+    if ('ambienteCurva' in e && e.ambienteCurva !== 'v1') return INV;
     /* PORTA C-23: o bloco do motor confere-se com a mesma régua. */
     return validarVlabParaAplicar(e.vlab);
   }
@@ -4084,7 +4413,11 @@
         /* PORTA C-23: o estado do motor por figura entra na captura
            (cópia profunda — o save é um valor, nunca uma referência
            viva; é o mesmo gesto do supEstadoCanonico). */
-        vlab: JSON.parse(JSON.stringify(ESTADO_VLAB))
+        vlab: JSON.parse(JSON.stringify(ESTADO_VLAB)),
+        /* Tranche AMBIENTE: o ambiente da partida entra na captura
+           (estado semântico, cópia) com a versão da curva. */
+        ambiente: { ...ambientePartida },
+        ambienteCurva: 'v1'
       };
     },
     aplicar(e) {
@@ -4111,6 +4444,7 @@
           danoSofrido, paGasto, transformada, reservaMovimento, atacou, alvo,
           batalhaFim, dadoEstado, roladasDados, supCongelado,
           vlab: JSON.parse(JSON.stringify(ESTADO_VLAB)),
+          ambiente: { ...ambientePartida },   // AMBIENTE: o pré-estado cobre também o ambiente (atomicidade S-CONF-02)
           reaccoes: { ...REACCOES_DECLARADAS },
           mortePropriaAdjudicada, partidaPendente, correrUsado,
           desvincular: opcoesMovimento.desvincular,
@@ -4213,6 +4547,16 @@
            reimposição (o de iniciarVez/iniciarVezIA leu valores
            pré-carregar — snapshot híbrido S-CRIT-06): pilha limpa e
            UM snapshot novo, já com o estado carregado. */
+        /* Tranche AMBIENTE: o ambiente do save assenta JÁ (imediato),
+           antes do snapshot novo — o snapshot nasce já com ele.
+           Save antigo sem o campo: Noite seca DECLARADA no registo
+           (a validação já garantiu que um campo presente é válido). */
+        if (e.ambiente && ambDominioValido(e.ambiente)) {
+          ambAssentar({ hora: e.ambiente.hora, chuva: e.ambiente.chuva, raios: e.ambiente.raios }, { imediato: true });
+        } else {
+          ambAssentar({ ...AMBIENTE_RITUAL }, { imediato: true });
+          supRegistar('ambiente', { origem: 'save', razao: 'Save sem ambiente — Noite seca do ritual declarada' });
+        }
         supPilha.length = 0;
         supSnapshot();
         supRestaurando = false;
@@ -4257,6 +4601,10 @@
             }
             reservaMovimento = preSave.reservaMovimento;
             atacou = preSave.atacou; alvo = preSave.alvo;
+            /* AMBIENTE: a aplicação falhada repõe também o ambiente
+               do pré-estado — aplicação que não aconteceu não muda o céu. */
+            if (preSave.ambiente && ambDominioValido(preSave.ambiente))
+              try { ambAssentar({ ...preSave.ambiente }, { imediato: true }); } catch (__) {}
             batalhaFim = preSave.batalhaFim;
             dadoEstado = preSave.dadoEstado >>> 0; roladasDados = preSave.roladasDados;
             ataquePendente = null; custoPendente = null; caminhoPendente = null;
@@ -4289,6 +4637,268 @@
       }
     }
   });
+
+  /* ---------- Ambiente: painel do Mestre (só #cfgpop, antes de #stats) ----------
+   * Superfície do ambiente no ⚙, no padrão da casa (superfícies do
+   * Supervisor): nasce SÓ com MODO_MESTRE. Na vista da jogadora
+   * NADA disto é criado — sem nós, sem listeners, sem globais: ela
+   * vê e ouve o mundo mudar, nunca o painel. O estado da mesa vive
+   * em ambientePartida; esta função só o PINTA (e o ponto no ⚙). */
+  function ambSincronizarPainel() {
+    const e = ambientePartida;
+    if (ambUI.estadoEl) {
+      let txt = ambTextoEstado(e);
+      if (ambDegrau > 0) txt += ` · apresentação reduzida: ${AMB_DEGRAUS[ambDegrau]}`;
+      ambUI.estadoEl.textContent = txt;
+    }
+    if (ambUI.ponto) ambUI.ponto.hidden = (e.hora === AMBIENTE_RITUAL.hora && e.chuva === 0 && e.raios === false);
+    for (const reg of ambUI.botoesHora) reg.b.classList.toggle('on', Math.abs(e.hora - reg.hora) < 0.051);
+    for (const reg of ambUI.botoesChuva) {
+      reg.b.classList.toggle('on', e.chuva === reg.chuva);
+      if (reg.chuva === 2)   // em qualidade Baixa, o Forte activo rotula a apresentação reduzida
+        reg.b.textContent = (qualidade === 'baixa' && e.chuva === 2)
+          ? 'Forte — apresentação reduzida em qualidade Baixa' : 'Forte';
+    }
+    if (ambUI.deslizador && document.activeElement !== ambUI.deslizador)
+      ambUI.deslizador.value = String(e.hora);
+    if (ambUI.leitura && document.activeElement !== ambUI.deslizador)
+      ambUI.leitura.textContent = ambFmtHora(e.hora);
+    if (ambUI.togRaios) {
+      ambUI.togRaios.classList.toggle('on', e.raios);
+      ambUI.togRaios.textContent = e.raios ? 'Ligados' : 'Desligados';
+      ambUI.togRaios.setAttribute('aria-pressed', String(e.raios));
+    }
+    if (ambUI.btnRaio) {
+      ambUI.btnRaio.disabled = !(e.raios && e.chuva !== 0) && !ambRaioPendente;
+      ambUI.btnRaio.classList.toggle('amb-pendente', ambRaioPendente);
+      ambUI.btnRaio.textContent = ambRaioPendente ? '⚡ Raio pendente…' : '⚡ Raio agora';
+    }
+    if (ambUI.togSom) {
+      ambUI.togSom.classList.toggle('on', ambSomLigado);
+      ambUI.togSom.textContent = ambSomLigado ? 'Ligado' : 'Desligado';
+      ambUI.togSom.setAttribute('aria-pressed', String(ambSomLigado));
+    }
+    if (ambUI.togTremulacao) {
+      ambUI.togTremulacao.classList.toggle('on', ambTremulacaoLigada);
+      ambUI.togTremulacao.textContent = ambTremulacaoLigada ? 'Ligada' : 'Desligada';
+      ambUI.togTremulacao.setAttribute('aria-pressed', String(ambTremulacaoLigada));
+    }
+  }
+  if (MODO_MESTRE) {
+    const tituloAmb = document.createElement('h3');
+    tituloAmb.textContent = 'Ambiente';
+    cfgEl.insertBefore(tituloAmb, $('stats'));
+    const estadoAmbEl = document.createElement('div');
+    estadoAmbEl.id = 'amb-estado';
+    estadoAmbEl.className = 'amb-estado';
+    cfgEl.insertBefore(estadoAmbEl, $('stats'));
+    ambUI.estadoEl = estadoAmbEl;
+    /* Hora: 5 botões nomeados, ordem cronológica, âncoras exactas. */
+    const linhaAmbHora = document.createElement('div');
+    linhaAmbHora.className = 'cfgrow vel';
+    const rotuloAmbHora = document.createElement('span');
+    rotuloAmbHora.className = 'cl';
+    rotuloAmbHora.textContent = 'Hora';
+    const grupoAmbHora = document.createElement('div');
+    grupoAmbHora.className = 'seg amb-seg';
+    grupoAmbHora.setAttribute('role', 'group');
+    grupoAmbHora.setAttribute('aria-label', 'Hora do dia');
+    for (const ancora of AMBIENTE_ANcoras) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = ancora.nome;
+      b.addEventListener('click', () =>
+        ambAssentar({ hora: ancora.hora, chuva: ambientePartida.chuva, raios: ambientePartida.raios }, {}));
+      grupoAmbHora.appendChild(b);
+      ambUI.botoesHora.push({ hora: ancora.hora, b });
+    }
+    linhaAmbHora.appendChild(rotuloAmbHora);
+    linhaAmbHora.appendChild(grupoAmbHora);
+    cfgEl.insertBefore(linhaAmbHora, $('stats'));
+    /* Hora exacta: deslizador 0–24, passo 0,1. Arrastar PRÉ-VISUALIZA
+       (aplicarAmbiente sem gravar estado nem preferência); largar
+       ASSENTA (grava estado da partida + preferência do Mestre). */
+    const linhaAmbFina = document.createElement('div');
+    linhaAmbFina.className = 'cfgrow amb-slider-row';
+    const rotuloAmbFina = document.createElement('span');
+    rotuloAmbFina.className = 'cl';
+    rotuloAmbFina.textContent = 'Hora exacta';
+    const deslizadorAmb = document.createElement('input');
+    deslizadorAmb.type = 'range';
+    deslizadorAmb.id = 'amb-hora';
+    deslizadorAmb.className = 'amb-range';
+    deslizadorAmb.min = '0'; deslizadorAmb.max = '24'; deslizadorAmb.step = '0.1';
+    deslizadorAmb.setAttribute('aria-label', 'Hora exacta do dia');
+    const leituraAmb = document.createElement('span');
+    leituraAmb.className = 'amb-leitura';
+    linhaAmbFina.appendChild(rotuloAmbFina);
+    linhaAmbFina.appendChild(deslizadorAmb);
+    linhaAmbFina.appendChild(leituraAmb);
+    cfgEl.insertBefore(linhaAmbFina, $('stats'));
+    ambUI.deslizador = deslizadorAmb;
+    ambUI.leitura = leituraAmb;
+    deslizadorAmb.addEventListener('input', () => {
+      const bruto = Number(deslizadorAmb.value);
+      if (!Number.isFinite(bruto)) return;
+      const h = bruto >= 24 ? 0 : bruto;   // 24,0h é a 0,0h do dia seguinte — o domínio é [0,24)
+      leituraAmb.textContent = ambFmtHora(bruto);
+      ambAplicarVista({ hora: h, chuva: ambientePartida.chuva, raios: ambientePartida.raios }, false);
+      if (ambUI.estadoEl) {
+        let txt = ambTextoEstado({ hora: h, chuva: ambientePartida.chuva, raios: ambientePartida.raios });
+        if (ambDegrau > 0) txt += ` · apresentação reduzida: ${AMB_DEGRAUS[ambDegrau]}`;
+        ambUI.estadoEl.textContent = txt;
+      }
+    });
+    deslizadorAmb.addEventListener('change', () => {
+      const bruto = Number(deslizadorAmb.value);
+      if (Number.isFinite(bruto))
+        ambAssentar({ hora: bruto >= 24 ? 0 : bruto, chuva: ambientePartida.chuva, raios: ambientePartida.raios }, {});
+    });
+    /* Chuva: 3 botões, as palavras dele — Sem · Pouca · Forte. */
+    const linhaAmbChuva = document.createElement('div');
+    linhaAmbChuva.className = 'cfgrow vel';
+    const rotuloAmbChuva = document.createElement('span');
+    rotuloAmbChuva.className = 'cl';
+    rotuloAmbChuva.textContent = 'Chuva';
+    const grupoAmbChuva = document.createElement('div');
+    grupoAmbChuva.className = 'seg amb-seg';
+    grupoAmbChuva.setAttribute('role', 'group');
+    grupoAmbChuva.setAttribute('aria-label', 'Chuva');
+    for (const nivel of [{ chuva: 0, nome: 'Sem' }, { chuva: 1, nome: 'Pouca' }, { chuva: 2, nome: 'Forte' }]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = nivel.nome;
+      b.addEventListener('click', () =>
+        ambAssentar({ hora: ambientePartida.hora, chuva: nivel.chuva, raios: ambientePartida.raios }, {}));
+      grupoAmbChuva.appendChild(b);
+      ambUI.botoesChuva.push({ chuva: nivel.chuva, b });
+    }
+    linhaAmbChuva.appendChild(rotuloAmbChuva);
+    linhaAmbChuva.appendChild(grupoAmbChuva);
+    cfgEl.insertBefore(linhaAmbChuva, $('stats'));
+    /* Raios: interruptor + «⚡ Raio agora» (inactivo salvo raios
+       ligados e chuva ≠ Sem; pendente visível no próprio botão). */
+    const linhaAmbRaios = document.createElement('div');
+    linhaAmbRaios.className = 'cfgrow';
+    const rotuloAmbRaios = document.createElement('span');
+    rotuloAmbRaios.className = 'cl';
+    rotuloAmbRaios.textContent = 'Raios';
+    const togAmbRaios = document.createElement('button');
+    togAmbRaios.type = 'button';
+    togAmbRaios.id = 'amb-raios';
+    togAmbRaios.className = 'tog';
+    linhaAmbRaios.appendChild(rotuloAmbRaios);
+    linhaAmbRaios.appendChild(togAmbRaios);
+    cfgEl.insertBefore(linhaAmbRaios, $('stats'));
+    ambUI.togRaios = togAmbRaios;
+    togAmbRaios.addEventListener('click', () =>
+      ambAssentar({ hora: ambientePartida.hora, chuva: ambientePartida.chuva, raios: !ambientePartida.raios }, {}));
+    const linhaAmbRaio = document.createElement('div');
+    linhaAmbRaio.className = 'cfgrow';
+    const rotuloAmbRaio = document.createElement('span');
+    rotuloAmbRaio.className = 'cl';
+    rotuloAmbRaio.textContent = 'Raio';
+    const btnAmbRaio = document.createElement('button');
+    btnAmbRaio.type = 'button';
+    btnAmbRaio.id = 'amb-raio-agora';
+    btnAmbRaio.className = 'tog amb-raio-btn';
+    btnAmbRaio.textContent = '⚡ Raio agora';
+    linhaAmbRaio.appendChild(rotuloAmbRaio);
+    linhaAmbRaio.appendChild(btnAmbRaio);
+    cfgEl.insertBefore(linhaAmbRaio, $('stats'));
+    ambUI.btnRaio = btnAmbRaio;
+    btnAmbRaio.addEventListener('click', () => ambPedirRaioManual());
+    /* Som do ambiente: opção pessoal deste aparelho. */
+    const linhaAmbSom = document.createElement('div');
+    linhaAmbSom.className = 'cfgrow';
+    const rotuloAmbSom = document.createElement('span');
+    rotuloAmbSom.className = 'cl';
+    rotuloAmbSom.innerHTML = 'Som do ambiente<small>chuva e trovão, só neste aparelho</small>';
+    const togAmbSom = document.createElement('button');
+    togAmbSom.type = 'button';
+    togAmbSom.id = 'amb-som';
+    togAmbSom.className = 'tog';
+    linhaAmbSom.appendChild(rotuloAmbSom);
+    linhaAmbSom.appendChild(togAmbSom);
+    cfgEl.insertBefore(linhaAmbSom, $('stats'));
+    ambUI.togSom = togAmbSom;
+    togAmbSom.addEventListener('click', () => {
+      ambSomLigado = !ambSomLigado;
+      try { localStorage.setItem('hudt1-ambiente-som', ambSomLigado ? 'ligado' : 'desligado'); } catch (_) {}
+      ambAudioSincronizarChuva();
+      ambSincronizarPainel();
+    });
+    /* Tremulação do fogo: opção pessoal deste aparelho (EM-AMB-B1). */
+    const linhaAmbTrem = document.createElement('div');
+    linhaAmbTrem.className = 'cfgrow';
+    const rotuloAmbTrem = document.createElement('span');
+    rotuloAmbTrem.className = 'cl';
+    rotuloAmbTrem.innerHTML = 'Tremulação do fogo<small>o fogo e a luz dele a tremular, só neste aparelho</small>';
+    const togAmbTrem = document.createElement('button');
+    togAmbTrem.type = 'button';
+    togAmbTrem.id = 'amb-tremulacao';
+    togAmbTrem.className = 'tog';
+    linhaAmbTrem.appendChild(rotuloAmbTrem);
+    linhaAmbTrem.appendChild(togAmbTrem);
+    cfgEl.insertBefore(linhaAmbTrem, $('stats'));
+    ambUI.togTremulacao = togAmbTrem;
+    togAmbTrem.addEventListener('click', () => {
+      ambTremulacaoLigada = !ambTremulacaoLigada;
+      try { localStorage.setItem('hudt1-ambiente-tremulacao', ambTremulacaoLigada ? 'ligado' : 'desligado'); } catch (_) {}
+      ambAplicarTremulacao();
+      ambSincronizarPainel();
+    });
+    /* Regresso à casa: um toque repõe a noite do ritual. */
+    const linhaAmbVoltar = document.createElement('div');
+    linhaAmbVoltar.className = 'cfgrow';
+    const rotuloAmbVoltar = document.createElement('span');
+    rotuloAmbVoltar.className = 'cl';
+    rotuloAmbVoltar.textContent = 'Ambiente';
+    const btnAmbVoltar = document.createElement('button');
+    btnAmbVoltar.type = 'button';
+    btnAmbVoltar.id = 'amb-voltar-ritual';
+    btnAmbVoltar.className = 'tog';
+    btnAmbVoltar.textContent = 'Voltar à noite do ritual';
+    linhaAmbVoltar.appendChild(rotuloAmbVoltar);
+    linhaAmbVoltar.appendChild(btnAmbVoltar);
+    cfgEl.insertBefore(linhaAmbVoltar, $('stats'));
+    btnAmbVoltar.addEventListener('click', () => ambAssentar({ ...AMBIENTE_RITUAL }, {}));
+    /* Ponto no ⚙ (só Mestre): visível quando o ambiente ≠ ritual. */
+    const btnCfgAmb = $('btn-config');
+    if (btnCfgAmb) {
+      btnCfgAmb.style.position = 'relative';
+      const pontoAmb = document.createElement('span');
+      pontoAmb.id = 'amb-ponto';
+      pontoAmb.className = 'amb-ponto';
+      pontoAmb.setAttribute('aria-hidden', 'true');
+      pontoAmb.hidden = true;
+      btnCfgAmb.appendChild(pontoAmb);
+      ambUI.ponto = pontoAmb;
+    }
+    ambSincronizarPainel();
+  }
+  /* Ouvintes da vista (as duas vistas): 'ambiente' ao assentar
+   * refresca painel e som; 'raio' agenda o trovão com atraso
+   * variável sorteado AQUI (0,3–2,5 s) e variante ao acaso — sem
+   * áudio desbloqueado ou com o som desligado, não se agenda nada
+   * (sem dívida). 'stats' alimenta a escada de degradação. */
+  if (view && typeof view.on === 'function') {
+    try {
+      view.on('ambiente', () => { ambSincronizarPainel(); ambAudioSincronizarChuva(); });
+      view.on('raio', () => {
+        if (!ambSomLigado || !ambAudio.desbloqueado) return;
+        const atraso = 300 + Math.random() * 2200;
+        setTimeout(() => ambTocarTrovao(), atraso);
+      });
+      view.on('stats', s => { try { ambDegradacaoAmostra(s && s.fps); } catch (_) {} });
+    } catch (_) {}
+  }
+  if (typeof document !== 'undefined')   // em fundo o agendador pausa; ao voltar, sorteia de novo
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) ambLimparRelogioAutoRaio();
+      else ambAgendarAutoRaio();
+    });
+  ambAgendarAutoRaio();
 
   /* ---------- Supervisor: superfície do Mestre (só #cfgpop) ----------
    * S-001+M-016: esta superfície inteira só é CRIADA na vista do
@@ -5464,6 +6074,7 @@
     try { localStorage.setItem('hudt1-qualidade', qualidade); } catch (_) {}
     view.setQualidade(qualidade);
     marcarQualidade();
+    ambSincronizarPainel();   // AMBIENTE: o rótulo «Forte» em qualidade Baixa segue a qualidade actual
     say('Qualidade: <b>' + b.textContent + '</b> — aplicada já à vista (resolução, sombra e cenário).');
   }));
 
