@@ -69,7 +69,7 @@
             sun.shadow.bias = -.0005;
             sun.shadow.normalBias = .04;
             scene.add(sun);
-            const world = CampoWorld(T, scene, area), camera = new T.OrthographicCamera(-10, 10, 10, -10, .1, 1600), target = new T.Vector3(), ray = new T.Raycaster();
+            const world = CampoWorld(T, scene, area), camera = new T.OrthographicCamera(-10, 10, 10, -10, .1, 1600), cameraLivre = new T.PerspectiveCamera(50, 1, .1, 400), target = new T.Vector3(), ray = new T.Raycaster();
             /* ---------- AMBIENTE (tranche AMBIENTE — desenho LIBERA 05/11) ----------
              * aplicarAmbiente(estado) é o ÚNICO escritor de: exposição ·
              * hemisférica · sol · fundo · cor da névoa · bases do mundo
@@ -300,6 +300,22 @@
             function ambReaplicar() { if (ambDerivados) ambEscrever(ambAmostra(ambActual.hora), ambActual.chuva, 0); }
             let width = 1, height = 1, selected = null, mode = 'fixa', quality = 'alta', disposed = false, raf, last = performance.now(), fps = 0, fpsAt = last, frames = 0, shadowAt = 0, yaw = 0, pitch = 1.05, viewWidth = 20, primeiraVista = true;
             const zoom = { fixa: 1.5, seguir: 1, '360': 1 }, units = new Map(), events = new EventTarget(), times = [];
+            /* ---------- CÂMERA LIVRE DO MESTRE (tranche t-camera-livre, desenho v2) ----------
+             * Primeira pessoa dentro da arena, com a mecânica da sala/museu
+             * copiada valor a valor (olhar 0,0045 rad/px · andar 4,2 u/s ·
+             * vertical 3,0 u/s · Shift ×2,2 · multiplicador 1×/2×/4×).
+             * O estado de andar vive aqui, ao lado do ciclo animate — é lá
+             * que estão o dt, o world.height e os clamps — como na sala é
+             * o ciclo que anda com o ctrl. A câmera do jogo (ortográfica)
+             * NUNCA é tocada por este modo: a segunda câmera (cameraLivre,
+             * perspectiva 50 · 0,1–400, os números da sala) assume o render
+             * e as projecções só enquanto mode === 'livre', através de
+             * camaraActiva() — o único ponto de troca. Sair é voltar à
+             * ortográfica congelada: exacto por construção. */
+            const ctrlLivre = { pos: new T.Vector3(0, 1.6, 4.9), yaw: 0, pitch: 0, joyX: 0, joyY: 0, sobe: 0, teclas: {} };
+            let velLivre = 1;
+            const camaraActiva = () => mode === 'livre' ? cameraLivre : camera;
+            const livreRound = v => Math.round(v * 100) / 100;
             let presentation = null;
             const emit = (type, detail) => events.dispatchEvent(new CustomEvent(type, { detail })), publicUnit = u => ({ id: u.id, nome: u.nome, posicao: { x: u.x, y: u.z }, altitude: u.altitude, vivo: u.vivo });
             const requireUnit = id => {
@@ -629,11 +645,58 @@
                 animation(u, true);
             }
             function setCamera(value) {
-                if (!['fixa', 'seguir', '360'].includes(value))
+                if (!['fixa', 'seguir', '360', 'livre'].includes(value))
                     throw new RangeError('Câmera inválida.');
                 mode = value;
-                setZoom(zoom[mode]);
+                if (value === 'livre') {
+                    /* Entrada fixa (desenho v2 §5): à beira sul do círculo,
+                       olhos a 1,6 do chão, a olhar para o centro — semeada
+                       com o olharPara da sala (posição fixa + alvo, donde
+                       saem yaw e pitch). NÃO chama setZoom: a livre não
+                       tem zoom ortográfico nem slot no objecto zoom. */
+                    ctrlLivre.pos.set(0, world.height(0, 4.9) + 1.6, 4.9);
+                    const d = new T.Vector3(0 - ctrlLivre.pos.x, 1.3 - ctrlLivre.pos.y, 0 - ctrlLivre.pos.z).normalize();
+                    ctrlLivre.pitch = Math.asin(clamp(d.y, -1, 1));
+                    ctrlLivre.yaw = Math.atan2(-d.x, -d.z);
+                    ctrlLivre.joyX = ctrlLivre.joyY = 0;
+                    ctrlLivre.sobe = 0;
+                    ctrlLivre.teclas = {};
+                    cameraLivre.aspect = width / height;
+                    cameraLivre.updateProjectionMatrix();
+                    aplicarCamaraLivre();
+                } else setZoom(zoom[mode]);
                 emit('camera', { camera: mode });
+            }
+            /* aplicarCamaraLivre = o aplicarCamara da sala, sem tirar nem pôr. */
+            function aplicarCamaraLivre() {
+                cameraLivre.position.copy(ctrlLivre.pos);
+                const cp = Math.cos(ctrlLivre.pitch);
+                const dir = new T.Vector3(-Math.sin(ctrlLivre.yaw) * cp, Math.sin(ctrlLivre.pitch), -Math.cos(ctrlLivre.yaw) * cp);
+                cameraLivre.lookAt(ctrlLivre.pos.clone().add(dir));
+            }
+            /* O passo de andar: a matemática do ciclo da sala (manípulo +
+               teclas → (mx, mz) normalizado · frente/direita só do yaw no
+               plano do chão · 4,2 u/s · vertical 3,0 u/s separada), com o
+               dt do jogo (preso a 0,08) e os clamps do desenho v2 §6:
+               bordas = arena + 3 em cada lado · altura presa a
+               [world.height debaixo dos pés + 0,4 · 12] a cada quadro —
+               andar não pede altura, mas o chão empurra para cima: nunca
+               se enterra. Sem colisão, de propósito (§6). */
+            function passoAndarLivre(dt) {
+                const t = ctrlLivre.teclas;
+                let mx = ctrlLivre.joyX + ((t['d'] || t['arrowright']) ? 1 : 0) - ((t['a'] || t['arrowleft']) ? 1 : 0);
+                let mz = ctrlLivre.joyY + ((t['s'] || t['arrowdown']) ? 1 : 0) - ((t['w'] || t['arrowup']) ? 1 : 0);
+                const mm = Math.hypot(mx, mz); if (mm > 1) { mx /= mm; mz /= mm; }
+                if (mx || mz) {
+                    const s = Math.sin(ctrlLivre.yaw), c = Math.cos(ctrlLivre.yaw), vel = 4.2 * velLivre * (t['shift'] ? 2.2 : 1);
+                    ctrlLivre.pos.x += (c * mx + s * mz) * vel * dt;
+                    ctrlLivre.pos.z += (c * mz - s * mx) * vel * dt;
+                    ctrlLivre.pos.x = clamp(ctrlLivre.pos.x, -area.cols * CELL / 2 - 3, area.cols * CELL / 2 + 3);
+                    ctrlLivre.pos.z = clamp(ctrlLivre.pos.z, -area.rows * CELL / 2 - 3, area.rows * CELL / 2 + 3);
+                }
+                const sobe = ctrlLivre.sobe + ((t['e'] || t['pageup']) ? 1 : 0) - ((t['q'] || t['pagedown']) ? 1 : 0);
+                if (sobe) ctrlLivre.pos.y += sobe * 3.0 * velLivre * dt;
+                ctrlLivre.pos.y = clamp(ctrlLivre.pos.y, world.height(ctrlLivre.pos.x, ctrlLivre.pos.z) + .4, 12);
             }
             function baseWidth() {
                 if (mode === 'seguir')
@@ -648,6 +711,7 @@
             function setZoom(v) {
                 if (!Number.isFinite(v))
                     throw new TypeError('Zoom finito obrigatório.');
+                if (mode === 'livre') return;   // na livre não há zoom ortográfico: valida o número e é inerte — não escreve, não emite
                 const r = zoomRange();
                 zoom[mode] = clamp(v, r.min, r.max);
                 emit('zoom', { zoom: zoom[mode], ...r });
@@ -676,12 +740,15 @@
                 width = Math.max(1, r.width);
                 height = Math.max(1, r.height);
                 renderer.setSize(width, height, false);
-                setZoom(zoom[mode]);
+                if (mode === 'livre') {
+                    cameraLivre.aspect = width / height;
+                    cameraLivre.updateProjectionMatrix();
+                } else setZoom(zoom[mode]);
             }
             const observer = new ResizeObserver(resize);
             observer.observe(container);
             const screen = v => {
-                const p = v.clone().project(camera);
+                const p = v.clone().project(camaraActiva());
                 return { x: (p.x + 1) * width / 2, y: (1 - p.y) * height / 2, depth: p.z };
             };
             function unitRect(u, precise = false) {
@@ -721,10 +788,10 @@
                 units.forEach(u => {
                     const b = unitRect(u);
                     if (b && sx >= b.left && sx <= b.right && sy >= b.top && sy <= b.bottom)
-                        hits.push({ id: u.id, distance: camera.position.distanceTo(u.root.position) });
+                        hits.push({ id: u.id, distance: camaraActiva().position.distanceTo(u.root.position) });
                 });
                 hits.sort((a, b) => a.distance - b.distance);
-                ray.setFromCamera(new T.Vector2(sx / width * 2 - 1, 1 - sy / height * 2), camera);
+                ray.setFromCamera(new T.Vector2(sx / width * 2 - 1, 1 - sy / height * 2), camaraActiva());
                 const point = ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), 0), new T.Vector3());
                 let cell = null;
                 if (point) {
@@ -739,7 +806,7 @@
                 return { unitId: hits[0]?.id ?? null, cell };
             }
             function state() {
-                return { area: JSON.parse(JSON.stringify(area)), selected, camera: mode, zoom: zoom[mode], zoomRange: zoomRange(), gridVisible: grid.visible, qualidade: quality, moving: [...units.values()].some(u => u.step || u.queue.length), units: [...units.values()].map(publicUnit) };
+                return { area: JSON.parse(JSON.stringify(area)), selected, camera: mode, zoom: mode === 'livre' ? null : zoom[mode], zoomRange: mode === 'livre' ? null : zoomRange(), livre: mode === 'livre' ? { pos: [livreRound(ctrlLivre.pos.x), livreRound(ctrlLivre.pos.y), livreRound(ctrlLivre.pos.z)], yaw: livreRound(ctrlLivre.yaw), pitch: livreRound(ctrlLivre.pitch) } : null, gridVisible: grid.visible, qualidade: quality, moving: [...units.values()].some(u => u.step || u.queue.length), units: [...units.values()].map(publicUnit) };
             }
             function stats() {
                 return { movementCells:movementCells.map(p=>({...p})), presentation:presentation ? {attacker:presentation.a.id,target:presentation.b.id,phase:!presentation.started?'waiting':presentation.t<.2?'turn':'gesture'} : null, hoverVisible: hover.visible, destinationVisible: destination.visible, reachableCells: (moveLayer.children[0]?.geometry.attributes.position.count ?? 0)/6, fps, triangles: renderer.info.render.triangles, totalTriangles: count(scene), drawCalls: renderer.info.render.calls, dpr: renderer.getPixelRatio(), width, height, visibleWidthMeters: viewWidth, cellPixels: CELL / viewWidth * width, shadowSize: renderer.shadowMap.enabled ? 512 : 0, areaMeters: { width: area.cols * CELL, height: area.rows * CELL }, models: [...units.values()].map(u => ({ id:u.id, frente:((T.MathUtils.radToDeg(u.pivot.rotation.y)%360)+360)%360, drawOffset:{x:u.root.position.x-wx(u.x),y:u.root.position.y-world.height(wx(u.x),wz(u.z))-u.altitude,z:u.root.position.z-wz(u.z)}, modelo:u.model, loadError:u.loadError ?? null, triangles:count(u.pivot), markerTint:u.markerTint ?? null, skins:(()=>{const skins=new Set();u.pivot.traverse(o=>{if(o.isSkinnedMesh)skins.add(o.skeleton.bones.map(b=>b.uuid).join(','))});return skins.size})(), action:u.actionName ?? null, actionTime:u.action?.time ?? null, clips:u.animations.map(a=>a.name), clipDurations:u.animations.map(a=>({name:a.name,duration:a.duration})) })), animations: { idle: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.idle).length, walk: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.andar).length, advancing: [...units.values()].filter(u => u.mixer && u.mixer.time > 0).length } };
@@ -798,6 +865,16 @@
                     renderer.shadowMap.needsUpdate = true;
                     shadowAt = now;
                 }
+                if (mode === 'livre') {
+                    /* Câmera livre: o bloco da ortográfica NÃO corre — a
+                       câmera do jogo fica congelada e intacta (é isso que
+                       torna a saída exacta) e a névoa fica com os últimos
+                       valores (135/285: dentro da arena tudo está a menos
+                       de ~20 u do andarilho, sem névoa por cima de nada).
+                       Em vez disso: o passo de andar e a câmera de dentro. */
+                    passoAndarLivre(dt);
+                    aplicarCamaraLivre();
+                } else {
                 const followed = units.get(selected), want = (mode === 'fixa' || !followed) ? new T.Vector3(0, .35, 0) : followed.root.position.clone().add(new T.Vector3(0, .8, 0));
                 target.lerp(want, 1 - Math.exp(-dt * 7));
                 const p = mode === '360' ? pitch : mode === 'seguir' ? 1 : width < height ? .72 : 1.12, a = mode === '360' ? yaw : mode === 'fixa' && width < height ? Math.PI / 2 : 0, distance = Math.max(45, extent * 2);
@@ -819,8 +896,9 @@
                 camera.updateMatrixWorld();
                 scene.fog.near = distance + 90;
                 scene.fog.far = distance + 240;
+                }
                 ambTick(now);
-                renderer.render(scene, camera);
+                renderer.render(scene, camaraActiva());
                 const boxes = [];
                 const bodies = [...units.values()].map(u => unitRect(u)).filter(Boolean);
                 for (const u of [...units.values()].sort((a, b) => (b.id === selected) - (a.id === selected))) {
@@ -860,7 +938,31 @@
             setQualidade(options.qualidade || 'alta');
             raf = requestAnimationFrame(animate);
             const ready = Promise.all((options.units || []).map(addUnit));
-            return Object.freeze({ ready, addUnit, removeUnit, move, select, apresentarAtaque, setCamera, setZoom, setQualidade, showMovement, on, getState: state, getStats: stats, getFrameTimes: () => times.slice(), hitTest: hit, projectUnit: id => unitRect(requireUnit(id), true), setVivo(id, vivo) {
+            return Object.freeze({ ready, addUnit, removeUnit, move, select, apresentarAtaque, setCamera, setZoom, setQualidade, showMovement, livreOlhar(dx, dy) {
+                    /* O arrasto de olhar da sala: 0,0045 rad/px, pitch preso
+                       a ±1,45. Fora do modo 'livre', é inerte. */
+                    if (mode !== 'livre') return;
+                    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+                    ctrlLivre.yaw -= dx * .0045;
+                    ctrlLivre.pitch = clamp(ctrlLivre.pitch - dy * .0045, -1.45, 1.45);
+                }, livreEntrada(entrada) {
+                    /* A casca entrega o estado contínuo do andar (manípulo,
+                       botões de altura, teclas, multiplicador) sempre que
+                       ele muda; a cena guarda-o em ctrlLivre. Valores
+                       validados: números finitos, sobe reduzido ao sinal,
+                       multiplicador só 1/2/4, teclas só as do andar. */
+                    if (!entrada || typeof entrada !== 'object') return;
+                    if (Number.isFinite(entrada.joyX)) ctrlLivre.joyX = clamp(entrada.joyX, -1, 1);
+                    if (Number.isFinite(entrada.joyY)) ctrlLivre.joyY = clamp(entrada.joyY, -1, 1);
+                    if (Number.isFinite(entrada.sobe)) ctrlLivre.sobe = Math.sign(entrada.sobe);
+                    if (entrada.vel != null) { const v = Number(entrada.vel); if (v === 1 || v === 2 || v === 4) velLivre = v; }
+                    if (entrada.teclas && typeof entrada.teclas === 'object') {
+                        const ok = {};
+                        for (const k of ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'e', 'q', 'pageup', 'pagedown', 'shift'])
+                            if (entrada.teclas[k]) ok[k] = true;
+                        ctrlLivre.teclas = ok;
+                    }
+                }, on, getState: state, getStats: stats, getFrameTimes: () => times.slice(), hitTest: hit, projectUnit: id => unitRect(requireUnit(id), true), setVivo(id, vivo) {
                     if (typeof vivo !== 'boolean')
                         throw new TypeError('vivo booleano');
                     const u = requireUnit(id);

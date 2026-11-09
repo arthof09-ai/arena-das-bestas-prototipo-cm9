@@ -3252,6 +3252,15 @@
   view.on('error', e => say((e && e.message) || 'Erro na vista 3D.'));
   view.on('modelerror', d => { supRegistar('modelo-indisponivel', { id: d && d.id }); if (d && d.message) say(d.message); });
 
+  /* Câmera livre (tranche t-camera-livre, desenho v2): o estado do
+     gesto de olhar e a pergunta «a livre está activa?», lidos pelos
+     gestos abaixo; quem os preenche é o bloco do Mestre (mais abaixo
+     neste ficheiro). Fora do modo livre os gestos são os de sempre —
+     o ramo da livre só corre com a câmera em 'livre', e na vista da
+     jogadora esse modo nunca chega. */
+  let camLivreOlharGesto = null;
+  const camLivreActiva = () => { try { return view.getState().camera === 'livre'; } catch (_) { return false; } };
+
   /* ---------- gestos no mapa (o padrão da demo dele): ----------
    * toque = seleccionar/agir · arrastar = órbita (só 360) ·
    * pinça = zoom · dois dedos ou arrasto >7 px cancelam o toque.
@@ -3259,6 +3268,15 @@
   const ponteiros = new Map();
   let gesto = null, pinca = 0, multi = false;
   mapaEl.addEventListener('pointerdown', e => {
+    if (camLivreActiva()) {
+      /* Na livre, o toque no mapa é o OLHAR (a sala: arrastar em
+         qualquer ponto = olhar à volta). Não selecciona, não joga,
+         não chama hitTest. */
+      fecharCfg();
+      camLivreOlharGesto = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      try { mapaEl.setPointerCapture(e.pointerId); } catch (_) {}
+      return;
+    }
     ponteiros.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { mapaEl.setPointerCapture(e.pointerId); } catch (_) {}
     fecharCfg();
@@ -3272,6 +3290,13 @@
     }
   });
   mapaEl.addEventListener('pointermove', e => {
+    if (camLivreActiva()) {
+      if (camLivreOlharGesto && camLivreOlharGesto.id === e.pointerId) {
+        view.livreOlhar(e.clientX - camLivreOlharGesto.x, e.clientY - camLivreOlharGesto.y);
+        camLivreOlharGesto.x = e.clientX; camLivreOlharGesto.y = e.clientY;
+      }
+      return;
+    }
     if (!ponteiros.has(e.pointerId)) return;
     ponteiros.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (ponteiros.size === 2) {
@@ -3293,6 +3318,10 @@
     gesto.lastX = e.clientX; gesto.lastY = e.clientY;
   });
   mapaEl.addEventListener('pointerup', e => {
+    if (camLivreActiva()) {
+      if (camLivreOlharGesto && camLivreOlharGesto.id === e.pointerId) camLivreOlharGesto = null;
+      return;   // largar o olhar não é clique de jogo: tratarToque não corre
+    }
     const eraPinca = multi || ponteiros.size > 1;
     const eraArrasto = !!(gesto && gesto.id === e.pointerId && gesto.drag && !multi);
     if (gesto && gesto.id === e.pointerId && !gesto.drag && !multi)
@@ -3309,6 +3338,8 @@
   });
   for (const tipo of ['pointercancel', 'lostpointercapture'])
     mapaEl.addEventListener(tipo, e => {
+      if (camLivreOlharGesto && camLivreOlharGesto.id === e.pointerId) camLivreOlharGesto = null;
+      if (camLivreActiva()) return;
       ponteiros.delete(e.pointerId);
       view.showHover(null);
       pinca = 0;
@@ -3316,6 +3347,7 @@
     });
   mapaEl.addEventListener('wheel', e => {
     e.preventDefault();
+    if (camLivreActiva()) return;   // na livre não há zoom (como na sala): aproxima-se andando para perto
     view.setZoom(view.getState().zoom - Math.sign(e.deltaY) * .15);
     mostrarZoom(); fraseZoom();
   }, { passive: false });
@@ -3374,11 +3406,17 @@
 
   function mostrarZoom() {
     const s = view.getState();
+    if (s.camera === 'livre') {   // na livre o zoom da cena é null (desenho v2 §3): o ⚙ mostra «—» e os botões de zoom dormem
+      $('zoom-valor').textContent = '—';
+      $('zoom-menos').disabled = true;
+      $('zoom-mais').disabled = true;
+      return;
+    }
     $('zoom-valor').textContent = s.zoom.toFixed(1).replace('.', ',') + '×';
     $('zoom-menos').disabled = s.zoom <= s.zoomRange.min + .001;
     $('zoom-mais').disabled = s.zoom >= s.zoomRange.max - .001;
   }
-  function fraseZoom() { say(`Zoom a <b>${view.getState().zoom.toFixed(1).replace('.', ',')}×</b>.`); }
+  function fraseZoom() { if (camLivreActiva()) return; say(`Zoom a <b>${view.getState().zoom.toFixed(1).replace('.', ',')}×</b>.`); }
   /* R-T1-2: fora da câmera 360, orbit() não gira nada — o arrasto que
      virou órbita termina com a frase que aponta o caminho (⚙ → Câmera
      → 360°), em vez de terminar sem resposta nenhuma. */
@@ -4876,6 +4914,189 @@
       ambUI.ponto = pontoAmb;
     }
     ambSincronizarPainel();
+  }
+  /* ---------- Câmera livre do Mestre (só MODO_MESTRE) ----------
+   * Tranche t-camera-livre, desenho v2: andar e voar dentro do mapa
+   * em primeira pessoa, com a mecânica da sala/museu copiada. A porta
+   * vive no ⚙ (secção «Câmera livre», depois do Ambiente, antes de
+   * #stats) e a HUD de andar nasce escondida. Na vista da jogadora
+   * NADA disto é criado — sem nós, sem ouvintes, sem globais (padrão
+   * Ambiente) — e nenhum caminho chama setCamera('livre'). Os textos
+   * novos já nascem na forma «você» (palavra do Mestre, 08/11 21:49).
+   * Não persiste: nada disto entra em Salvar/Carregar nem em
+   * localStorage — é um gesto do momento. */
+  if (MODO_MESTRE) {
+    const tituloCamLivre = document.createElement('h3');
+    tituloCamLivre.textContent = 'Câmera livre';
+    cfgEl.insertBefore(tituloCamLivre, $('stats'));
+    const linhaCamLivre = document.createElement('div');
+    linhaCamLivre.className = 'cfgrow';
+    const rotuloCamLivre = document.createElement('span');
+    rotuloCamLivre.className = 'cl';
+    rotuloCamLivre.textContent = 'Andar no mapa';
+    const btnCamLivre = document.createElement('button');
+    btnCamLivre.type = 'button';
+    btnCamLivre.id = 'cam-livre-entrar';
+    btnCamLivre.className = 'tog';
+    btnCamLivre.textContent = 'Entrar na câmera livre';
+    linhaCamLivre.appendChild(rotuloCamLivre);
+    linhaCamLivre.appendChild(btnCamLivre);
+    cfgEl.insertBefore(linhaCamLivre, $('stats'));
+    const ajudaCamLivre = document.createElement('div');
+    ajudaCamLivre.className = 'cfgrow';
+    const ajudaTxtCamLivre = document.createElement('span');
+    ajudaTxtCamLivre.className = 'cl';
+    ajudaTxtCamLivre.textContent = 'Você anda e voa dentro do mapa para o analisar. Só aparece para você.';
+    ajudaCamLivre.appendChild(ajudaTxtCamLivre);
+    cfgEl.insertBefore(ajudaCamLivre, $('stats'));
+
+    /* ----- a HUD de andar: os elementos da sala, com os tamanhos dela ----- */
+    const joyCamLivre = document.createElement('div');
+    joyCamLivre.id = 'cam-livre-joy';
+    joyCamLivre.hidden = true;
+    const nubCamLivre = document.createElement('div');
+    nubCamLivre.id = 'cam-livre-nub';
+    joyCamLivre.appendChild(nubCamLivre);
+    document.body.appendChild(joyCamLivre);
+    const sobeCamLivre = document.createElement('div');
+    sobeCamLivre.id = 'cam-livre-sobe';
+    sobeCamLivre.className = 'cam-livre-hbtn';
+    sobeCamLivre.textContent = '▲';
+    sobeCamLivre.hidden = true;
+    sobeCamLivre.setAttribute('role', 'button');
+    sobeCamLivre.setAttribute('aria-label', 'Subir');
+    document.body.appendChild(sobeCamLivre);
+    const desceCamLivre = document.createElement('div');
+    desceCamLivre.id = 'cam-livre-desce';
+    desceCamLivre.className = 'cam-livre-hbtn';
+    desceCamLivre.textContent = '▼';
+    desceCamLivre.hidden = true;
+    desceCamLivre.setAttribute('role', 'button');
+    desceCamLivre.setAttribute('aria-label', 'Descer');
+    document.body.appendChild(desceCamLivre);
+    const velCamLivre = document.createElement('div');
+    velCamLivre.id = 'cam-livre-vel';
+    velCamLivre.hidden = true;
+    const velBotoesCamLivre = [];
+    for (const v of [1, 2, 4]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = v + '×';
+      b.classList.toggle('on', v === 1);
+      b.addEventListener('click', () => {
+        view.livreEntrada({ vel: v });
+        for (const x of velBotoesCamLivre) x.classList.toggle('on', x === b);
+        camLivreAcordarDica();
+      });
+      velCamLivre.appendChild(b);
+      velBotoesCamLivre.push(b);
+    }
+    document.body.appendChild(velCamLivre);
+    const sairCamLivre = document.createElement('button');
+    sairCamLivre.type = 'button';
+    sairCamLivre.id = 'cam-livre-sair';
+    sairCamLivre.textContent = '⟲ Voltar à câmera do jogo';
+    sairCamLivre.hidden = true;
+    document.body.appendChild(sairCamLivre);
+    const dicaCamLivre = document.createElement('div');
+    dicaCamLivre.id = 'cam-livre-dica';
+    dicaCamLivre.textContent = 'Arraste na tela para olhar · manípulo ou WASD para andar · ▲▼ para subir e descer';
+    dicaCamLivre.hidden = true;
+    document.body.appendChild(dicaCamLivre);
+    const hudCamLivre = [joyCamLivre, sobeCamLivre, desceCamLivre, velCamLivre, sairCamLivre, dicaCamLivre];
+
+    /* A dica esbate-se para 0,35 após 6 s e acorda a qualquer toque
+       nos controlos — o comportamento da #dica da sala. */
+    let dicaCamLivreTimer = null;
+    function camLivreAcordarDica() {
+      dicaCamLivre.style.opacity = '1';
+      clearTimeout(dicaCamLivreTimer);
+      dicaCamLivreTimer = setTimeout(() => { dicaCamLivre.style.opacity = '0.35'; }, 6000);
+    }
+
+    /* manípulo — o manípulo() da sala, com os mesmos números: círculo
+       de 132 px, botão central de 56 px que segue o dedo até 34 px,
+       joyX/joyY normalizados (módulo preso a 1), analógico */
+    {
+      let id = null;
+      const centro = () => { const r = joyCamLivre.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2, r.width / 2]; };
+      const mexer = e => {
+        const [cx, cy, rad] = centro();
+        let dx = (e.clientX - cx) / rad, dy = (e.clientY - cy) / rad;
+        const m = Math.hypot(dx, dy); if (m > 1) { dx /= m; dy /= m; }
+        view.livreEntrada({ joyX: dx, joyY: dy });
+        nubCamLivre.style.transform = `translate(calc(-50% + ${dx * 34}px), calc(-50% + ${dy * 34}px))`;
+      };
+      joyCamLivre.addEventListener('pointerdown', e => { id = e.pointerId; try { joyCamLivre.setPointerCapture(id); } catch (_) {} mexer(e); camLivreAcordarDica(); });
+      joyCamLivre.addEventListener('pointermove', e => { if (e.pointerId === id) mexer(e); });
+      const largar = e => { if (e.pointerId === id) { id = null; view.livreEntrada({ joyX: 0, joyY: 0 }); nubCamLivre.style.transform = 'translate(-50%,-50%)'; } };
+      ['pointerup', 'pointercancel'].forEach(ev => joyCamLivre.addEventListener(ev, largar));
+    }
+    /* botões de altura — apertar e segurar, como na sala (sobe só
+       volta a 0 quando larga o botão que o pôs) */
+    let sobeCamLivreVal = 0;
+    const ligaAlturaCamLivre = (el, val) => {
+      el.addEventListener('pointerdown', e => { e.preventDefault(); sobeCamLivreVal = val; view.livreEntrada({ sobe: val }); camLivreAcordarDica(); });
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => el.addEventListener(ev, () => { if (sobeCamLivreVal === val) { sobeCamLivreVal = 0; view.livreEntrada({ sobe: 0 }); } }));
+    };
+    ligaAlturaCamLivre(sobeCamLivre, 1);
+    ligaAlturaCamLivre(desceCamLivre, -1);
+    /* teclado do andar: a casca entrega o estado contínuo das teclas
+       à cena sempre que ele muda. Enquanto a livre está activa, estas
+       teclas são do andar e têm precedência sobre as setas do
+       «mover»: o ouvinte global das setas regista-se DEPOIS deste
+       bloco no ficheiro, por isso o stopImmediatePropagation chega
+       lá primeiro (desenho v2 §5, R6). */
+    const teclasCamLivre = new Set();
+    const CAM_LIVRE_TECLAS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'e', 'q', 'pageup', 'pagedown', 'shift'];
+    function camLivreEnviarTeclas() {
+      const t = {};
+      teclasCamLivre.forEach(k => { t[k] = true; });
+      view.livreEntrada({ teclas: t });
+    }
+    document.addEventListener('keydown', e => {
+      if (!camLivreActiva()) return;
+      const k = e.key.toLowerCase();
+      if (!CAM_LIVRE_TECLAS.includes(k)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (!teclasCamLivre.has(k)) { teclasCamLivre.add(k); camLivreEnviarTeclas(); }
+      camLivreAcordarDica();
+    });
+    document.addEventListener('keyup', e => {
+      const k = e.key.toLowerCase();
+      if (!teclasCamLivre.has(k)) return;
+      if (camLivreActiva()) { e.preventDefault(); e.stopImmediatePropagation(); }
+      teclasCamLivre.delete(k);
+      camLivreEnviarTeclas();
+    });
+    addEventListener('blur', () => { if (teclasCamLivre.size) { teclasCamLivre.clear(); camLivreEnviarTeclas(); } });
+
+    /* entrar / sair — a troca de HUD segue o evento 'camera' da cena,
+       por isso qualquer caminho que mude o modo sincroniza o ecrã */
+    let camLivreModoAnterior = null;
+    function camLivreSincronizarHud() {
+      const livre = camLivreActiva();
+      $('faixa').hidden = livre;
+      chipEl.hidden = livre;
+      $('cantos').hidden = livre;
+      for (const el of hudCamLivre) el.hidden = !livre;
+      if (livre) camLivreAcordarDica();
+    }
+    btnCamLivre.addEventListener('click', () => {
+      camLivreModoAnterior = view.getState().camera;
+      if (fichaAberta) fecharFicha();
+      fecharCfg();
+      view.setCamera('livre');   // o evento 'camera' sincroniza a HUD
+    });
+    sairCamLivre.addEventListener('click', () => {
+      teclasCamLivre.clear();
+      sobeCamLivreVal = 0;
+      view.livreEntrada({ joyX: 0, joyY: 0, sobe: 0, teclas: {} });
+      view.setCamera(camLivreModoAnterior && camLivreModoAnterior !== 'livre' ? camLivreModoAnterior : 'fixa');
+      say('Câmera do jogo — de volta à vista de antes.');
+    });
+    view.on('camera', camLivreSincronizarHud);
   }
   /* Ouvintes da vista (as duas vistas): 'ambiente' ao assentar
    * refresca painel e som; 'raio' agenda o trovão com atraso

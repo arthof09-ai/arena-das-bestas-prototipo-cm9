@@ -309,3 +309,40 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 @media (max-height:560px) and (min-width:600px){
   .amb-estado{grid-column:1 / -1}
 }
+
+/* ---------- Câmera livre do Mestre (tranche t-camera-livre, desenho v2) ----------
+   A HUD de andar: os elementos e tamanhos da sala/museu (manípulo
+   132 px no canto inferior esquerdo · ▲▼ de 68 px no canto inferior
+   direito · dica ao fundo centrada), com z-index 21 — acima do mapa,
+   das etiquetas e dos números de dano, abaixo do ⚙ (27). O botão de
+   voltar vai no topo centrado: é a saída, tem de estar sempre
+   visível enquanto se anda. Os [hidden] destas regras (e os de
+   #faixa/#cantos) são precisos porque o CSS de base põe display:flex
+   nesses elementos — sem a guarda, o atributo hidden perdia. */
+#faixa[hidden]{display:none}
+#cantos[hidden]{display:none}
+#cam-livre-joy{position:fixed;left:22px;bottom:22px;width:132px;height:132px;border-radius:50%;
+  background:rgba(30,40,48,.30);border:2px solid rgba(255,255,255,.55);z-index:21;touch-action:none}
+#cam-livre-joy[hidden]{display:none}
+#cam-livre-nub{position:absolute;left:50%;top:50%;width:56px;height:56px;border-radius:50%;
+  background:rgba(255,255,255,.85);transform:translate(-50%,-50%);pointer-events:none}
+.cam-livre-hbtn{position:fixed;right:22px;width:68px;height:68px;border-radius:50%;z-index:21;
+  background:rgba(30,40,48,.30);border:2px solid rgba(255,255,255,.55);
+  color:#fff;font-size:30px;line-height:64px;text-align:center;touch-action:none;
+  user-select:none;-webkit-user-select:none;cursor:pointer}
+.cam-livre-hbtn[hidden]{display:none}
+#cam-livre-sobe{bottom:108px}
+#cam-livre-desce{bottom:26px}
+#cam-livre-vel{position:fixed;right:22px;bottom:190px;z-index:21;display:flex;gap:7px}
+#cam-livre-vel[hidden]{display:none}
+#cam-livre-vel button{background:rgba(30,40,48,.45);color:#fff;border:1px solid rgba(255,255,255,.55);
+  border-radius:9px;font-size:14px;padding:5px 11px;cursor:pointer}
+#cam-livre-vel button.on{background:#ffd9a0;color:#24303a;font-weight:700}
+#cam-livre-sair{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:21;
+  background:rgba(30,40,48,.55);color:#fff;border:1px solid rgba(255,255,255,.55);
+  border-radius:16px;font-size:15px;padding:8px 16px;cursor:pointer;white-space:nowrap}
+#cam-livre-sair[hidden]{display:none}
+#cam-livre-dica{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:21;
+  background:rgba(30,40,48,.45);color:#fff;font-size:15px;padding:7px 14px;
+  border-radius:16px;white-space:nowrap;transition:opacity 1.2s;pointer-events:none}
+#cam-livre-dica[hidden]{display:none}
