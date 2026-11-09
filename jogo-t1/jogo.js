@@ -1582,8 +1582,14 @@
   }
   /* Saída de adjacência dela: valida no motor e resolve os ataques
      de oportunidade que nascerem, um a um, pelo mesmo resolver.
-     Devolve a frase composta (ou null se nada houver a dizer). */
-  function vlabResolverSaidaAdjacencia(partiu) {
+     Devolve { frase, abortada } (ou null sem motor): a frase
+     composta (ou null se nada houver a dizer); abortada = o ciclo
+     morreu a meio (época morta num parque) e o chamador cala tudo.
+     M2 (Opção C dele, §4.2): ASSÍNCRONA — no modo do Mestre, um
+     golpe cuja falha crítica traz proposta ESTACIONA dentro do
+     ciclo e espera a decisão dele no cartão; sem MODO_MESTRE corre
+     exactamente como a síncrona de sempre (nunca espera). */
+  async function vlabResolverSaidaAdjacencia(partiu) {
     if (!VLAB_MOTOR) return null;
     const mk = ids => ids.map(id => ({
       id, reacaoDisponivel: ESTADO_VLAB[id].reacaoDisponivel }));
@@ -1599,7 +1605,7 @@
     }
     if (val.erro) {
       supRegistar('bloqueada', { acao: 'saida-adjacencia', actor: PROPRIA, razao: val.erro.codigo });
-      return frases.length ? frases.join(' ') : null;
+      return { frase: frases.length ? frases.join(' ') : null, abortada: false };
     }
     /* Grupo B — encontrados e abandonados a meio do caminho:
        atacam na mesma e o Desvincular não os cobre (contrato). */
@@ -1613,11 +1619,21 @@
     if (partiu.desvincular && val.cobertosPorDesvincular.length) {
       atacou = true;   // a Acção Padrão gastou-se no Desvincular
       if (!ataques.length)
-        return 'A <b>Ong</b> afastou-se com segurança — nenhum inimigo a golpeia ao sair.';
+        return { frase: 'A <b>Ong</b> afastou-se com segurança — nenhum inimigo a golpeia ao sair.', abortada: false };
       frases.push('A <b>Ong</b> afastou-se com segurança de quem tinha ao lado ao partir.');
     }
     for (const aoo of ataques) {
-      const s = vlabResolverAtaqueCompleto(aoo.inimigoId, PROPRIA, { ataqueDeOportunidade: true });
+      /* M2 (§4.2): semente e verificação POR GOLPE, capturadas pela
+         casca antes da rolagem — como o §3.1 faz no turno. No modo
+         do Mestre o golpe rola em «proposta» (se a falha crítica
+         trouxer proposta confirmável, o ciclo estaciona nela);
+         sem MODO_MESTRE rola em «sorte» como hoje — a Party nunca
+         espera por um cartão que não pode ver. */
+      let sementeDG = null, verificacaoDG = null;
+      if (MODO_MESTRE) { sementeDG = vlabSemente(); verificacaoDG = vlabVerificacao(); }
+      const s = MODO_MESTRE
+        ? vlabResolverAtaqueCompleto(aoo.inimigoId, PROPRIA, { ataqueDeOportunidade: true, modoDesgraca: 'proposta', semente: sementeDG, verificacao: verificacaoDG })
+        : vlabResolverAtaqueCompleto(aoo.inimigoId, PROPRIA, { ataqueDeOportunidade: true });
       if (s.erro) {
         /* Erro nomeado = nada foi aplicado (regra de ouro): a
            Reacção NÃO se consome e o jogador ouve que algo falhou
@@ -1647,17 +1663,78 @@
         if (desfecho === 'morreu') { fimDeBatalha('morte'); break; }
         if (desfecho === 'aMorrer') { entrarAMorrer(); break; }
       } else if (s.resultado === 'falhaCritica') {
-        const fc = vlabAplicarAtacanteDepois(aoo.inimigoId, s);
-        supRegistar('accao', { acao: 'ataque', actor: aoo.inimigoId, alvo: PROPRIA, acerto: false, oportunidade: true, falhaCritica: fc ? fc.desgraca.id : null });
-        frases.push(`${nome} tenta golpeá-la de oportunidade e falha. ` +
-          vlabFraseDesgraca(aoo.inimigoId, (s.soDoMestre || {}).falhaCritica));
+        const fcProp = s.soDoMestre && s.soDoMestre.falhaCritica;
+        if (MODO_MESTRE && fcProp && fcProp.requerConfirmacao) {
+          /* M2 — O PARQUE DA OPORTUNIDADE (§4.2): o ciclo estaciona
+             NESTE ponto, com ela já no destino e as contas do
+             movimento fechadas; o mundo espera pela guarda única
+             (§3.3) e pela recusa de captura (§3.6). Ao estacionar:
+             zero eventos, zero frases — a frase composta continua
+             única e só é dita no fim, pelo chamador. Um cartão de
+             cada vez: o ciclo é a fila (§6). */
+          const estadoPreParque = estado;
+          const pendente = { origem: 'oportunidade', atacanteId: aoo.inimigoId,
+            seq: seqTurno, supEpoca, semente: sementeDG, verificacao: verificacaoDG,
+            recibo: s, proposta: fcProp.desgraca.id, escolhaMarcada: undefined, assentador: null };
+          desgracaMonstroPendente = pendente;
+          estado = 'desgraca-lista'; renderAcoes();
+          const desfecho = await new Promise(resolver => { pendente.assentador = resolver; });
+          /* Re-conferência dentro do ciclo (E-C1.4): época morta
+             (restauro/gelo/fim entretanto) aborta o CICLO INTEIRO
+             com sinal de aborto — golpes por resolver não se
+             resolvem numa linha do tempo abandonada, e o chamador
+             lê o sinal e cala (§4.2, guarda E-C1.7). */
+          if (!desfecho || desfecho.morta || batalhaFim || supCongelado || supEpoca !== pendente.supEpoca)
+            return { frase: null, abortada: true };
+          const escolha = desfecho.escolha;
+          estado = estadoPreParque; renderAcoes();
+          if (escolha === 'nada') {
+            /* «Não acontece nada»: SEM segunda chamada (efeito
+               zero estrutural, §3.1) — a frase é a da falha
+               simples e o ataque regista-se sem desgraça. */
+            supRegistar('accao', { acao: 'ataque', actor: aoo.inimigoId, alvo: PROPRIA, acerto: false, oportunidade: true, falhaCritica: null });
+            supRegistar('accao', { acao: 'desgraca-escolha', actor: aoo.inimigoId, proposta: pendente.proposta, escolha: 'nada' });
+            frases.push(`${nome} tenta golpeá-la de oportunidade e falha. ` +
+              vlabFraseDesgraca(aoo.inimigoId, null));
+          } else {
+            /* Segunda chamada com a semente DESTE golpe e a
+               confirmação da proposta DESTE golpe — a decisão
+               aplica-se ao facto que aconteceu, nunca a outro. */
+            const s2 = vlabResolverAtaqueCompleto(aoo.inimigoId, PROPRIA, { ataqueDeOportunidade: true,
+              modoDesgraca: 'escolha', semente: pendente.semente, verificacao: pendente.verificacao,
+              desgracaEscolhida: escolha, confirmacaoDeProposta: { proposta: pendente.proposta } });
+            if (s2.erro) {
+              /* Aborto nomeado (§3.1): a decisão era válida mas a
+                 resolução morreu — regista-se o bloqueio e a frase
+                 composta leva só a linha de falha deste golpe,
+                 SEM frase de desgraça: nenhuma aconteceu, e «O
+                 golpe correu mal.» afirmaria um «nada» que ninguém
+                 decidiu. O ciclo continua para o golpe seguinte. */
+              supRegistar('bloqueada', { acao: 'ataque', actor: aoo.inimigoId, razao: s2.erro.codigo });
+              frases.push(`${nome} tenta golpeá-la de oportunidade e falha.`);
+            } else {
+              const fc = vlabAplicarAtacanteDepois(aoo.inimigoId, s2);
+              supRegistar('accao', { acao: 'ataque', actor: aoo.inimigoId, alvo: PROPRIA, acerto: false, oportunidade: true, falhaCritica: fc ? fc.desgraca.id : null });
+              supRegistar('accao', { acao: 'desgraca-escolha', actor: aoo.inimigoId, proposta: pendente.proposta, escolha });
+              if (s2.desgracaPendente)
+                supRegistar('accao', { acao: 'desgraca-pendente', actor: aoo.inimigoId, tipo: s2.desgracaPendente.tipo, aplicada: false, motivo: 'desgraça pendente não aplicada nesta casca (sem aliados ao alcance — contexto da batalha a solo)' });
+              frases.push(`${nome} tenta golpeá-la de oportunidade e falha. ` +
+                vlabFraseDesgraca(aoo.inimigoId, fc));
+            }
+          }
+        } else {
+          const fc = vlabAplicarAtacanteDepois(aoo.inimigoId, s);
+          supRegistar('accao', { acao: 'ataque', actor: aoo.inimigoId, alvo: PROPRIA, acerto: false, oportunidade: true, falhaCritica: fc ? fc.desgraca.id : null });
+          frases.push(`${nome} tenta golpeá-la de oportunidade e falha. ` +
+            vlabFraseDesgraca(aoo.inimigoId, (s.soDoMestre || {}).falhaCritica));
+        }
       } else {
         supRegistar('accao', { acao: 'ataque', actor: aoo.inimigoId, alvo: PROPRIA, acerto: false, oportunidade: true });
         frases.push(`${nome} tenta golpeá-la de oportunidade e falha.`);
       }
       if (batalhaFim) break;
     }
-    return frases.length ? frases.join(' ') : null;
+    return { frase: frases.length ? frases.join(' ') : null, abortada: false };
   }
 
   /* ---------- estado da casca ---------- */
@@ -1792,7 +1869,61 @@
       && ataquePendente.vlab.soDoMestre.falhaCritica;
     return (fc && fc.requerConfirmacao) ? fc : null;
   }
+  /* ---------- portão das desgraças dos monstros (M1) ----------
+   * Desenho LAVRADO com bancada: DESENHO.md desta tranche (§3).
+   * A falha crítica de um monstro, na vista do Mestre, ESTACIONA
+   * dentro de atacarIA: a rolagem corre em modo «proposta» (o
+   * motor não aplica nada) e a decisão é dele, no mesmo cartão da
+   * lista — aprova a proposta, troca da lista ou «Não acontece
+   * nada», com marcar + «Aplicar» (escolher e autorizar são dois
+   * actos, H10). Sem MODO_MESTRE não há parque: atacarIA corre em
+   * «sorte», exactamente como antes — a Party nunca fica refém de
+   * um cartão que não pode ver nem decidir. */
+  let desgracaMonstroPendente = null;
+  /* O assentador ÚNICO do pendente do monstro: a promessa de
+     atacarIA resolve-se por esta porta e por mais nenhuma — a
+     decisão dele ({ escolha }) ou um cancelador ({ morta: true }:
+     aplicar um save, supRestaurar, o gelo, os fechos defensivos
+     de fim de batalha — §3.5 do desenho). Idempotente: assentar
+     duas vezes é assentar uma; e o pendente limpa-se ANTES de
+     resolver, para uma decisão tardia sobre um pendente já morto
+     ser inerte. */
+  function fecharDesgracaMonstro(resultado) {
+    const p = desgracaMonstroPendente;
+    if (!p) return;
+    desgracaMonstroPendente = null;
+    if (p.assentador) p.assentador(resultado || { morta: true });
+  }
+  /* A guarda única de «decisão por resolver» (§3.3 do desenho):
+     gémea de rolagemPorResolver(), mas sobre QUALQUER pendente de
+     desgraça — o dela (a rolagem) ou o do monstro (o parque).
+     Enquanto durar, nenhum caminho escreve estado nem
+     ataquePendente: os guardas de toque tratam 'desgraca-lista'
+     como estado cancelável (medido pela bancada) e, sem esta
+     guarda, um toque a meio de um parque desfazia o estado por
+     baixo da resolução estacionada. */
+  const decisaoPorResolver = () =>
+    rolagemPorResolver() || desgracaMonstroPendente != null;
+  const FRASE_DECISAO_PENDENTE = 'A desgraça está por decidir — escolha no cartão.';
   const dgCartaoEl = $('desgraca-cartao'), dgPropostaEl = $('dg-proposta'), dgOpcoesEl = $('dg-opcoes');
+  /* A fonte ÚNICA do cartão (M1, §3.2 do desenho): o pendente
+     dela (a rolagem em 'desgraca-lista' dela) OU o pendente do
+     monstro (o parque) — nunca os dois ao mesmo tempo: o dela
+     vive só na vez dela em 'rolagem', o do monstro só na vez da
+     IA, estados mutuamente exclusivos (invariante provada na
+     construção). Devolve { origem, fc, pendente? } ou null. */
+  function fonteCartaoDesgraca() {
+    if (estado !== 'desgraca-lista') return null;
+    const dela = desgracaPropostaPendente();
+    if (dela) return { origem: 'dela', fc: dela };
+    if (desgracaMonstroPendente) {
+      const fc = desgracaMonstroPendente.recibo
+        && desgracaMonstroPendente.recibo.soDoMestre
+        && desgracaMonstroPendente.recibo.soDoMestre.falhaCritica;
+      if (fc) return { origem: desgracaMonstroPendente.origem, fc, pendente: desgracaMonstroPendente };
+    }
+    return null;
+  }
   /* A visibilidade do cartão deriva do estado, sincronizada em
      renderAcoes: visível só em 'desgraca-lista' — nenhum caminho
      (restauro, gelo, toque numa figura) o deixa órfão no ecrã. */
@@ -1802,23 +1933,50 @@
        na Party a superfície do Mestre não se constrói). */
     if (!MODO_MESTRE) return;
     if (!dgCartaoEl) return;
-    const fc = estado === 'desgraca-lista' ? desgracaPropostaPendente() : null;
-    if (!fc) { dgCartaoEl.hidden = true; return; }
-    dgPropostaEl.innerHTML = `A proposta é <b>${fc.desgraca.nome}</b>. Escolha a desgraça que acontece — ou nenhuma.`;
+    const fonte = fonteCartaoDesgraca();
+    if (!fonte) { dgCartaoEl.hidden = true; return; }
+    const fc = fonte.fc;
+    const doMonstro = fonte.origem !== 'dela';
+    const marcada = doMonstro ? fonte.pendente.escolhaMarcada : undefined;
     let html = '';
     for (const l of fc.tabelaEfectiva || [])
-      html += `<button type="button" class="btn" data-dg="${l.id}"><span class="gl">${l.nome}</span></button>`;
+      html += `<button type="button" class="btn${marcada === l.id ? ' marcada' : ''}" data-dg="${l.id}"><span class="gl">${l.nome}</span></button>`;
     for (const x of fc.excluidas || [])
       html += `<button type="button" class="btn" data-dg="${x.id}" disabled><span class="gl">${DESGRACA_NOMES[x.id] || x.id}</span></button>`
         + `<p class="dg-motivo">${x.motivo}</p>`;
-    html += `<button type="button" class="btn ghost" data-dg="nada"><span class="gl">Não acontece nada</span></button>`;
-    html += `<button type="button" class="btn ghost" data-dg-voltar><span class="gl">← Voltar</span></button>`;
+    html += `<button type="button" class="btn ghost${marcada === 'nada' ? ' marcada' : ''}" data-dg="nada"><span class="gl">Não acontece nada</span></button>`;
+    if (!doMonstro) {
+      dgPropostaEl.innerHTML = `A proposta é <b>${fc.desgraca.nome}</b>. Escolha a desgraça que acontece — ou nenhuma.`;
+      html += `<button type="button" class="btn ghost" data-dg-voltar><span class="gl">← Voltar</span></button>`;
+    } else {
+      /* Modo «monstro» (§3.2 do desenho): a lista abre DIRECTA no
+         parque — não há gesto anterior a preservar —, com a linha
+         de enquadramento da origem (a segunda frase é a da casa,
+         a do cartão dela). Marcar + «Aplicar» são dois actos
+         (H10): tocar numa opção marca-a e mostra a escolha; o
+         «Aplicar» regista e assenta a promessa. O «← Voltar»
+         NÃO existe neste modo: não há rolagem para trás. */
+      const p = fonte.pendente;
+      const verbosM = FRASES_IA[p.atacanteId] || { falha: 'tentou atacar' };
+      /* O enquadramento é por origem (§3.2): o do turno é o da
+         FRASES_IA; o da oportunidade é a frase lavrada do §3.2 —
+         «tentou golpeá-la de oportunidade ao sair e falhou». */
+      dgPropostaEl.innerHTML = p.origem === 'oportunidade'
+        ? `<b>${nomeCena(p.atacanteId)}</b> tentou golpeá-la de oportunidade ao sair e falhou. A proposta é <b>${fc.desgraca.nome}</b>. Escolha a desgraça que acontece — ou nenhuma.`
+        : `<b>${nomeCena(p.atacanteId)}</b> ${verbosM.falha} a <b>Ong</b> e falhou. A proposta é <b>${fc.desgraca.nome}</b>. Escolha a desgraça que acontece — ou nenhuma.`;
+      const nomeMarcada = marcada === 'nada' ? 'Não acontece nada'
+        : ((fc.tabelaEfectiva || []).find(l => l.id === marcada) || {}).nome;
+      if (nomeMarcada) html += `<p class="dg-escolhida">Escolhida: <b>${nomeMarcada}</b></p>`;
+      html += `<button type="button" class="btn primary" data-dg-aplicar${nomeMarcada ? '' : ' disabled'}><span class="gl">Aplicar</span></button>`;
+    }
     dgOpcoesEl.innerHTML = html;
     dgCartaoEl.hidden = false;
   }
   if (dgCartaoEl) dgCartaoEl.addEventListener('click', e => {
     const bv = e.target.closest('button[data-dg-voltar]');
     if (bv) { tratarAcao('desgraca-voltar'); return; }
+    const ba = e.target.closest('button[data-dg-aplicar]');
+    if (ba) { if (!ba.disabled) tratarAcao('desgraca-aplicar'); return; }
     const b = e.target.closest('button[data-dg]');
     if (!b || b.disabled) return;
     tratarAcao('desgraca-escolher:' + b.dataset.dg);
@@ -2572,7 +2730,22 @@
       return;
     }
     const verbos = FRASES_IA[id];
-    const s = vlabResolverAtaqueCompleto(id, PROPRIA, { modoDesgraca: 'sorte' });
+    /* M1 (portão dos monstros, §3.1 do desenho): na vista do
+       Mestre, o ataque resolve em modo «proposta» com semente e
+       verificação capturadas ANTES — o padrão do clique dela. A
+       captura consome exactamente os mesmos sorteios do PRNG que
+       a chamada em «sorte» consumia por dentro (semente, depois
+       as 3 faces), e em «proposta» o motor não aplica nada: se
+       sair falha crítica com confirmação pedida, a desgraça
+       ESTACIONA para a decisão dele (o parque, abaixo). Sem
+       MODO_MESTRE a chamada é a de sempre — nem a entropia nem
+       o comportamento mudam na Party. */
+    let sementeDG = null, verificacaoDG = null;
+    if (MODO_MESTRE) { sementeDG = vlabSemente(); verificacaoDG = vlabVerificacao(); }
+    const s = MODO_MESTRE
+      ? vlabResolverAtaqueCompleto(id, PROPRIA, {
+          modoDesgraca: 'proposta', semente: sementeDG, verificacao: verificacaoDG })
+      : vlabResolverAtaqueCompleto(id, PROPRIA, { modoDesgraca: 'sorte' });
     if (s.erro) {
       supRegistar('bloqueada', { acao: 'ataque', actor: id, razao: s.erro.codigo });
       if (s.erro.codigo === 'ARMA_QUEBRADA')
@@ -2580,6 +2753,75 @@
       return;
     }
     if (s.resultado === 'falhaCritica') {
+      const fcProp = s.soDoMestre && s.soDoMestre.falhaCritica;
+      if (MODO_MESTRE && fcProp && fcProp.requerConfirmacao) {
+        /* O PARQUE: nasce o pendente do monstro e esta função
+           espera a decisão — SEM relógio nenhum (a regra da casa
+           dos cartões: nada se resolve por tempo; o caminho do
+           ataque nunca teve guarda de tempo e este desenho não
+           lhe cria nenhuma). Ao estacionar NÃO se regista evento
+           nenhum: o registo do ataque e o da escolha nascem só
+           depois da decisão, com a escolha final — registar ao
+           estacionar gravaria a proposta como se fosse o
+           desfecho e o registo mentiria. */
+        const pendente = {
+          origem: 'monstro', atacanteId: id, seq, supEpoca,
+          semente: sementeDG, verificacao: verificacaoDG,
+          recibo: s, proposta: fcProp.desgraca.id,
+          escolhaMarcada: undefined, assentador: null
+        };
+        desgracaMonstroPendente = pendente;
+        estado = 'desgraca-lista'; renderAcoes();
+        const desfecho = await new Promise(res => { pendente.assentador = res; });
+        /* Guarda quádrupla de época (o padrão completo dos ramos
+           de acerto/falha, E-C1.4): época morta — cancelador,
+           restauro, gelo ou fim —, a linha do tempo que rolou já
+           não existe: devolve em silêncio, sem aplicar nada. */
+        if (!desfecho || desfecho.morta || seqTurno !== seq || batalhaFim
+            || supCongelado || supEpoca !== pendente.supEpoca) return;
+        const escolha = desfecho.escolha;
+        estado = 'vez-ia';   // o parque fechou; a vez continua do monstro até fimDaVezIA
+        if (escolha === 'nada') {
+          /* O Mestre recusou TODAS: sem segunda chamada — a saída
+             da proposta já é a resolução sem aplicação
+             (aplicado=false, sem lado do atacante para consumir),
+             logo fc = null: zero efeitos e a frase de golpe
+             falhado sem desgraça («O golpe correu mal.»). */
+          supRegistar('accao', { acao: 'ataque', actor: id, alvo: PROPRIA, acerto: false, falhaCritica: null });
+          supRegistar('accao', { acao: 'desgraca-escolha', actor: id, proposta: pendente.proposta, escolha: 'nada' });
+          say(`<b>${nomeCena(id)}</b> ${verbos.falha} a <b>Ong</b> e falhou. ` + vlabFraseDesgraca(id, null));
+          renderAcoes();
+          return;
+        }
+        /* Aceitar a proposta ou trocar: segunda chamada ao motor,
+           mesma semente e mesma verificação, modo «escolha» — o
+           espelho exacto do Confirmar dela. */
+        const s2 = vlabResolverAtaqueCompleto(id, PROPRIA, {
+          modoDesgraca: 'escolha', semente: pendente.semente, verificacao: pendente.verificacao,
+          desgracaEscolhida: escolha,
+          confirmacaoDeProposta: { proposta: pendente.proposta } });
+        if (s2.erro) {
+          /* Aborto com desfecho lavrado (§3.1): nunca se continua
+             com o recibo da proposta (não aplica efeito nenhum).
+             Regista-se 'bloqueada' com o código do erro, diz-se só
+             a linha de falha — SEM frase de desgraça: nenhuma
+             aconteceu, e «O golpe correu mal.» afirmaria um
+             «nada» que ninguém decidiu — e a vez fecha pela
+             continuação de sempre, com o ataque consumido. */
+          supRegistar('bloqueada', { acao: 'ataque', actor: id, alvo: PROPRIA, razao: s2.erro.codigo });
+          say(`<b>${nomeCena(id)}</b> ${verbos.falha} a <b>Ong</b> e falhou.`);
+          renderAcoes();
+          return;
+        }
+        const fc = vlabAplicarAtacanteDepois(id, s2);
+        supRegistar('accao', { acao: 'ataque', actor: id, alvo: PROPRIA, acerto: false, falhaCritica: fc ? fc.desgraca.id : null });
+        supRegistar('accao', { acao: 'desgraca-escolha', actor: id, proposta: pendente.proposta, escolha });
+        if (s2.desgracaPendente)
+          supRegistar('accao', { acao: 'desgraca-pendente', actor: id, tipo: s2.desgracaPendente.tipo, aplicada: false, motivo: 'desgraça pendente não aplicada nesta casca (sem aliados ao alcance — contexto da batalha a solo)' });
+        say(`<b>${nomeCena(id)}</b> ${verbos.falha} a <b>Ong</b> e falhou. ` + vlabFraseDesgraca(id, fc));
+        renderAcoes();
+        return;
+      }
       const fc = vlabAplicarAtacanteDepois(id, s);
       supRegistar('accao', { acao: 'ataque', actor: id, alvo: PROPRIA, acerto: false, falhaCritica: fc ? fc.desgraca.id : null });
       if (s.desgracaPendente)
@@ -2680,6 +2922,12 @@
        frase são os de sempre. */
     supRegistar('fim', { actor: PROPRIA, danoSofrido,
       causa: causa || 'queda', morteAdjudicada: causa === 'morte' });
+    /* M1 (§3.5 do desenho): fecho defensivo — um parque de
+       monstro aberto não atravessa o fim da batalha. Hoje é
+       inalcançável com o parque aberto (a cadeia parada é a
+       única fonte de fins); entra por coerência com o padrão da
+       casa: nenhum Continuar diferido sobrevive ao fim. */
+    fecharDesgracaMonstro({ morta: true });
     /* C-07 (forma gradual, 05/11/2026): a tela já vem a
        avermelhar com a vida baixa desde os 25% — quem a move é a
        vida, por atualizarChipVida. Aqui, a morte DELA adjudicada
@@ -2724,6 +2972,11 @@
      natural no registo exportado. */
   function terminarBatalha() {
     supRegistar('fim', { actor: PROPRIA, danoSofrido, origem: 'terminar' });
+    /* M1 (§3.5 do desenho): fecho defensivo, como em
+       fimDeBatalha — o Terminar só existe na vez dela em 'base',
+       logo inalcançável com o parque aberto; o assentador é
+       idempotente e a chamada não custa nada fora do parque. */
+    fecharDesgracaMonstro({ morta: true });
     continuarAposApresentacao = false;   // terminal — nenhum Continuar diferido sobrevive
     batalhaFim = true;
     seqTurno++;                              // invalida continuações pendentes
@@ -2760,7 +3013,53 @@
        só produzem a frase de espera. Excepção EM-P2: no estado
        'fim', a acção recomecar NUNCA é bloqueada. */
     if (acao === 'recomecar') { location.reload(); return; }
+    /* M1 (§3.2 do desenho): a decisão do cartão do MONSTRO
+       despacha AQUI — depois da guarda de gelo e do atalho
+       recomecar, ANTES da guarda de vez (na vez da IA a guarda
+       fecharia tudo, o cartão incluído) e de supValidarAcaoOng
+       (para a decisão nunca se registar como acção dela, com
+       actor: PROPRIA — os únicos eventos da decisão são os do
+       parque, registados em atacarIA depois de ela assentar).
+       Cinco condições cumulativas; sem as cinco, a acção cai no
+       fluxo de sempre: (1) vista do Mestre; (2) estado
+       'desgraca-lista'; (3) pendente do monstro da origem
+       esperada para esta vez ('monstro' na vez da IA,
+       'oportunidade' na vez dela); (4) pendente da linha do
+       tempo corrente — seq na origem IA, supEpoca na de
+       oportunidade — e batalha a correr; (5) nenhum pendente
+       dela. Marcar ≠ aplicar: escolher regista a marca no
+       pendente e o cartão mostra-a; «Aplicar» é que assenta. */
+    if (desgracaMonstroPendente && (acao === 'desgraca-aplicar' || acao.startsWith('desgraca-escolher:'))) {
+      const p = desgracaMonstroPendente;
+      const origemEsperada = vezAtual === PROPRIA ? 'oportunidade' : 'monstro';
+      const epocaViva = p.origem === 'oportunidade' ? p.supEpoca === supEpoca : p.seq === seqTurno;
+      if (MODO_MESTRE && estado === 'desgraca-lista' && p.origem === origemEsperada
+          && epocaViva && !batalhaFim && !desgracaPropostaPendente()) {
+        if (acao === 'desgraca-aplicar') {
+          /* Aplicar sem marca é inerte: sem escolha nomeada não
+             há nada para autorizar (o botão nasce desactivado;
+             esta é a rede do ramo). */
+          if (p.escolhaMarcada !== undefined)
+            fecharDesgracaMonstro({ escolha: p.escolhaMarcada });
+          return;
+        }
+        const esc = acao.slice('desgraca-escolher:'.length);
+        const fcM = p.recibo.soDoMestre.falhaCritica;
+        if (esc !== 'nada' && !(fcM.tabelaEfectiva || []).some(l => l.id === esc))
+          return;   // excluída ou desconhecida: nem marca (o cartão nem a oferece activa)
+        p.escolhaMarcada = esc;
+        renderAcoes();
+        return;
+      }
+    }
     if (vezAtual !== PROPRIA || batalhaFim) { fraseEsperaVez(); return; }
+    /* M1 (§3.3): a guarda única em tratarAcao — com um parque de
+       monstro aberto, só a decisão dele (acima) e o recomecar
+       (acima) passam; nenhum outro caminho escreve estado nem
+       ataquePendente por baixo da resolução estacionada. Na vez
+       da IA a guarda de vez (acima) já respondeu; esta linha é a
+       que fecha a vez dela — o parque de oportunidade da M2. */
+    if (desgracaMonstroPendente) { say(FRASE_DECISAO_PENDENTE); return; }
     /* R1-Priv: «Continuar» premido DURANTE o gesto não é ainda uma
        acção executada — fica só a bandeira, SEM registo no
        Supervisor; o evento regista-se uma única vez, à execução
@@ -2971,11 +3270,13 @@
       /* Voltar do cartão: a rolagem continua pendente, a escolha
          já feita (se houver) fica — só o Confirmar resolve. */
       if (!MODO_MESTRE) return;   // E1 (bancada): ramo inerte na Party
+      if (desgracaMonstroPendente) return;   // M1 (E-C1.6-iv): com um parque de monstro aberto, o ramo dela é inerte por guarda explícita — quem despacha é o ramo novo da decisão
       if (estado !== 'desgraca-lista') return;
       estado = 'rolagem'; renderAcoes(); say(FRASE_ROLAGEM_PENDENTE); return;
     }
     if (acao.startsWith('desgraca-escolher:')) {
       if (!MODO_MESTRE) return;   // E1 (bancada): ramo inerte na Party
+      if (desgracaMonstroPendente) return;   // M1 (E-C1.6-iv): idem — sem esta guarda, o ramo leria a fonte dela (null) e faria a transição para uma 'rolagem' vazia por baixo do parque
       if (estado !== 'desgraca-lista') return;
       const fc = desgracaPropostaPendente();
       if (!fc) { estado = 'rolagem'; renderAcoes(); return; }
@@ -3233,6 +3534,13 @@
   fichaEl.addEventListener('click', e => {
     if (e.target.closest('[data-fechar]')) fecharFicha();
     else if (e.target.closest('[data-declarar-defender]')) {
+      /* M1 (§3.3): o botão Defender é um leitor sem guarda de
+         estado — com um parque de monstro aberto, declarar
+         escreveria REACCOES_DECLARADAS a meio da resolução
+         estacionada. Barrado pela guarda do parque. (O braço da
+         rolagem DELA não muda: declarar na vez dela com a sua
+         rolagem pendente é o fluxo de hoje.) */
+      if (desgracaMonstroPendente) { say(FRASE_DECISAO_PENDENTE); return; }
       const r = declararReacaoDefender(PROPRIA);
       if (r && r.erro) {
         /* O código do erro vive no registo do Supervisor; na tela
@@ -3270,6 +3578,11 @@
        também não a destrói — a ficha fica para depois do
        Confirmar, como já acontece com o resultado (M-010). */
     if (rolagemPorResolver()) { say(FRASE_ROLAGEM_PENDENTE); return; }
+    /* M1 (§3.3): a guarda única também no chip — com um parque
+       de monstro aberto, o chip não repõe estado nem apaga
+       pendentes (a linha seguinte a este bloco faz as duas
+       coisas no fluxo normal). */
+    if (decisaoPorResolver()) { say(FRASE_DECISAO_PENDENTE); return; }
     if (estado === 'mover') limparAjudaMover();
     estado = 'base'; ataquePendente = null;
     selecionar(PROPRIA); abrirFicha(PROPRIA); renderAcoes();
@@ -3309,6 +3622,15 @@
        ao Confirmar (a protecção do M-010, um estado mais cedo,
        sobre as figuras e sobre o chão). */
     if (rolagemPorResolver()) { say(FRASE_ROLAGEM_PENDENTE); return; }
+    /* M1 (§3.3): a guarda única de «decisão por resolver» no
+       toque — com um parque de monstro aberto, o toque não troca
+       de alvo, não repõe estado nem apaga pendentes (os ramos de
+       figura abaixo tratam 'desgraca-lista' como cancelável: era
+       a porta lateral medida pela bancada). Na M1 o parque é da
+       vez da IA e a intercepção de vez acima já respondeu; esta
+       linha é a que fecha a vez dela (o parque de oportunidade
+       da M2) e fica lavrada já. */
+    if (decisaoPorResolver()) { say(FRASE_DECISAO_PENDENTE); return; }
     const hit = view.hitTest(clientX, clientY);
     if (estado === 'movendo') {
       say(`Espere — <b>${nomeCena(selecionada)}</b> ainda está a andar.`);
@@ -3384,7 +3706,7 @@
 
   /* O tratador de moveend ramifica por quem andou e pelo contexto
      pendente (§4.4): três figuras podem andar nesta tranche. */
-  view.on('moveend', u => {
+  view.on('moveend', async u => {
     if (!u || batalhaFim) return;              // nada se move depois da queda
     if (supRestaurando) return;                // Supervisor: reposição não é movimento de jogo
     /* Supervisor (pós-críticos T1.5, Conflitos A2): guarda de
@@ -3544,7 +3866,20 @@
          sem custo de Desvincular, sem frase de afastamento. */
       const sairamDaZona = partiu.adjacentes.filter(id => distanciaEntre(id, PROPRIA) > 1);
       if (mudouDeCasa && sairamDaZona.length) {
-        const fraseSaida = vlabResolverSaidaAdjacencia({ ...partiu, adjacentes: sairamDaZona });
+        /* M2 (§4.2): a época captura-se ANTES de chamar o
+           resolvedor, que agora pode estacionar; depois do await,
+           época morta (ou o sinal de aborto do ciclo) devolve EM
+           SILÊNCIO — sem dizer a frase, sem agendar a entrega
+           aMorrer, sem reabrir a ficha e sem reagendar o
+           automático por cima da batalha restaurada (guarda
+           E-C1.7: a viragem fantasma depois de um restauro é o
+           defeito que ela existe para não nascer). O custo já foi
+           descontado e partidaPendente já foi consumida antes da
+           chamada — a fronteira que o desenho mantém. */
+        const epocaChamador = supEpoca;
+        const saida = await vlabResolverSaidaAdjacencia({ ...partiu, adjacentes: sairamDaZona });
+        if ((saida && saida.abortada) || supEpoca !== epocaChamador) return;
+        const fraseSaida = saida ? saida.frase : null;
         if (fraseSaida) say(fraseSaida);
         /* Pós-Crítico 3 (achado 2): se o golpe de oportunidade a
            derrubou NA VEZ DELA, a vez entrega-se — sem isto o
@@ -4274,6 +4609,12 @@
   function supCongelar(razao) {
     if (supCongelado) return;
     supCongelado = true;
+    /* M1 (§3.5 do desenho, E-C1.1): o gelo é CANCELADOR do
+       parque — o relógio de invariantes (500 ms) corre durante o
+       parque e pode congelar a batalha a meio dele; sem o fecho,
+       a promessa de atacarIA ficava pendurada para sempre (a
+       re-conferência de época só corre depois de assentar). */
+    fecharDesgracaMonstro({ morta: true });
     continuarAposApresentacao = false;   // R1-Priv: o Continuar diferido morre no gelo — não atravessa épocas
     supEpoca++;                          // guarda de época: moveend tardio dela não acerta contas
     supDesarmarGuardaMovimentoOng();
@@ -4366,6 +4707,12 @@
       if (supUltimoEl) supUltimoEl.textContent = 'Ainda não há um estado anterior guardado.';
       return;
     }
+    /* M1 (§3.5 do desenho): o restauro que de facto corre MATA
+       um parque de monstro aberto — o fecho entra só aqui, no
+       caminho que restaura (depois das recusas de entrada: um
+       «Voltar» sem snapshot não pode matar um parque). A vez
+       restaurada recomeça pelo anúncio, sem a desgraça morta. */
+    fecharDesgracaMonstro({ morta: true });
     const idx = supPilha.length - 2;             // o turno anterior ao actual
     const snap = supPilha[idx].estado;
     supRestaurando = true;                       // o moveend ignora a reposição
@@ -4783,8 +5130,17 @@
       try { emVoo = !!(view.getState().moving); } catch (_) { emVoo = true; }
       const morteEmCurso = !!(ESTADO_VLAB.ong.estadoMorte
         && ESTADO_VLAB.ong.estadoMorte.fase === 'aMorrer');
+      /* M1 (§3.6 do desenho): o parque do monstro entra na mesma
+         recusa — sem a condição, uma captura a meio do parque
+         serializaria a fase 'vez-ia' com o mundo pré-desgraça e,
+         ao restaurar, a vez do monstro recomeçaria e rolaria
+         OUTRO ataque com outra semente: a captura não guardaria
+         uma batalha a meio, guardaria uma batalha diferente. A
+         janela de recusa é exactamente o parque: antes do ataque
+         e depois da decisão, a vez da IA grava como sempre. */
       if (emVoo || estado === 'movendo' || estado === 'rolagem'
         || apresentacaoEmCurso || passoEmCurso || ataquePendente != null
+        || desgracaMonstroPendente != null
         || morteEmCurso)
         return { ok: false, erro: 'SAVE_EM_VOO' };
       return {
@@ -4818,6 +5174,15 @@
          inválido não muda NADA (também fora do caminho UI). */
       const erroVal = validarEstadoParaAplicar(e);
       if (erroVal) return { ok: false, erro: erroVal };
+      /* M1 (§3.5 do desenho): aplicar um save MATA um parque de
+         monstro aberto — o fecho entra DEPOIS da validação passar
+         (um save inválido promete «não muda NADA»: matar o parque
+         com um save recusado violaria a promessa) e ANTES da
+         primeira mutação. Se a aplicação falhar a meio e o
+         pré-estado se repor (o catch abaixo), o pendente já
+         assentado fica assentado — morto: a moldura de atacarIA
+         acorda e morre na re-conferência de época. Nada pendura. */
+      fecharDesgracaMonstro({ morta: true });
       /* VOLTA 2 (S-CONF-02): pré-snapshot interno ANTES da primeira
          mutação — se a vista lançar a meio da aplicação, o catch
          repõe este pré-estado e desarma qualquer pendente. Cobre

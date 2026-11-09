@@ -86,6 +86,12 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 #dg-opcoes .btn{width:100%;height:40px;justify-content:flex-start}
 #dg-opcoes .btn:disabled{opacity:.45;cursor:default}
 #dg-opcoes .dg-motivo{font-size:10px;line-height:1.3;color:var(--pergaminho-mudo);margin:-2px 0 2px 2px}
+/* M1 (portão dos monstros): a opção MARCADA do cartão do monstro
+   (marcar ≠ aplicar — o «Aplicar» é outro botão) e a linha que
+   nomeia a escolha marcada. */
+#dg-opcoes .btn.marcada{outline:2px solid var(--ouro-vivo);outline-offset:-2px;background:rgba(255,157,0,.16)}
+#dg-opcoes .dg-escolhida{font-size:11px;line-height:1.35;color:var(--pergaminho);margin:2px 0 0 2px}
+#dg-opcoes .dg-escolhida b{color:#fff3d0}
 #dg-nota{margin-top:8px;font-size:10px;line-height:1.35;color:var(--pergaminho-mudo)}
 /* Supervisor do Comestre (pós-críticos T1.5, Visual A8): a área de
    alertas e o <pre> do registo exportado ficam CONTIDOS dentro do
