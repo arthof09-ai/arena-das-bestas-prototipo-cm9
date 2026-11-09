@@ -487,16 +487,19 @@
     } catch (_) {}
   }
 
-  /* ---------- Raios: relógio, janela de protecção, pendente ----------
-   * Automático raro (30–90 s sorteados) e manual («⚡ Raio agora»),
-   * os dois sob a MESMA janela de protecção: nunca durante uma
-   * apresentação de ataque nem enquanto um número de dano vive.
-   * Bloqueado: o automático adia (nova tentativa em 3 s); o manual
-   * fica PENDENTE visível e dispara no primeiro instante permitido
-   * (vigia de 250 ms); tecto/transição da vista (dispararRaio
-   * devolve false) mantém o pendente. O relógio é do hospedeiro —
-   * só corre na vista do Mestre. Em fundo (document.hidden) o
-   * agendador pausa; ao voltar, sorteia de novo. */
+  /* ---------- Relâmpago cosmético: relógio e janela de protecção ----------
+   * O relógio automático (30–90 s sorteados) e o disparo da vista
+   * são o RELÂMPAGO do desenho base §4.3: clarão ao longe que não
+   * cai em casa nenhuma, não fere, não acende. O raio que CAI é o
+   * raioArena da secção «RAIO E FOGO» mais abaixo — relógio de
+   * rondas, nunca este. O botão «⚡ Raio agora» também é de lá:
+   * põe um raioArena em fila para o momento de ambiente seguinte
+   * (pendente visível no botão, via ambDefinirRaioPendente).
+   * Janela de protecção do clarão: nunca durante uma apresentação
+   * de ataque nem enquanto um número de dano vive; bloqueado, o
+   * automático adia (nova tentativa em 3 s). O relógio é do
+   * hospedeiro — só corre na vista do Mestre. Em fundo
+   * (document.hidden) o agendador pausa; ao voltar, sorteia de novo. */
   let ambRaioPendente = false, ambRelogioAutoRaio = null, ambVigiaPendente = null;
   function ambJanelaRaioLivre() {
     if (apresentacaoEmCurso) return false;
@@ -542,22 +545,367 @@
     if (!ambRaioPendente) ambPararVigiaPendente();
     ambSincronizarPainel();
   }
+  /* «⚡ Raio agora» (desenho «Raio e Fogo» §1): NÃO é um clarão —
+   * põe UM raioArena em fila, de alvo igualmente ao acaso, que
+   * resolve no momento de ambiente do início da ronda seguinte
+   * (o mesmo relógio dos automáticos, sem excepção). Pendente
+   * visível no botão; cancela-se se os raios ou a chuva desligarem
+   * antes (ambAoMudarRaios). Tecto: 1 por ronda — o limite é
+   * LACUNA §9.5 do desenho, com a proposta recomendada da bancada
+   * (1/ronda) construída; sem tecto o botão não se construía. */
+  let raioAgoraRodada = 0;
   function ambPedirRaioManual() {
     if (!ambientePartida.raios || ambientePartida.chuva === 0) return;
-    if (ambJanelaRaioLivre() && ambDispararRaioVista()) { ambDefinirRaioPendente(false); return; }
+    if (ambRaioPendente) return;                    // já há um em fila
+    if (raioAgoraRodada === rodada) return;         // tecto desta ronda
+    raioAgoraRodada = rodada;
     ambDefinirRaioPendente(true);
-    if (!ambVigiaPendente) ambVigiaPendente = setInterval(ambVigiaRaioPendente, 250);
+    say('A tempestade junta-se — o raio cai no começo da ronda seguinte.');
   }
   function ambVigiaRaioPendente() {
-    if (!ambRaioPendente) { ambPararVigiaPendente(); return; }
-    if (!ambientePartida.raios || ambientePartida.chuva === 0) { ambDefinirRaioPendente(false); return; }
-    if (!ambJanelaRaioLivre()) return;
-    if (ambDispararRaioVista()) ambDefinirRaioPendente(false);   // recusado (tecto): continua pendente
+    /* A vigia de 250 ms pertencia ao pendente COSMÉTICO da REF_26
+     * (disparar no primeiro instante permitido). O pendente do
+     * raioArena resolve no momento de ambiente — sem vigia. A
+     * função fica como no-op defensivo: ambDefinirRaioPendente
+     * continua a chamável sem efeitos temporais. */
+    ambPararVigiaPendente();
   }
   function ambAoMudarRaios() {
     if ((!ambientePartida.raios || ambientePartida.chuva === 0) && ambRaioPendente)
       ambDefinirRaioPendente(false);
     ambAgendarAutoRaio();
+  }
+
+  /* ================= RAIO E FOGO — as regras (desenho julgado
+   * «AMBIENTE — Raio e Fogo», 05/11/2026) =================
+   * A palavra do Mestre (05/11 00:45–00:46, reconfirmada a 09/11):
+   * onde o raio cai, a casa fica a pegar fogo · o raio é aleatório ·
+   * raio em cima de alguém: a pessoa fica a pegar fogo e leva dano ·
+   * dano do raio FIXO 15, PROVISÓRIO por palavra expressa dele ·
+   * dano do fogo 1d8 enquanto estiver na casa em chamas; ao sair, a
+   * chuva apaga o fogo na pessoa — sem chuva, sair não apaga.
+   * O evento de regras chama-se raioArena e vive no relógio das
+   * RONDAS (momento de ambiente, início da ronda) — distinto do
+   * relâmpago cosmético acima, que nunca cai nem fere.
+   * O dano corre pela passagem normal da casca: parcelas do DMG
+   * por tipo (o tick 1d8 rola no motor), RD lida da mesma ficha que
+   * os ataques lêem (nesta casca rd = 0 para todos — nem os ataques
+   * a usam; a forquilha RD do desenho §9.1 fica à palavra dele) e
+   * a Vida assenta nas mesmas contas de sempre (danoSofrido dela /
+   * danoSofrido interno dos monstros), com os mesmos terminais
+   * (aMorrer dela sem falhas novas — dano de ambiente não é ataque;
+   * queda dos monstros; vitória). Números flutuantes por parcela,
+   * como todo o dano; os do impacto nascem DEPOIS do clarão (§6). */
+  const RF_DANO_RAIO = 15;          // PROVISÓRIO — palavra dele: «por enquanto pode ser um dano fixo de 15; depois eu resolvo»
+  const RF_TIPO_RAIO = 'eletrico';  // nenhuma ficha desta casca declara tipo eléctrico (G-RF-03: declara-se que não existe); string adoptada, estilo das fichas ('agua')
+  const RF_TIPO_FOGO = 'fogo';
+  /* Interruptores das leituras recomendadas da bancada nas lacunas
+   * do desenho — cada um trocável com uma palavra do Mestre, sem
+   * reconstruir (§9): */
+  const RF_PRIMEIRO_TICK_EMPILHA = true;   // §5: na ronda do impacto, o tick do início do turno SOMA-SE ao impacto (leitura literal das duas frases dele)
+  const RF_CHUVA_APAGA_PARADO = true;      // §5: quem está A Arder fora de casa em chamas, com chuva, apaga no início do próprio turno (antes do tick)
+  const RF_FIM_SECO = 'acao-movimento';    // §5 lacuna do fim sem chuva: proposta 1 da bancada — apagar-se custa a Acção de Movimento (botão na vez dela; a IA dos monstros não o faz nesta casca)
+  const RF_CRUZ_FOGO = true;   // palavra dele (09/11): onde o raio cai, arde uma CRUZ — 3×3 sem os cantos (5 casas); delta nomeado sobre o desenho de 05/11, ver rfAcenderCruz
+  const rfCasas = new Map();        // 'x,y' -> { x, y, combustivel } — casas a arder (estado de terreno)
+  const rfAArder = new Set();       // ids com o estado «A Arder» (registo próprio da casca: NÃO entra no array de estados do motor)
+  const rfUltimoTick = new Map();   // id -> ronda do último tick (anti-duplicação: 1 tick por figura e ronda)
+  let rfRodadaResolvida = 1;        // última ronda cujo momento de ambiente correu (a ronda 1 abre a batalha: sem momento — declarado)
+  /* As frases do ambiente não disputam o say() com o anúncio da
+   * vez que as segue no mesmo passarVez: acumulam-se neste slot e
+   * o anúncio seguinte (dela ou de um monstro) abre com elas. */
+  let rfFrasePendente = '';
+  function rfDizer(frase) { rfFrasePendente = rfFrasePendente ? rfFrasePendente + ' ' + frase : frase; }
+  function rfTomarFrasePendente() { const f = rfFrasePendente; rfFrasePendente = ''; return f ? f + ' ' : ''; }
+  function rfChave(x, y) { return x + ',' + y; }
+  function rfOcupante(x, y) {
+    for (const e of ELENCO) {
+      const u = unidade(e.id);
+      if (u && u.posicao && u.posicao.x === x && u.posicao.y === y) return e.id;
+    }
+    return null;
+  }
+  function rfRolarDado(faces) {
+    /* Faces pela fonte da casa (DMG com semente), como os outros
+     * dados; sem motor, cai para o acaso local declarado. */
+    if (DMG_MOTOR) {
+      try {
+        const s = vlabComDmg(() => DMG_MOTOR.calcularDano({
+          componentes: [{ tipo: null, expressao: '1d' + faces }], contexto: { semente: vlabSemente() } }));
+        if (s && !s.erro && s.parcelas && s.parcelas[0]) return s.parcelas[0].subtotal;
+      } catch (_) {}
+    }
+    return 1 + Math.floor(Math.random() * faces);
+  }
+  function rfParcelaTick() {
+    if (DMG_MOTOR) {
+      try {
+        const s = vlabComDmg(() => DMG_MOTOR.calcularDano({
+          componentes: [{ tipo: RF_TIPO_FOGO, expressao: '1d8' }], contexto: { semente: vlabSemente() } }));
+        if (s && !s.erro && s.parcelas && s.parcelas[0]) return s.parcelas[0];
+      } catch (_) {}
+    }
+    const f = 1 + Math.floor(Math.random() * 8);
+    return { tipo: RF_TIPO_FOGO, expressao: '1d8', faces: [f], subtotal: f };
+  }
+  function rfIncendiarPessoa(id) {
+    if (rfAArder.has(id)) return;
+    rfAArder.add(id);
+    try { view.setUnidadeAArder(id, true); } catch (_) {}
+  }
+  function rfApagarPessoa(id) {
+    if (!rfAArder.delete(id)) return;
+    try { view.setUnidadeAArder(id, false); } catch (_) {}
+  }
+  function ambAoMorrerFigura(id) {
+    /* A morte apaga o fogo da figura (o estado fica visível mas
+     * inerte em aMorrer — ela NÃO passa por aqui; só a morte real
+     * de monstro, pelo consumo da queda em vlabAplicarAlvoDepois
+     * e pelas vias de ambiente). */
+    rfApagarPessoa(id);
+    rfUltimoTick.delete(id);
+  }
+  function rfAplicarDanoAmbiente(id, parcela, origem) {
+    /* A passagem do dano de ambiente (desenho §3): sem rolagem de
+     * ataque, sem Defesa, sem reacção, sem salvaguarda — e SEM
+     * desconto de Resistência: «A Resistência NÃO protege do
+     * ambiente» (palavra do Mestre, 09/11/2026 14:04 — fecha a
+     * forquilha §9.1 do desenho; a leitura anterior, que subtraía
+     * a RD da ficha nesta passagem, foi substituída por esta —
+     * EM-AV2-03). A parcela cobra-se inteira a toda a gente e
+     * assenta na Vida pelas contas normais da casca. O evento
+     * regista rd: 0 (a passagem ignora a RD por regra, não por a
+     * ficha a não ter). Devolve
+     * { aplicado, desfecho: 'caiu'|'aMorrer'|null } ou null quando
+     * o alvo não é ferível (morto · aMorrer · estabilizado: o
+     * ambiente não soma falhas de morte a quem já está a morrer). */
+    const u = unidade(id);
+    if (!u || u.vivo === false) return null;
+    if (id === PROPRIA && ESTADO_VLAB.ong.estadoMorte) return null;
+    const aplicado = parcela.subtotal;
+    supRegistar('accao', { acao: origem, actor: 'ambiente', alvo: id,
+      tipo: parcela.tipo, bruto: parcela.subtotal, rd: 0, dano: aplicado });
+    if (aplicado > 0) {
+      if (id === PROPRIA) { danoSofrido += aplicado; atualizarChipVida(); }
+      else ESTADO_VLAB[id].danoSofrido = (ESTADO_VLAB[id].danoSofrido | 0) + aplicado;
+    }
+    if (id === PROPRIA) {
+      if (aplicado > 0 && vlabVidaOng() <= 0) {
+        ESTADO_VLAB.ong.estadoMorte = { fase: 'aMorrer', sucessos: 0, falhas: 0 };
+        return { aplicado, desfecho: 'aMorrer' };
+      }
+      return { aplicado, desfecho: null };
+    }
+    if (aplicado > 0 && VIDA_MONSTROS[id] != null && vlabVidaMonstro(id) <= 0) {
+      try {
+        const pm = view.apresentarMorte(id);
+        if (pm && pm.catch) pm.catch(() => {});
+      } catch (_) { view.setVivo(id, false); }
+      ambAoMorrerFigura(id);
+      if (vlabTodosMonstrosForaDeCombate()) fimDeBatalha('vitoria');
+      return { aplicado, desfecho: 'caiu' };
+    }
+    return { aplicado, desfecho: null };
+  }
+  function rfResolverImpacto(x, y) {
+    /* O impacto (desenho §2): a casa acende (combustível 1d6,
+     * SÓ-DO-MESTRE — nunca superfície) e, se estiver ocupada por
+     * figura viva ferível, ela leva a parcela do raio e fica
+     * A Arder. Re-impacto em casa a arder: renova o combustível
+     * e é um impacto completo outra vez. */
+    rfCasas.set(rfChave(x, y), { x, y, combustivel: rfRolarDado(6) });
+    try { view.acenderFogoCasa(x, y); } catch (_) {}
+    if (RF_CRUZ_FOGO) rfAcenderCruz(x, y);
+    const id = rfOcupante(x, y);
+    const u = id ? unidade(id) : null;
+    if (!id || !u || u.vivo === false || (id === PROPRIA && ESTADO_VLAB.ong.estadoMorte)) {
+      rfDizer('Um raio cai na arena — uma cruz de casas fica a arder.');
+      return;
+    }
+    /* A parcela do raio é a constante 15 PROVISÓRIO dele. O parser
+     * do DMG exige um termo NdM — a emenda de gramática que admite
+     * o termo constante é dependência nomeada do desenho §3 para
+     * os motores; aqui a parcela constrói-se na forma final que a
+     * emenda produz ({tipo, expressao, faces, subtotal}), sem
+     * disfarce de dados: fixo é fixo, por palavra dele. */
+    const parcela = { tipo: RF_TIPO_RAIO, expressao: String(RF_DANO_RAIO), faces: [], subtotal: RF_DANO_RAIO };
+    const r = rfAplicarDanoAmbiente(id, parcela, 'raio-arena');
+    if (r && r.desfecho === 'caiu') { rfDizer(`Um raio atinge <b>${nomeCena(id)}</b> em cheio — e ele cai.`); return; }
+    rfIncendiarPessoa(id);
+    if (!RF_PRIMEIRO_TICK_EMPILHA) rfUltimoTick.set(id, rodada);
+    if (r && r.aplicado > 0) {
+      const valor = r.aplicado;
+      setTimeout(() => { if (numerosDano) mostrarDano(id, [{ classe: RF_TIPO_RAIO, rotulo: RF_TIPO_RAIO, valor }]); }, 650);
+    }
+    if (r && r.desfecho === 'aMorrer') { entrarAMorrer(); return; }
+    rfDizer(id === PROPRIA
+      ? 'Um raio atinge a <b>Ong</b> em cheio — ela fica a arder.'
+      : `Um raio atinge <b>${nomeCena(id)}</b> em cheio — fica a arder.`);
+  }
+  function rfAcenderCruz(x, y) {
+    /* A CRUZ DE FOGO (palavra do Mestre, 09/11): onde o raio cai,
+     * arde uma cruz — no 3×3 à volta do impacto ardem 5 casas: a do
+     * impacto (acendida em rfResolverImpacto) e as 4 vizinhas
+     * directas; os 4 cantos NÃO ardem. (A lista dele — «1, 3, 8 e 9»
+     * para os que não ardem — lê-se como os 4 cantos da grelha de
+     * leitura, 1·3·7·9, com o 8 trocado pelo 7: é a única leitura
+     * que forma uma cruz.) Leitura CONFIRMADA por ele a 09/11 14:16: «sempre vai ocupar essas 5 casas em formato de cruz» — todo o impacto acende a cruz inteira, sem excepções; cruz sobre cruz apenas se sobrepõe. Cada vizinha entra no regime comum das
+     * casas a arder: combustível 1d6 próprio, extinção própria no
+     * momento de ambiente, tick 1d8 a quem lá estiver no início do
+     * turno (e aí ganha o estado A Arder, pela via comum de
+     * ambTickInicioTurno). O dano de 15 é SÓ da casa atingida e de
+     * quem o raio acertou — as vizinhas não ferem ninguém ao
+     * acender. Casa fora do tabuleiro não existe: a cruz corta-se
+     * na borda. Ambiguidade nomeada (não inventada): vizinha que
+     * JÁ está a arder conserva o combustível que tem — a renovação
+     * do desenho §2 é do impacto («um impacto completo outra vez»)
+     * e o braço da cruz não é um impacto. */
+    const vizinhas = [[x, y - 1], [x, y + 1], [x - 1, y], [x + 1, y]];
+    for (const [cx, cy] of vizinhas) {
+      if (cx < AREA.origin.x || cy < AREA.origin.y) continue;
+      if (cx >= AREA.origin.x + AREA.cols || cy >= AREA.origin.y + AREA.rows) continue;
+      if (rfCasas.has(rfChave(cx, cy))) continue;
+      rfCasas.set(rfChave(cx, cy), { x: cx, y: cy, combustivel: rfRolarDado(6) });
+      try { view.acenderFogoCasa(cx, cy); } catch (_) {}
+    }
+  }
+  function rfDispararArena() {
+    /* O alvo sorteia-se pelo PRNG guardável da casca (dadoFace
+     * sobre dadoEstado), como os outros sorteios do momento:
+     * guardar/carregar reproduz o alvo (G-RF-01 · EM-AV2-05). */
+    const idx = dadoFace(AREA.cols * AREA.rows) - 1;
+    const x = AREA.origin.x + (idx % AREA.cols);
+    const y = AREA.origin.y + Math.floor(idx / AREA.cols);
+    try { view.raioArenaVisual(x, y); } catch (_) {}
+    rfResolverImpacto(x, y);
+  }
+  function ambienteMomentoRodada() {
+    /* O momento de ambiente (desenho §1/§4): início da ronda,
+     * antes da primeira vez. Ordem escrita, item a item:
+     * (1) extinção das casas já a arder, com a chuva lida NESTE
+     * instante; (2) desconto do combustível; (3) raios novos da
+     * ronda — pendente do botão primeiro, depois o automático da
+     * frequência (Pouca 1/6 · Forte 2/6). Casa acesa nesta ronda
+     * não rola extinção nem desconta nesta ronda. */
+    if (batalhaFim || supCongelado) return;
+    const chuva = ambientePartida.chuva;
+    for (const [chave, c] of [...rfCasas]) {
+      if (chuva > 0 && rfRolarDado(6) <= (chuva === 1 ? 2 : 5)) {
+        rfCasas.delete(chave);
+        try { view.apagarFogoCasa(c.x, c.y); } catch (_) {}
+        const oc = rfOcupante(c.x, c.y);
+        if (oc && rfAArder.has(oc)) {
+          rfApagarPessoa(oc);
+          rfDizer(oc === PROPRIA
+            ? 'A chuva apaga a casa — e o fogo da <b>Ong</b>.'
+            : `A chuva apaga a casa — e o fogo de <b>${nomeCena(oc)}</b>.`);
+        }
+        continue;
+      }
+      c.combustivel -= 1;
+      if (c.combustivel <= 0) {
+        rfCasas.delete(chave);
+        try { view.apagarFogoCasa(c.x, c.y); } catch (_) {}
+      }
+    }
+    if (batalhaFim) return;
+    if (ambientePartida.raios && chuva > 0) {
+      if (ambRaioPendente) {
+        ambDefinirRaioPendente(false);
+        rfDispararArena();
+        if (batalhaFim) return;
+      }
+      if (rfRolarDado(6) <= (chuva === 1 ? 1 : 2)) rfDispararArena();
+    } else if (ambRaioPendente) {
+      ambDefinirRaioPendente(false);   // sem chuva/raios ao resolver: o pendente cancela-se (desenho §1)
+    }
+  }
+  function ambMomentoSeNovaRodada() {
+    if (rodada === rfRodadaResolvida) return;
+    rfRodadaResolvida = rodada;
+    ambienteMomentoRodada();
+  }
+  function ambTickInicioTurno(id) {
+    /* O tick (desenho §5): no início do turno da figura, UM evento
+     * por (figura, ronda) se ela está A Arder ou começa o turno
+     * numa casa a arder (e aí ganha o estado). aMorrer/estabilizada
+     * não ticka. Devolve 'caiu' quando o fogo deita um monstro. */
+    const u = unidade(id);
+    if (!u || u.vivo === false) return null;
+    if (id === PROPRIA && ESTADO_VLAB.ong.estadoMorte) return null;
+    const naCasa = rfCasas.has(rfChave(u.posicao.x, u.posicao.y));
+    const aArder = rfAArder.has(id);
+    if (aArder && !naCasa && ambientePartida.chuva > 0 && RF_CHUVA_APAGA_PARADO) {
+      rfApagarPessoa(id);
+      rfDizer(id === PROPRIA ? 'A chuva apaga o fogo da <b>Ong</b>.'
+        : `A chuva apaga o fogo de <b>${nomeCena(id)}</b>.`);
+      return null;
+    }
+    if (!aArder && !naCasa) return null;
+    if (rfUltimoTick.get(id) === rodada) return null;
+    rfUltimoTick.set(id, rodada);
+    if (naCasa && !aArder) rfIncendiarPessoa(id);
+    const r = rfAplicarDanoAmbiente(id, rfParcelaTick(), 'tick-fogo-ambiente');
+    if (!r) return null;
+    if (r.aplicado > 0 && numerosDano)
+      mostrarDano(id, [{ classe: RF_TIPO_FOGO, rotulo: RF_TIPO_FOGO, valor: r.aplicado }]);
+    if (r.desfecho === 'caiu') { rfDizer(`<b>${nomeCena(id)}</b> cai, a arder.`); return 'caiu'; }
+    if (r.desfecho === 'aMorrer') { entrarAMorrer(); return 'aMorrer'; }
+    rfDizer(id === PROPRIA ? 'A <b>Ong</b> está a arder — o fogo morde.'
+      : `<b>${nomeCena(id)}</b> está a arder — o fogo morde.`);
+    return 'aplicado';
+  }
+  function rfPodeApagarFogo() {
+    /* Fim seco, proposta 1 (desenho §5): ela, A Arder fora de casa
+     * em chamas e SEM chuva, pode gastar o movimento da vez a
+     * apagar-se. Só na vez dela e na faixa base. */
+    if (RF_FIM_SECO !== 'acao-movimento') return false;
+    if (batalhaFim || vezAtual !== PROPRIA || estado !== 'base') return false;
+    if (!rfAArder.has(PROPRIA) || ESTADO_VLAB.ong.estadoMorte) return false;
+    if (ambientePartida.chuva !== 0) return false;
+    const pos = (unidade(PROPRIA) || {}).posicao;
+    if (pos && rfCasas.has(rfChave(pos.x, pos.y))) return false;
+    return true;
+  }
+  function ambRestaurarFogo(rf) {
+    rfCasas.clear(); rfAArder.clear(); rfUltimoTick.clear();
+    try { view.limparFogos(); } catch (_) {}
+    if (!rf) return;
+    for (const c of rf.casas || []) {
+      rfCasas.set(rfChave(c.x, c.y), { x: c.x, y: c.y, combustivel: c.combustivel });
+      try { view.acenderFogoCasa(c.x, c.y); } catch (_) {}
+    }
+    for (const id of rf.aArder || []) rfIncendiarPessoa(id);
+    /* EM-AV2-06: a memória do último tick volta com o snapshot.
+     * Snapshots antigos (sem o campo) nascem com o mapa limpo,
+     * como até aqui — declarado. */
+    for (const par of rf.ultimoTick || []) {
+      if (Array.isArray(par) && par.length === 2) rfUltimoTick.set(par[0], par[1]);
+    }
+  }
+  /* Sair da casa em chamas (desenho §5): terminar um movimento
+   * fora de qualquer casa a arder, COM chuva a cair, apaga a
+   * pessoa na hora — movimento próprio ou forçado, é o moveend
+   * que conta. Sem chuva, sair não apaga: ela continua a arder
+   * (e na vez dela pode nascer o botão «Apagar o fogo»). */
+  if (view && typeof view.on === 'function') {
+    try {
+      view.on('moveend', u => {
+        if (!u || batalhaFim || supRestaurando) return;
+        if (!rfAArder.has(u.id)) return;
+        const pos = (unidade(u.id) || {}).posicao;
+        if (!pos || rfCasas.has(rfChave(pos.x, pos.y))) return;
+        if (ambientePartida.chuva > 0) {
+          rfApagarPessoa(u.id);
+          /* EM-AV2-04: a frase sai pelo canal adiado rfDizer (o de
+           * todas as outras frases do ambiente) — com say() directo
+           * era sobrescrita pela frase de chegada dentro do mesmo
+           * moveend e nunca se lia (lacuna L2). */
+          rfDizer(u.id === PROPRIA
+            ? 'A <b>Ong</b> sai da casa em chamas — a chuva apaga o fogo dela.'
+            : `<b>${nomeCena(u.id)}</b> sai da casa em chamas — a chuva apaga o fogo.`);
+        } else if (u.id === PROPRIA) renderAcoes();
+      });
+    } catch (_) {}
   }
 
   /* ---------- Degradação nomeada (apresentação local) ----------
@@ -1350,6 +1698,7 @@
           const pm = view.apresentarMorte(id);
           if (pm && pm.catch) pm.catch(() => {});
         } catch (_) { view.setVivo(id, false); }
+        ambAoMorrerFigura(id);   // RAIO E FOGO: a morte apaga o fogo da figura
         return 'caiu';
       }
       return null;
@@ -2002,7 +2351,11 @@
         B('mover', '🚶', 'Mover') +
         B('consumivel', '🎒', rp ? 'Consum.' : 'Consumível') +
         B('encerrar', '✓', rp ? 'Fim' : 'Encerrar', 'ghost') +
-        B('terminar', '✕', rp ? 'Term.' : 'Terminar', 'ghost');
+        B('terminar', '✕', rp ? 'Term.' : 'Terminar', 'ghost') +
+        /* RAIO E FOGO, fim seco (desenho §5, proposta 1): o botão
+           só existe enquanto ela está A Arder a seco — como o
+           «Trocar» da desgraça, é superfície de um estado. */
+        (rfPodeApagarFogo() ? B('apagar-fogo', '🧯', rp ? 'Apagar' : 'Apagar o fogo') : '');
     } else if (estado === 'atacar') {
       // A gaveta tem o básico dela (o Chicote, 8 PA desde a tranche
       // VLAB) e a única técnica com fonte nesta tranche: a
@@ -2496,9 +2849,27 @@
     try { supCritAntesDePassarVez(); } catch (_) { supCritErrosCamada++; }   // T1.7: fecha a vez nos acumuladores (passivo)
     seqTurno++;                       // invalida qualquer sequência antiga
     avancarParaFiguraComVez();
+    /* RAIO E FOGO (desenho 05/11): a viragem da ronda abre com o
+       momento de ambiente, ANTES da primeira vez dela. O momento
+       pode deitar a figura seguinte (impacto/tick não há aqui —
+       impacto): a rotação avança até uma figura viva. */
+    ambMomentoSeNovaRodada();
+    if (batalhaFim) return;
+    while (ordem[indiceVez] !== PROPRIA && (unidade(ordem[indiceVez]) || {}).vivo === false) {
+      if (!avancarParaFiguraComVez()) return;
+      ambMomentoSeNovaRodada();
+      if (batalhaFim) return;
+    }
     ataquePendente = null;
     const seguinte = ordem[indiceVez];
     if (seguinte === PROPRIA) {
+      /* RAIO E FOGO: o tick dela corre na abertura da vez dela,
+         antes de qualquer leitura de estado — pode incendiá-la,
+         feri-la ou deitá-la; os ramos abaixo lêem o resultado
+         (aMorrer/estabilizado/normal). */
+      if (!ESTADO_VLAB.ong.estadoMorte) ambTickInicioTurno(PROPRIA);
+      if (batalhaFim) return;
+      const fraseAmbPV = rfTomarFrasePendente();
       /* Testes de morte (M3): a viragem da ronda é o relógio da
          corrida — com ela aMorrer, a «vez» dela é o teste da ronda,
          não uma acção; resolvido o teste, a vez passa ao seguinte. */
@@ -2510,7 +2881,7 @@
         avancarParaFiguraComVez();
         if (ordem[indiceVez] === PROPRIA) return;   // sem monstro vivo com vez (defensivo; o terminal trata)
         iniciarVezIA(ordem[indiceVez], true);
-        if (fraseMorte) say(fraseMorte + ` Vez de <b>${nomeCena(ordem[indiceVez])}</b>.`);
+        if (fraseMorte) say(fraseAmbPV + fraseMorte + ` Vez de <b>${nomeCena(ordem[indiceVez])}</b>.`);
         return;
       }
       if (ESTADO_VLAB.ong.estadoMorte && ESTADO_VLAB.ong.estadoMorte.fase === 'estabilizado') {
@@ -2522,13 +2893,13 @@
         avancarParaFiguraComVez();
         if (ordem[indiceVez] === PROPRIA) return;   // sem monstro vivo com vez (defensivo; o terminal trata)
         iniciarVezIA(ordem[indiceVez], true);
-        say(`A <b>Ong</b> continua caída — estabilizou, mas só uma cura a levanta. Vez de <b>${nomeCena(ordem[indiceVez])}</b>.`);
+        say(fraseAmbPV + `A <b>Ong</b> continua caída — estabilizou, mas só uma cura a levanta. Vez de <b>${nomeCena(ordem[indiceVez])}</b>.`);
         return;
       }
       iniciarVez(PROPRIA);
-      say(avisoInicioVez
+      say(fraseAmbPV + (avisoInicioVez
         ? `${avisoInicioVez} É a vez da <b>Ong</b> (rodada ${rodada}).`
-        : `É a vez da <b>Ong</b> (rodada ${rodada}).`);
+        : `É a vez da <b>Ong</b> (rodada ${rodada}).`));
     } else {
       // Depois da vez dela, o anúncio da vez seguinte traz a frase
       // do Encerrar (§1.4) — as duas contam-se numa linha só.
@@ -2547,6 +2918,15 @@
     estado = 'vez-ia';
     ESTADO_VLAB[id].reacaoDisponivel = true;   // a Reacção renova na vez da própria figura
     delete REACCOES_DECLARADAS[id];            // C-39: declaração por usar expira ao abrir a vez da figura (espelho de iniciarVez)
+    /* RAIO E FOGO (desenho 05/11): o tick corre na abertura da vez
+       dele; se o fogo o deitar, a vez não acontece — fecha-se como
+       um fim de vez sem acção. */
+    if (ambTickInicioTurno(id) === 'caiu') {
+      if (batalhaFim) return;
+      const minhaSeq = ++seqTurno;
+      fimDaVezIA(minhaSeq);
+      return;
+    }
     /* T-J7: o monstro caído levanta-se ao abrir a vez dele — espelho
        do levantar da Ong em iniciarVez (retira 'caido', gasta o
        movimento da vez, anuncia-se). A acção mantém-se, como a dela. */
@@ -2559,9 +2939,9 @@
     atualizarVez(); renderAcoes();
     const fraseLevantar = vezIASemMovimento
       ? ` <b>${nomeCena(id)}</b> levanta-se — isso gasta o movimento desta vez.` : '';
-    say(aposOng
+    say(rfTomarFrasePendente() + (aposOng
       ? `Vez da <b>Ong</b> encerrada — a batalha continua. Vez de <b>${nomeCena(id)}</b>.${fraseLevantar}`
-      : `Vez de <b>${nomeCena(id)}</b>.${fraseLevantar}`);
+      : `Vez de <b>${nomeCena(id)}</b>.${fraseLevantar}`));
     supSnapshot();                    // Supervisor: ponto de retorno deste turno
     const minhaSeq = ++seqTurno;
     aguardar(ESPERA_ANUNCIO_MS).then(() => {
@@ -3452,6 +3832,18 @@
       // Fecha a vez dela e PASSA A VEZ ao próximo da ordem (§1.4):
       // a frase do Encerrar viaja no anúncio da vez seguinte.
       passarVez();
+      return;
+    }
+    if (acao === 'apagar-fogo') {
+      /* RAIO E FOGO, fim seco — proposta 1 do desenho §5: apagar-se
+       * custa a Acção de Movimento desta vez (a reserva zera, como
+       * ao levantar-se do Caído); o ataque continua livre. */
+      if (!rfPodeApagarFogo()) return;
+      reservaMovimento = 0;
+      rfApagarPessoa(PROPRIA);
+      supRegistar('accao', { acao: 'apagar-fogo', actor: PROPRIA });
+      say('A <b>Ong</b> pára e apaga o fogo do corpo — isso gasta o movimento desta vez.');
+      renderAcoes();
       return;
     }
   }
@@ -4680,7 +5072,20 @@
       ambienteCurva: 'v1',
       /* Tranche ESCALA: a escala é estado da PARTIDA — entra no
          snapshot (o «voltar» repõe a escala daquele turno). */
-      escala: CASA_M
+      escala: CASA_M,
+      /* RAIO E FOGO (desenho 05/11): casas a arder e figuras
+         A Arder são estado da BATALHA — entram no snapshot do
+         Supervisor como o ambiente. NÃO entram nos ficheiros de
+         save (o estado do Ambiente guardado continua a ser
+         {hora, chuva, raios}). */
+      raioFogo: {
+        casas: [...rfCasas.values()].map(c => ({ x: c.x, y: c.y, combustivel: c.combustivel })),
+        aArder: [...rfAArder],
+        /* EM-AV2-06: a memória do último tick entra no snapshot —
+           sem ela, o restauro limpava-a e um monstro restaurado
+           podia tickar segunda vez na mesma ronda. */
+        ultimoTick: [...rfUltimoTick]
+      }
     };
   }
   function supSnapshot() {
@@ -4792,6 +5197,9 @@
        (declarado — sem default inventado por cima dela). */
     if (typeof snap.escala === 'number' && ESCALAS_CASA_M.includes(snap.escala))
       escalaAssentar(snap.escala, { silencioso: true });
+    /* RAIO E FOGO: o fogo da batalha volta com o resto do snapshot
+       (snapshot sem o campo — anterior à tranche — apaga tudo). */
+    ambRestaurarFogo(snap.raioFogo);
     /* C-39: declarações de reacção são decisões da linha do tempo
        abandonada — o restauro apaga-as todas, como o Continuar. */
     for (const idDecl of Object.keys(REACCOES_DECLARADAS)) delete REACCOES_DECLARADAS[idDecl];
@@ -5201,6 +5609,14 @@
           danoSofrido, paGasto, transformada, reservaMovimento, atacou, alvo,
           batalhaFim, dadoEstado, roladasDados, supCongelado,
           vlab: JSON.parse(JSON.stringify(ESTADO_VLAB)),
+          /* EM-AV2-07: o pré-estado guarda também o fogo — a
+             atomicidade do load vale para ele (aplicação falhada
+             repõe os fogos que havia). */
+          raioFogo: {
+            casas: [...rfCasas.values()].map(c => ({ x: c.x, y: c.y, combustivel: c.combustivel })),
+            aArder: [...rfAArder],
+            ultimoTick: [...rfUltimoTick]
+          },
           ambiente: { ...ambientePartida },   // AMBIENTE: o pré-estado cobre também o ambiente (atomicidade S-CONF-02)
           escala: CASA_M,   // ESCALA: idem — o pré-estado cobre também a escala
           reaccoes: { ...REACCOES_DECLARADAS },
@@ -5320,6 +5736,11 @@
            campo mantém a escala actual — declarado: não se inventa
            um default por cima da definição do Mestre. */
         if ('escala' in e) escalaAssentar(e.escala, { silencioso: true });
+        /* EM-AV2-07: o fogo NÃO entra nos ficheiros de save — um
+           load em sessão apaga os fogos da batalha actual, como a
+           L10 anuncia (antes sobreviviam ao load, por desvio:
+           o aplicar assentava o ambiente e nunca limpava o fogo). */
+        ambRestaurarFogo(null);
         supPilha.length = 0;
         supSnapshot();
         supRestaurando = false;
@@ -5371,6 +5792,9 @@
             /* ESCALA: a aplicação falhada repõe também a escala do
                pré-estado — aplicação que não aconteceu não muda o preço. */
             try { escalaAssentar(preSave.escala, { silencioso: true }); } catch (__) {}
+            /* EM-AV2-07: aplicação que não aconteceu também não
+               apaga fogos — repõe-se o fogo do pré-estado. */
+            if (preSave.raioFogo) try { ambRestaurarFogo(preSave.raioFogo); } catch (__) {}
             batalhaFim = preSave.batalhaFim;
             dadoEstado = preSave.dadoEstado >>> 0; roladasDados = preSave.roladasDados;
             ataquePendente = null; custoPendente = null; caminhoPendente = null;
@@ -5435,7 +5859,11 @@
       ambUI.togRaios.setAttribute('aria-pressed', String(e.raios));
     }
     if (ambUI.btnRaio) {
-      ambUI.btnRaio.disabled = !(e.raios && e.chuva !== 0) && !ambRaioPendente;
+      /* RAIO E FOGO: em fila, o botão mostra o pendente; posto um
+       * «Raio agora» nesta ronda, o tecto de 1/ronda desliga-o até
+       * à ronda seguinte (desenho §1, lacuna §9.5). */
+      const tectoRodada = !ambRaioPendente && raioAgoraRodada === rodada;
+      ambUI.btnRaio.disabled = (!(e.raios && e.chuva !== 0) && !ambRaioPendente) || tectoRodada;
       ambUI.btnRaio.classList.toggle('amb-pendente', ambRaioPendente);
       ambUI.btnRaio.textContent = ambRaioPendente ? '⚡ Raio pendente…' : '⚡ Raio agora';
     }

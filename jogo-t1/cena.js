@@ -186,10 +186,25 @@
                 chuvaGeo.setAttribute('position', new T.BufferAttribute(pos, 3));
                 chuvaGeo.setDrawRange(0, 0);
             }
+            /* A CHUVA EM TRAÇOS (EM-AV2-01; a queixa dele: os pontos
+             * redondos liam-se «neve a cair»). Mesma arquitectura da
+             * REF_26 — um THREE.Points, um só draw call, as mesmas
+             * contagens (AMB_CHUVA.gotas/gotasBaixa) e opacidades —
+             * mas cada gota desenha-se como um TRAÇO: o fragmento
+             * risca uma linha inclinada dentro do sprite, com o
+             * comprimento em METROS (constante por qualidade) e a
+             * inclinação declaradas. O tamanho do sprite calcula-se
+             * da projecção, por isso o traço mede o mesmo no mundo
+             * a qualquer distância. Parâmetros (medidos e lidos em
+             * runtime na re-prova): comprimento 0,42/0,50/0,58 m
+             * (baixa/média/alta) · inclinação 0,16 · meia-largura do
+             * traço 0,016 m (cheio até 0,005 m) · queda 17 m/s. */
+            const CHUVA_TRACO_INCLINACAO = .16;
+            const CHUVA_TRACO_LARGURA = .016;
             const chuvaMat = new T.ShaderMaterial({
-                uniforms: { uTempo: { value: 0 }, uTamanho: { value: 9 }, uOpacidade: { value: 0 } },
-                vertexShader: 'uniform float uTempo; uniform float uTamanho; void main() { vec3 p = position; p.y = mod(p.y - uTempo * 17.0, 30.0); gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); gl_PointSize = uTamanho; }',
-                fragmentShader: 'uniform float uOpacidade; void main() { float d = length(gl_PointCoord - vec2(0.5)); float a = smoothstep(0.5, 0.28, d) * uOpacidade; if (a < 0.012) discard; gl_FragColor = vec4(0.78, 0.85, 0.92, a); }',
+                uniforms: { uTempo: { value: 0 }, uComp: { value: .58 }, uAlturaPx: { value: 800 }, uInclinacao: { value: CHUVA_TRACO_INCLINACAO }, uLargura: { value: CHUVA_TRACO_LARGURA }, uOpacidade: { value: 0 } },
+                vertexShader: 'uniform float uTempo; uniform float uComp; uniform float uAlturaPx; varying float vComp; void main() { vec3 p = position; p.y = mod(p.y - uTempo * 17.0, 30.0); vec4 mv = modelViewMatrix * vec4(p, 1.0); float dist = max(0.1, -mv.z); float escala = uAlturaPx * 0.5 * projectionMatrix[1][1] / dist; vComp = uComp; gl_PointSize = clamp(uComp * 1.30 * escala, 2.0, 900.0); gl_Position = projectionMatrix * mv; }',
+                fragmentShader: 'uniform float uOpacidade; uniform float uInclinacao; uniform float uLargura; varying float vComp; void main() { float S = vComp * 1.30; vec2 pm = (gl_PointCoord - vec2(0.5)) * S; vec2 dir = normalize(vec2(uInclinacao, 1.0)); vec2 nrm = vec2(dir.y, -dir.x); float d = abs(dot(pm, nrm)); float s = dot(pm, dir); float lat = smoothstep(uLargura, uLargura * 0.31, d); float lon = smoothstep(vComp * 0.52, vComp * 0.40, abs(s)); float a = lat * lon * uOpacidade; if (a < 0.012) discard; gl_FragColor = vec4(0.78, 0.85, 0.92, a); }',
                 transparent: true, depthWrite: false
             });
             const chuvaPts = new T.Points(chuvaGeo, chuvaMat);
@@ -233,7 +248,8 @@
                 chuvaGeo.setDrawRange(0, gotas);
                 chuvaPts.visible = gotas > 0;
                 chuvaMat.uniforms.uOpacidade.value = ambNivel(AMB_CHUVA.opacidade, cf);
-                chuvaMat.uniforms.uTamanho.value = quality === 'baixa' ? 6 : quality === 'media' ? 8 : 10;
+                chuvaMat.uniforms.uComp.value = quality === 'baixa' ? .42 : quality === 'media' ? .50 : .58;
+                chuvaMat.uniforms.uAlturaPx.value = renderer.domElement.height || 800;
                 if (world.ground && world.ground.material && world.ground.material.color) world.ground.material.color.setScalar(ambNivel(AMB_CHUVA.molhado, cf));
                 ambDerivados = { exposicao: amostra.exp, hemiInt: amostra.hemiInt, solInt: amostra.solInt, fogueiraBase: amostra.fogueira, tochasBase: world.ambienteBases.tochas, chamas: amostra.chamas, gotas };
                 ambUltimaAmostra = amostra; ambUltimoHor = horFinal;
@@ -291,11 +307,336 @@
                 }
             }
             function dispararRaio() {
+                /* RELAMPAGO cosmético (desenho base §4.3): só o pulso de
+                 * céu. NÃO cai em casa nenhuma, não fere, não acende —
+                 * o raio que cai é outro fenómeno (raioArena, abaixo),
+                 * governado pelo desenho julgado «Raio e Fogo» de 05/11
+                 * e resolvido pela casca no relógio das rondas. */
                 const now = performance.now();
                 if (ambTrans || now - ambUltimoRaio < 5000) return false;
                 ambUltimoRaio = now; ambPulsoT0 = now;
                 emit('raio', { instante: now });
                 return true;
+            }
+            /* ---------- RAIO DE ARENA + FOGOS (desenho julgado 05/11) ----------
+             * A cena só DESENHA o que a casca resolve: raioArenaVisual
+             * (o raio a cair numa casa dada + clarão no impacto, dentro
+             * dos tectos do pulso) e os fogos PERSISTENTES — o de casa
+             * (estado de terreno) e o de pessoa (estado «A Arder»).
+             * As chamas são gotas alongadas aditivas (forma nova de
+             * 09/11 — ver «A FORMA DO FOGO» junto a FOGO_DEFS), nas
+             * cores do mundo (0xff631d com núcleo 0xffdf8e), em escala de incêndio —
+             * maiores que qualquer tocha/fogueira, com brilho laranja
+             * no chão da casa — para se lerem «casa a arder», nunca
+             * «fogueira acesa» (portão de arte G-RF-06; o veredicto
+             * final do aspecto é do olho do Mestre). A luz do fogo de
+             * casa (0xff792b/dist 11, assinatura das tochas) NÃO casa
+             * com a do ambCapturarDecor (0xff8f3f/dist 6,5): o Ambiente
+             * nunca a escala. Tecto de luzes de fogo simultâneas: 4
+             * (as casas seguintes ardem sem luz própria). */
+            const raiosFx = [];
+            const fogosCasas = new Map();
+            const fogosPessoas = new Map();
+            /* Forma e vida do raio — melhoria pedida pelo Mestre (09/11:
+             * «tente fazer um raio mais fluido e realista»; a L9 do
+             * relatório da volta 2). O canal nasce por deslocamento de
+             * pontos médios: cada geração parte os segmentos em sítio
+             * irregular e desvia o ponto novo, com o desvio a encolher
+             * a cada geração — ziguezague grande na forma, fino no
+             * detalhe, como um canal de descarga a sério. A cintilação
+             * é o envelope: pulso principal forte (pico aos 70 ms),
+             * quebra parcial, segundo pulso mais fraco e desvanecer
+             * até aos 0,45 s; os ramos têm vida própria e morrem antes
+             * do canal. A ILUMINAÇÃO não muda: luz de impacto e pulso
+             * de céu guardam os picos de sempre (90 · envelope, .5 ·
+             * envelope no disco, ambPulsoT0 intocado). */
+            const RAIO_DURACAO = .45;          // vida total do raio, em segundos
+            const RAIO_DESLOC = 2.4;           // desvio inicial do canal, em metros
+            const RAIO_GERACOES = 5;           // subdivisões do canal (32 segmentos)
+            const RAIO_RAMOS_MIN = 2, RAIO_RAMOS_MAX = 4;
+            const RAIO_RAMO_FIM = .30;         // os ramos apagam-se aos 0,30 s
+            const RAIO_ENV = [[0, 0], [.07, 1], [.13, .16], [.20, .58], [.27, .10], [RAIO_DURACAO, 0]];
+            function raioEnvelope(t) {
+                if (t <= 0) return 0;
+                for (let i = 1; i < RAIO_ENV.length; i++) {
+                    if (t <= RAIO_ENV[i][0]) {
+                        const a = RAIO_ENV[i - 1], b = RAIO_ENV[i];
+                        return a[1] + (b[1] - a[1]) * (t - a[0]) / (b[0] - a[0]);
+                    }
+                }
+                return 0;
+            }
+            function raioCaminho(topo, base, geracoes, desloc) {
+                /* Deslocamento de pontos médios: parte cada segmento num
+                 * ponto irregular (35%-65%) e desvia-o até +/-desloc em x/z;
+                 * o desvio multiplica-se por 0,52 a cada geração. Os
+                 * extremos ficam exactos — o impacto é a casa pedida. */
+                let pts = [topo.clone(), base.clone()];
+                let a = desloc;
+                for (let g = 0; g < geracoes; g++) {
+                    const novos = [pts[0]];
+                    for (let i = 1; i < pts.length; i++) {
+                        const m = pts[i - 1].clone().lerp(pts[i], .35 + Math.random() * .3);
+                        m.x += (Math.random() - .5) * 2 * a;
+                        m.z += (Math.random() - .5) * 2 * a;
+                        novos.push(m, pts[i]);
+                    }
+                    pts = novos;
+                    a *= .52;
+                }
+                return pts;
+            }
+            function raioFita(pts, largura, dirVista, perfil) {
+                const pos = [], idx = [];
+                const lado = new T.Vector3(), seg = new T.Vector3();
+                for (let i = 0; i < pts.length; i++) {
+                    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+                    seg.subVectors(b, a);
+                    lado.crossVectors(seg, dirVista);
+                    if (lado.lengthSq() < 1e-6) lado.set(1, 0, 0); else lado.normalize();
+                    const fitaF = perfil ? perfil(i / (pts.length - 1)) : 1;
+                    lado.multiplyScalar(largura * fitaF / 2);
+                    pos.push(pts[i].x - lado.x, pts[i].y - lado.y, pts[i].z - lado.z, pts[i].x + lado.x, pts[i].y + lado.y, pts[i].z + lado.z);
+                    if (i > 0) { const k = (i - 1) * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+                }
+                const g = new T.BufferGeometry();
+                g.setAttribute('position', new T.BufferAttribute(new Float32Array(pos), 3));
+                g.setIndex(idx);
+                return g;
+            }
+            /* Perfis de largura ao longo da fita (t = 0 no topo, 1 no
+             * impacto): o canal afina nas pontas e engrossa a meio; o
+             * ramo afina até à ponta, como uma descarga que se esgota. */
+            const raioPerfilCanal = t => .45 + .75 * Math.sin(Math.PI * t);
+            const raioPerfilRamo = t => 1.05 - .85 * t;
+            let FOGO_GEO = null;   // geometria da chama: única e partilhada por todos os fogos — nunca se liberta
+            function raioLibertar(grupo) {
+                grupo.traverse(o => {
+                    if (o.geometry && o.geometry !== FOGO_GEO) o.geometry.dispose();
+                    if (o.material) o.material.dispose();
+                });
+                if (grupo.parent) grupo.parent.remove(grupo);
+            }
+            function raioArenaVisual(x, z) {
+                const now = performance.now();
+                const bx = wx(x), bz = wz(z);
+                const base = new T.Vector3(bx, world.height(bx, bz), bz);
+                const topo = new T.Vector3(bx + (Math.random() - .5) * 4, 30, bz + (Math.random() - .5) * 4);
+                const dir = new T.Vector3();
+                camaraActiva().getWorldDirection(dir);
+                const grupo = new T.Group();
+                const matNucleo = new T.MeshBasicMaterial({ color: 0xf2f7ff, transparent: true, opacity: 0, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide, toneMapped: false, fog: false });
+                const matHalo = new T.MeshBasicMaterial({ color: 0x8fb4ff, transparent: true, opacity: 0, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide, toneMapped: false, fog: false });
+                const matRamos = new T.MeshBasicMaterial({ color: 0xcfe0ff, transparent: true, opacity: 0, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide, toneMapped: false, fog: false });
+                const canal = raioCaminho(topo, base, RAIO_GERACOES, RAIO_DESLOC);
+                grupo.add(new T.Mesh(raioFita(canal, .17, dir, raioPerfilCanal), matNucleo));
+                grupo.add(new T.Mesh(raioFita(canal, .75, dir, raioPerfilCanal), matHalo));
+                /* Ramos: 2-4, nascem entre 22% e 68% da queda (nunca
+                 * juntos, nunca simétricos), mais finos e curtos que o
+                 * canal, com material próprio para morrerem antes dele. */
+                const fracs = [];
+                const nRamos = RAIO_RAMOS_MIN + Math.floor(Math.random() * (RAIO_RAMOS_MAX - RAIO_RAMOS_MIN + 1));
+                while (fracs.length < nRamos) {
+                    const f = .22 + Math.random() * .46;
+                    if (fracs.every(o => Math.abs(o - f) > .09)) fracs.push(f);
+                }
+                for (const f of fracs) {
+                    const origem = canal[Math.round(f * (canal.length - 1))].clone();
+                    const fim = origem.clone();
+                    const ang = Math.random() * Math.PI * 2, alcance = 2.5 + Math.random() * 3.5;
+                    fim.x += Math.cos(ang) * alcance; fim.z += Math.sin(ang) * alcance;
+                    fim.y -= 2.5 + Math.random() * 4;
+                    grupo.add(new T.Mesh(raioFita(raioCaminho(origem, fim, 3, .55), .075, dir, raioPerfilRamo), matRamos));
+                }
+                const luz = new T.PointLight(0xd6e4ff, 0, 34, 2);
+                luz.position.set(base.x, base.y + .7, base.z);
+                grupo.add(luz);
+                const disco = new T.Mesh(new T.CircleGeometry(1.8, 24), new T.MeshBasicMaterial({ color: 0xbdd4ff, transparent: true, opacity: 0, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false, fog: false }));
+                disco.rotation.x = -Math.PI / 2;
+                disco.position.set(base.x, base.y + .04, base.z);
+                grupo.add(disco);
+                scene.add(grupo);
+                raiosFx.push({ t0: now, grupo, matNucleo, matHalo, matRamos, luz, disco });
+                ambUltimoRaio = now; ambPulsoT0 = now;   // o clarão de céu do impacto é o pulso de sempre
+                emit('raio', { instante: now });
+                return true;
+            }
+            /* A FORMA DO FOGO — melhoria pedida pelo Mestre (09/11:
+             * «o fogo também quero mais realista»; a L8 do relatório
+             * da volta 2: os icosaedros liam-se pedra/cristal). A chama
+             * é uma gota alongada (lathe): larga na base, a estreitar
+             * até à ponta. A geometria é ÚNICA e partilhada por todos
+             * os fogos (casas e pessoas); por instância só mudam
+             * escala, fase e opacidade. Cada chama tem casca aditiva
+             * quente (0xff631d) e núcleo claro (0xffdf8e) — as cores
+             * da casa — e vive de três senos desencontrados: estica,
+             * afina, inclina-se e gira, cada chama com a sua fase
+             * (nada pulsa ao mesmo tempo, nem entre casas). As brasas
+             * são pontos aditivos que sobem, balançam e recomeçam.
+             * A luz mantém a tremulação de sempre (sin 9t / sin 17t). */
+            function fogoGeo() {
+                if (FOGO_GEO) return FOGO_GEO;
+                const perfil = [[0, 0], [.22, .01], [.325, .10], [.335, .24], [.255, .44], [.155, .66], [.07, .86], [0, 1.08]];
+                FOGO_GEO = new T.LatheGeometry(perfil.map(p => new T.Vector2(p[0], p[1])), 7);
+                /* gradiente por vértice (cinzento multiplicador): base a
+                 * 1,0 e ponta a 0,40 — com a mistura aditiva, a ponta
+                 * soma menos luz e lê-se a dissolver-se, como a chama
+                 * verdadeira; gravado uma vez na geometria partilhada. */
+                const posG = FOGO_GEO.attributes.position;
+                const coresG = new Float32Array(posG.count * 3);
+                for (let i2 = 0; i2 < posG.count; i2++) {
+                    const tG = Math.min(1, Math.max(0, posG.getY(i2) / 1.08));
+                    const sG = 1 - .60 * Math.pow(tG, 1.25);
+                    coresG[i2 * 3] = sG; coresG[i2 * 3 + 1] = sG; coresG[i2 * 3 + 2] = sG;
+                }
+                FOGO_GEO.setAttribute('color', new T.BufferAttribute(coresG, 3));
+                return FOGO_GEO;
+            }
+            let FOGO_TEX_BRASA = null;
+            function fogoTexturaBrasa() {
+                if (FOGO_TEX_BRASA) return FOGO_TEX_BRASA;
+                const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+                const cx2 = cv.getContext('2d');
+                const g = cx2.createRadialGradient(32, 32, 2, 32, 32, 30);
+                g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.4, 'rgba(255,255,255,.55)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+                cx2.fillStyle = g; cx2.fillRect(0, 0, 64, 64);
+                FOGO_TEX_BRASA = new T.CanvasTexture(cv);
+                return FOGO_TEX_BRASA;
+            }
+            const FOGO_DEFS = [
+                [0, 0, .80, 1.12], [.26, .10, .55, .78], [-.24, -.09, .52, .72],
+                [.05, -.24, .45, .62], [-.09, .22, .40, .55], [.17, -.15, .33, .44]
+            ];
+            function fogoCriarGrupo(escala, comLuz) {
+                const grupo = new T.Group();
+                const geo = fogoGeo();
+                const chamas = [];
+                FOGO_DEFS.forEach(([ox, oz, sxz, sy]) => {
+                    const fase = Math.random() * Math.PI * 2;
+                    const matCasca = new T.MeshBasicMaterial({ color: C(0xff631d), transparent: true, opacity: .46, vertexColors: true, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide, toneMapped: false, fog: false });
+                    const m = new T.Mesh(geo, matCasca);
+                    const matNuc = new T.MeshBasicMaterial({ color: C(0xffdf8e), transparent: true, opacity: .68, vertexColors: true, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide, toneMapped: false, fog: false });
+                    const nuc = new T.Mesh(geo, matNuc);
+                    nuc.scale.set(.44, .56, .44); nuc.position.y = .03;
+                    m.add(nuc);
+                    m.position.set(ox * escala, 0, oz * escala);
+                    m.scale.set(sxz * escala, sy * escala, sxz * escala);
+                    m.castShadow = false;
+                    grupo.add(m);
+                    chamas.push({ m, ox: ox * escala, oz: oz * escala, sxz: sxz * escala, sy: sy * escala, fase, mats: [{ mat: matCasca, base: .46 }, { mat: matNuc, base: .68 }] });
+                });
+                /* brasas: pontos aditivos que sobem, balançam e recomeçam */
+                const nBrasa = escala > 1 ? 12 : 6;
+                const posB = new Float32Array(nBrasa * 3);
+                const brasas = [];
+                for (let i = 0; i < nBrasa; i++) brasas.push({ ox: (Math.random() - .5) * .7 * escala, oz: (Math.random() - .5) * .7 * escala, fase: Math.random(), vel: .25 + Math.random() * .35 });
+                const geoB = new T.BufferGeometry();
+                geoB.setAttribute('position', new T.BufferAttribute(posB, 3));
+                const matB = new T.PointsMaterial({ size: .11, map: fogoTexturaBrasa(), color: 0xffa63f, transparent: true, opacity: .85, blending: T.AdditiveBlending, depthWrite: false, sizeAttenuation: true, toneMapped: false, fog: false });
+                const pontos = new T.Points(geoB, matB);
+                pontos.frustumCulled = false;
+                grupo.add(pontos);
+                let luz = null;
+                if (comLuz) {
+                    luz = new T.PointLight(0xff792b, 0, 11, 2);
+                    luz.position.set(0, .8 * escala, 0);
+                    grupo.add(luz);
+                }
+                return { grupo, luz, chamas, brasas, brasasGeo: geoB, brasasMat: matB, brasasAltura: 1.6 * escala };
+            }
+            function fogoTremular(f, env, now) {
+                const ts = now / 1000;
+                for (const c of f.chamas) {
+                    const fl = Math.sin(ts * 11 + c.fase) * .55 + Math.sin(ts * 23 + c.fase * 1.7) * .30 + Math.sin(ts * 5.3 + c.fase * .6) * .35;
+                    c.m.scale.y = c.sy * env * (1 + fl * .14);
+                    c.m.scale.x = c.m.scale.z = c.sxz * env * (1 - fl * .09);
+                    c.m.rotation.z = Math.sin(ts * 7.3 + c.fase) * .09;
+                    c.m.rotation.y = ts * .6 + c.fase;
+                    c.m.position.x = c.ox + Math.sin(ts * 3.7 + c.fase * 2.1) * .025;
+                    c.m.position.z = c.oz + Math.cos(ts * 3.1 + c.fase) * .025;
+                    for (const mm of c.mats) mm.mat.opacity = mm.base * env * (.8 + .2 * fl);
+                }
+                if (f.brasas) {
+                    const pos = f.brasasGeo.attributes.position.array;
+                    f.brasas.forEach((b, i) => {
+                        const ciclo = (ts * b.vel + b.fase) % 1;
+                        pos[i * 3] = b.ox + Math.sin(ts * 2.2 + b.fase * 9) * .07 * ciclo;
+                        pos[i * 3 + 1] = ciclo * f.brasasAltura * env;
+                        pos[i * 3 + 2] = b.oz + Math.cos(ts * 1.9 + b.fase * 7) * .07 * ciclo;
+                    });
+                    f.brasasGeo.attributes.position.needsUpdate = true;
+                    f.brasasMat.opacity = .85 * env;
+                }
+                if (f.luz) {
+                    const tr0 = Math.sin(ts * 9) * .1 + Math.sin(ts * 17) * .06;
+                    f.luz.intensity = 7.5 * env * (1 + tr0 * .9);
+                }
+            }
+            function acenderFogoCasa(x, z) {
+                const chave = x + ',' + z;
+                const existente = fogosCasas.get(chave);
+                if (existente) { existente.apagar = 0; return; }
+                const bx = wx(x), bz = wz(z);
+                const comLuz = [...fogosCasas.values()].filter(f => f.luz).length < 4;
+                const f = fogoCriarGrupo(1.5, comLuz);
+                f.grupo.position.set(bx, world.height(bx, bz), bz);
+                const brilho = new T.Mesh(new T.CircleGeometry(.72, 24), new T.MeshBasicMaterial({ color: 0xff7a26, transparent: true, opacity: .26, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false, fog: false }));
+                brilho.rotation.x = -Math.PI / 2;
+                brilho.position.y = .05;
+                f.grupo.add(brilho);
+                f.brilho = brilho;
+                f.t0 = performance.now(); f.apagar = 0;
+                scene.add(f.grupo);
+                fogosCasas.set(chave, f);
+            }
+            function apagarFogoCasa(x, z) {
+                const f = fogosCasas.get(x + ',' + z);
+                if (f && !f.apagar) f.apagar = performance.now();
+            }
+            function setUnidadeAArder(id, on) {
+                const existente = fogosPessoas.get(id);
+                if (on) {
+                    if (existente) return;
+                    const u = units.get(id);
+                    if (!u || !u.root) return;
+                    const f = fogoCriarGrupo(.85, false);
+                    f.t0 = performance.now();
+                    u.root.add(f.grupo);
+                    fogosPessoas.set(id, f);
+                } else if (existente) {
+                    raioLibertar(existente.grupo);
+                    fogosPessoas.delete(id);
+                }
+            }
+            function limparFogos() {
+                for (const f of fogosCasas.values()) raioLibertar(f.grupo);
+                fogosCasas.clear();
+                for (const f of fogosPessoas.values()) raioLibertar(f.grupo);
+                fogosPessoas.clear();
+            }
+            function raioActualizar(now) {
+                for (let i = raiosFx.length - 1; i >= 0; i--) {
+                    const fx = raiosFx[i], t = (now - fx.t0) / 1000;
+                    if (t >= RAIO_DURACAO) { raioLibertar(fx.grupo); raiosFx.splice(i, 1); continue; }
+                    const e = raioEnvelope(t);
+                    fx.matNucleo.opacity = .95 * e;
+                    fx.matHalo.opacity = .30 * e;
+                    if (fx.matRamos) {
+                        const fr = t < .16 ? 1 : Math.max(0, (RAIO_RAMO_FIM - t) / (RAIO_RAMO_FIM - .16));
+                        fx.matRamos.opacity = .55 * e * fr;
+                    }
+                    fx.luz.intensity = 90 * e;
+                    fx.disco.material.opacity = .5 * e;
+                }
+                for (const [chave, f] of fogosCasas) {
+                    let env = Math.min(1, (now - f.t0) / 150);
+                    if (f.apagar) env = Math.min(env, Math.max(0, 1 - (now - f.apagar) / 400));
+                    if (f.apagar && env <= 0) { raioLibertar(f.grupo); fogosCasas.delete(chave); continue; }
+                    fogoTremular(f, env, now);
+                    if (f.brilho) f.brilho.material.opacity = .26 * env;
+                }
+                for (const f of fogosPessoas.values())
+                    fogoTremular(f, Math.min(1, (now - f.t0) / 150), now);
             }
             function ambReaplicar() { if (ambDerivados) ambEscrever(ambAmostra(ambActual.hora), ambActual.chuva, 0); }
             let width = 1, height = 1, selected = null, mode = 'fixa', quality = 'alta', disposed = false, raf, last = performance.now(), fps = 0, fpsAt = last, frames = 0, shadowAt = 0, yaw = 0, pitch = 1.05, viewWidth = 20, primeiraVista = true;
@@ -821,6 +1162,7 @@
                     return;
                 let dirty = !!presentation;
                 updatePresentation(dt);
+                raioActualizar(now);
                 units.forEach(u => {
                     if (!u.step && u.queue.length) {
                         u.step = { ...u.queue.shift(), t: 0, from: u.root.position.clone() };
@@ -973,7 +1315,7 @@
                     pose(u);
                 }, aplicarAmbiente, getAmbienteAplicado() {
                     return { hora: ambActual.hora, chuva: ambActual.chuva, raios: ambAlvo.raios, emTransicao: !!ambTrans, derivados: ambDerivados };
-                }, dispararRaio, setCapChuva(n) {
+                }, dispararRaio, raioArenaVisual, acenderFogoCasa, apagarFogoCasa, setUnidadeAArder, limparFogos, setCapChuva(n) {
                     ambCapChuva = n == null ? null : Math.max(0, Math.floor(n));
                     ambReaplicar();
                 }, setTremulacao(on) {
