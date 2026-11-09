@@ -1655,6 +1655,60 @@
     `<button type="button" class="btn ${cls || ''}" data-acao="${acao}">` +
     (glifo ? `<span class="gi">${glifo}</span>` : '') +
     `<span class="gl">${rotulo}</span></button>`;
+  /* ---------- cartão da desgraça (T-DESGRACA-NADA) ----------
+   * Palavra do Mestre (desempate de 09/11/2026, que reforça a Q5):
+   * ao recusar uma desgraça proposta, abre a LISTA COMPLETA para
+   * ele escolher outra — e a lista inclui «Não acontece nada»,
+   * opção SÓ dele: não é linha da tabela 1d100, não tem peso, o
+   * acaso nunca a dá e a IA/H10 nunca a escolhe. Os pesos, o
+   * sorteio e a renormalização vivem só no motor (vlab-completo);
+   * aqui mora a decisão. */
+  /* Rótulos da tabela por id (os nomes do motor): a casca usa-os
+     só para apresentar as excluídas no cartão — o recibo da
+     proposta traz nome para as aplicáveis, mas das excluídas traz
+     só id e motivo. Apresentação apenas, como vlabFraseDesgraca. */
+  const DESGRACA_NOMES = { 'cai': 'Ele cai', 'arma-cai': 'A arma cai',
+    'acerta-amigo': 'Acerta um amigo sem querer', 'acerta-se': 'Acerta-se a si próprio',
+    'arma-quebra': 'A arma quebra', 'quebra-corpo': 'Quebra parte do corpo' };
+  /* A proposta de desgraça pendente (H10), se a houver: a rolagem
+     DELA rolou em modo «proposta» e espera a decisão do Mestre. */
+  function desgracaPropostaPendente() {
+    if (!ataquePendente || ataquePendente.tipo !== 'chicote') return null;
+    const fc = ataquePendente.vlab && ataquePendente.vlab.soDoMestre
+      && ataquePendente.vlab.soDoMestre.falhaCritica;
+    return (fc && fc.requerConfirmacao) ? fc : null;
+  }
+  const dgCartaoEl = $('desgraca-cartao'), dgPropostaEl = $('dg-proposta'), dgOpcoesEl = $('dg-opcoes');
+  /* A visibilidade do cartão deriva do estado, sincronizada em
+     renderAcoes: visível só em 'desgraca-lista' — nenhum caminho
+     (restauro, gelo, toque numa figura) o deixa órfão no ecrã. */
+  function sincronizarCartaoDesgraca() {
+    /* E1 (bancada): superfície SÓ do Mestre — sem MODO_MESTRE o
+       cartão nunca é preenchido nem desescondido (padrão da casa:
+       na Party a superfície do Mestre não se constrói). */
+    if (!MODO_MESTRE) return;
+    if (!dgCartaoEl) return;
+    const fc = estado === 'desgraca-lista' ? desgracaPropostaPendente() : null;
+    if (!fc) { dgCartaoEl.hidden = true; return; }
+    dgPropostaEl.innerHTML = `A proposta é <b>${fc.desgraca.nome}</b>. Escolha a desgraça que acontece — ou nenhuma.`;
+    let html = '';
+    for (const l of fc.tabelaEfectiva || [])
+      html += `<button type="button" class="btn" data-dg="${l.id}"><span class="gl">${l.nome}</span></button>`;
+    for (const x of fc.excluidas || [])
+      html += `<button type="button" class="btn" data-dg="${x.id}" disabled><span class="gl">${DESGRACA_NOMES[x.id] || x.id}</span></button>`
+        + `<p class="dg-motivo">${x.motivo}</p>`;
+    html += `<button type="button" class="btn ghost" data-dg="nada"><span class="gl">Não acontece nada</span></button>`;
+    html += `<button type="button" class="btn ghost" data-dg-voltar><span class="gl">← Voltar</span></button>`;
+    dgOpcoesEl.innerHTML = html;
+    dgCartaoEl.hidden = false;
+  }
+  if (dgCartaoEl) dgCartaoEl.addEventListener('click', e => {
+    const bv = e.target.closest('button[data-dg-voltar]');
+    if (bv) { tratarAcao('desgraca-voltar'); return; }
+    const b = e.target.closest('button[data-dg]');
+    if (!b || b.disabled) return;
+    tratarAcao('desgraca-escolher:' + b.dataset.dg);
+  });
   const retrato = () => matchMedia('(max-width:560px)').matches;
   function renderAcoes() {
     if (!campoPronto) {
@@ -1714,10 +1768,22 @@
     } else if (estado === 'movendo') {
       acoesEl.innerHTML = B('parar', '■', 'Parar', 'ghost');
     } else if (estado === 'rolagem') {
-      acoesEl.innerHTML = B('voltar', '←', 'Voltar', 'ghost') + B('confirmar', '✓', 'Confirmar', 'primary');
+      /* T-DESGRACA-NADA: com uma proposta de desgraça à espera, a
+         faixa ganha o «Trocar» — recusar a proposta abre a lista
+         completa no cartão. Sem proposta, a faixa é a de sempre.
+         E1 (bancada): o «Trocar» é superfície SÓ do Mestre — sem
+         MODO_MESTRE nem se constrói; a faixa fica byte-igual à base. */
+      acoesEl.innerHTML = B('voltar', '←', 'Voltar', 'ghost')
+        + (MODO_MESTRE && desgracaPropostaPendente() ? B('trocar-desgraca', '⇄', 'Trocar') : '')
+        + B('confirmar', '✓', 'Confirmar', 'primary');
+    } else if (estado === 'desgraca-lista') {
+      // A decisão está no cartão: a faixa mostra só o estado, como
+      // na vez da IA — um botão que não responde é proibido aqui.
+      acoesEl.innerHTML = 'A escolher a desgraça…';
     } else if (estado === 'resultado') {
       acoesEl.innerHTML = B('continuar', '', 'Continuar ▸', 'primary');
     }
+    sincronizarCartaoDesgraca();
   }
   function atualizarVez() {
     // O indicador é o que já existe à esquerda da faixa: pinta de quem
@@ -2755,6 +2821,38 @@
         : `Transformação · custa <b>${t.custo} PA</b> e a alma livre dela é ${livre} — não chega.`);
       return;
     }
+    if (acao === 'trocar-desgraca') {
+      /* T-DESGRACA-NADA: recusar a proposta abre a lista completa
+         no cartão. Sem proposta pendente o gesto não existe —
+         silêncio local, como noutros gestos fora do seu estado. */
+      if (!MODO_MESTRE) return;   // E1 (bancada): a lista é decisão só do Mestre — ramo inerte na Party
+      if (estado !== 'rolagem' || !desgracaPropostaPendente()) return;
+      estado = 'desgraca-lista'; renderAcoes();
+      say(`A proposta é <b>${desgracaPropostaPendente().desgraca.nome}</b> — escolha no cartão a desgraça que acontece, ou nenhuma.`);
+      return;
+    }
+    if (acao === 'desgraca-voltar') {
+      /* Voltar do cartão: a rolagem continua pendente, a escolha
+         já feita (se houver) fica — só o Confirmar resolve. */
+      if (!MODO_MESTRE) return;   // E1 (bancada): ramo inerte na Party
+      if (estado !== 'desgraca-lista') return;
+      estado = 'rolagem'; renderAcoes(); say(FRASE_ROLAGEM_PENDENTE); return;
+    }
+    if (acao.startsWith('desgraca-escolher:')) {
+      if (!MODO_MESTRE) return;   // E1 (bancada): ramo inerte na Party
+      if (estado !== 'desgraca-lista') return;
+      const fc = desgracaPropostaPendente();
+      if (!fc) { estado = 'rolagem'; renderAcoes(); return; }
+      const esc = acao.slice('desgraca-escolher:'.length);
+      const linhaEsc = (fc.tabelaEfectiva || []).find(l => l.id === esc);
+      if (esc !== 'nada' && !linhaEsc) return;   // excluída ou desconhecida: o cartão nem a oferece activa
+      ataquePendente.desgracaEscolha = esc;
+      estado = 'rolagem'; renderAcoes();
+      say(esc === 'nada'
+        ? `Fica sem desgraça. ` + FRASE_ROLAGEM_PENDENTE
+        : `Desgraça escolhida: <b>${linhaEsc.nome}</b>. ` + FRASE_ROLAGEM_PENDENTE);
+      return;
+    }
     if (acao === 'confirmar') {
       const pend = ataquePendente;
       ataquePendente = null;
@@ -2791,21 +2889,42 @@
          e mesma verificação de crítico, escolha = a proposta (H10:
          a IA propôs, o Mestre autorizou). */
       const fcProp = s.soDoMestre && s.soDoMestre.falhaCritica;
+      /* T-DESGRACA-NADA: a escolha do Mestre no cartão, se a houve:
+         um id da tabela (troca sobre a proposta) ou 'nada'. */
+      let semDesgraca = false;
       if (fcProp && fcProp.requerConfirmacao) {
-        const s2 = vlabResolverAtaqueCompleto(PROPRIA, alvo, {
-          modoDesgraca: 'escolha', semente: pend.semente, verificacao: pend.verificacao,
-          desgracaEscolhida: fcProp.desgraca.id,
-          confirmacaoDeProposta: { proposta: fcProp.desgraca.id } });
-        /* Pós-Crítico 3 (achado 4): se a segunda chamada falhar, o
-           Confirmar ABORTA — nunca se continua com a saída da
-           proposta (que não aplica efeito nenhum): sem PA cobrado,
-           sem frase de desgraça, erro nomeado no registo. */
-        if (s2.erro) {
-          supRegistar('bloqueada', { acao: 'ataque', actor: PROPRIA, alvo, razao: s2.erro.codigo });
-          say('O ataque não se resolveu — tente outra vez.');
-          return;
+        /* E1 (bancada): sem MODO_MESTRE, uma escolha gravada no
+           pendente é ignorada — o Confirmar aplica a proposta,
+           exactamente como a base. */
+        const escolhaDG = MODO_MESTRE ? pend.desgracaEscolha : undefined;
+        if (escolhaDG === 'nada') {
+          /* O Mestre recusou TODAS: a falha crítica fica sem
+             desgraça. NÃO há segunda chamada — a saída da proposta
+             já é a resolução sem aplicação (aplicado=false, sem
+             atacanteDepois nem desgracaPendente: conferido no
+             motor), e o ramo da falha crítica lê fc = null: zero
+             efeitos, a frase sai «O golpe correu mal.». A decisão
+             regista-se como escolha do Mestre. Os custos da falha
+             crítica pagam-se na mesma, como sempre. */
+          semDesgraca = true;
+          supRegistar('accao', { acao: 'desgraca-escolha', actor: PROPRIA, proposta: fcProp.desgraca.id, escolha: 'nada' });
+        } else {
+          const s2 = vlabResolverAtaqueCompleto(PROPRIA, alvo, {
+            modoDesgraca: 'escolha', semente: pend.semente, verificacao: pend.verificacao,
+            desgracaEscolhida: escolhaDG || fcProp.desgraca.id,
+            confirmacaoDeProposta: { proposta: fcProp.desgraca.id } });
+          /* Pós-Crítico 3 (achado 4): se a segunda chamada falhar, o
+             Confirmar ABORTA — nunca se continua com a saída da
+             proposta (que não aplica efeito nenhum): sem PA cobrado,
+             sem frase de desgraça, erro nomeado no registo. */
+          if (s2.erro) {
+            supRegistar('bloqueada', { acao: 'ataque', actor: PROPRIA, alvo, razao: s2.erro.codigo });
+            say('O ataque não se resolveu — tente outra vez.');
+            return;
+          }
+          s = s2;
+          if (escolhaDG) supRegistar('accao', { acao: 'desgraca-escolha', actor: PROPRIA, proposta: fcProp.desgraca.id, escolha: escolhaDG });
         }
-        s = s2;
       }
       if (s.erro) {
         supRegistar('bloqueada', { acao: 'ataque', actor: PROPRIA, alvo, razao: s.erro.codigo });
@@ -2833,7 +2952,10 @@
       if (s.resultado === 'falhaCritica') {
         paGasto += s.pa.custo;
         atualizarChipVida();           // M-015: o débito de PA reflecte-se já no chip (antes a plaquinha ficava no valor anterior ao ataque)
-        const fc = vlabAplicarAtacanteDepois(PROPRIA, s);
+        /* T-DESGRACA-NADA: com «não acontece nada» não há lado do
+           atacante para consumir — fc fica null e a frase é a de
+           golpe falhado sem desgraça («O golpe correu mal.»). */
+        const fc = semDesgraca ? null : vlabAplicarAtacanteDepois(PROPRIA, s);
         supRegistar('accao', { acao: 'ataque', actor: PROPRIA, alvo: alvoDoGolpe, acerto: false, falhaCritica: fc ? fc.desgraca.id : null });
         if (s.desgracaPendente)
           supRegistar('accao', { acao: 'desgraca-pendente', actor: PROPRIA, tipo: s.desgracaPendente.tipo, aplicada: false, motivo: 'sem aliado ao alcance nesta batalha a solo' });
@@ -3066,7 +3188,7 @@
           say('<b>Ong</b> já está aqui — toque numa casa acesa para andar.');
           return;
         }
-        if (estado === 'atacar' || estado === 'rolagem' || estado === 'consumivel' || estado === 'confirmar-fim') {
+        if (estado === 'atacar' || estado === 'rolagem' || estado === 'consumivel' || estado === 'confirmar-fim' || estado === 'desgraca-lista') {
           estado = 'base'; ataquePendente = null; renderAcoes();
         }
         abrirFicha(PROPRIA);
@@ -3080,7 +3202,7 @@
          aberto repõe-se à base, com a faixa a acompanhar. */
       alvo = hit.unitId;
       if (estado === 'mover') sairMover();
-      else if (estado === 'atacar' || estado === 'rolagem' || estado === 'consumivel' || estado === 'confirmar-fim') {
+      else if (estado === 'atacar' || estado === 'rolagem' || estado === 'consumivel' || estado === 'confirmar-fim' || estado === 'desgraca-lista') {
         estado = 'base'; ataquePendente = null; renderAcoes();
       }
       abrirFicha(hit.unitId);
@@ -3737,6 +3859,7 @@
     if (!modoAutomatico || supCongelado || batalhaFim || vezAtual !== PROPRIA) return;
     if (apresentacaoEmCurso) { agendarPassoAuto(); return; }   // T-D: o gesto manda — o passo espera e reagenda (a apresentação da cena NÃO escala com a velocidade: a 3× o passo de 283 ms chegaria a meio dos 0,70 s)
     if (estado === 'movendo') return;    // a animação manda: o moveend retoma
+    if (estado === 'desgraca-lista') { agendarPassoAuto(); return; }   // T-DESGRACA-NADA: a lista é decisão do Mestre — o automático espera, como espera pela proposta por confirmar
     if (estado === 'rolagem') {
       if (ataquePendente && ataquePendente.tipo === 'transformacao') { agendarPassoAuto(); return; }
       /* Tranche VLAB (pós-Crítico 3, achado 1): uma desgraça em modo
@@ -4728,7 +4851,7 @@
                não se restauram como ecrã (os pendentes nasceram
                vazios) — normalizam para a base da vez, como no §5. */
             estado = batalhaFim ? 'fim'
-              : (preSave.fase === 'movendo' || preSave.fase === 'rolagem') ? 'base'
+              : (preSave.fase === 'movendo' || preSave.fase === 'rolagem' || preSave.fase === 'desgraca-lista') ? 'base'
               : preSave.fase;
             try { atualizarChipVida(); } catch (__) {}
             try { atualizarVez(); renderAcoes(); } catch (__) {}

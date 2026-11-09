@@ -67,6 +67,18 @@
     <p id="stats" class="stats">— FPS</p>
   </section>
 
+  <!-- Cartão da desgraça (tranche T-DESGRACA-NADA): a lista completa
+       que abre quando o Mestre recusa a desgraça proposta numa falha
+       crítica — as 6 da tabela dele mais «Não acontece nada», opção
+       só dele que a tabela nunca sorteia. Nasce vazio e escondido;
+       quem o preenche e o mostra é o jogo.js, só no estado próprio. -->
+  <section id="desgraca-cartao" hidden aria-label="Escolher a desgraça">
+    <h3>Falha crítica</h3>
+    <p id="dg-proposta"></p>
+    <div id="dg-opcoes"></div>
+    <p id="dg-nota">A escolha é só sua. «Não acontece nada» deixa a falha sem desgraça — a tabela nunca sorteia esta opção.</p>
+  </section>
+
   <!-- Ficha fechada: pop-up flutuante da própria personagem (só dados dela).
        M-015: os valores iniciais já nascem certos (Vida 99/99, Alma livre 91)
        e jogo.js (atualizarChip) reescreve rótulo e barras a cada mudança. -->

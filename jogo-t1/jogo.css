@@ -70,6 +70,23 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
   border:1px solid rgba(201,162,39,.8);background:rgba(28,21,12,.85);color:var(--pergaminho-fraco)}
 .tog.on{background:var(--ouro);color:#1c1508}
 #cfgpop .stats{margin-top:6px;font-size:10px;color:var(--pergaminho-mudo);font-variant-numeric:tabular-nums}
+/* Cartão da desgraça (T-DESGRACA-NADA): o cartão de decisão do
+   Mestre sobre a falha crítica — a mesma pele dos painéis da casa
+   (fundo denso, linha de ouro), por cima do mundo e por baixo do ⚙. */
+#desgraca-cartao{position:fixed;left:50%;transform:translateX(-50%);bottom:66px;z-index:26;
+  width:min(430px,calc(100vw - 20px));max-height:calc(100vh - 140px);overflow-y:auto;
+  background:var(--painel-denso);border:1px solid var(--linha);
+  border-radius:12px;padding:10px 12px;box-shadow:0 8px 28px rgba(0,0,0,.55)}
+#desgraca-cartao[hidden]{display:none}
+#desgraca-cartao h3{font-family:Georgia,'DejaVu Serif',serif;font-size:10px;letter-spacing:.18em;
+  color:var(--ouro);text-transform:uppercase;margin-bottom:5px}
+#dg-proposta{font-size:12px;line-height:1.35;color:var(--pergaminho);margin-bottom:8px}
+#dg-proposta b{color:#fff3d0}
+#dg-opcoes{display:flex;flex-direction:column;gap:6px}
+#dg-opcoes .btn{width:100%;height:40px;justify-content:flex-start}
+#dg-opcoes .btn:disabled{opacity:.45;cursor:default}
+#dg-opcoes .dg-motivo{font-size:10px;line-height:1.3;color:var(--pergaminho-mudo);margin:-2px 0 2px 2px}
+#dg-nota{margin-top:8px;font-size:10px;line-height:1.35;color:var(--pergaminho-mudo)}
 /* Supervisor do Comestre (pós-críticos T1.5, Visual A8): a área de
    alertas e o <pre> do registo exportado ficam CONTIDOS dentro do
    pop-up de 252 px — altura máxima com rolagem interna e quebra de
@@ -268,7 +285,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
      indicador de vez sai e a mensagem volta a ≥120 px (na base ela
      já diz de quem é a vez; o 5.º botão não rouba área à mensagem).
      Sem isto, a frase de abertura e o prompt de confirmação cortam. */
-  #faixa[data-estado="base"] .turn,#faixa[data-estado="atacar"] .turn,#faixa[data-estado="rolagem"] .turn,#faixa[data-estado="confirmar-fim"] .turn{display:none}
+  #faixa[data-estado="base"] .turn,#faixa[data-estado="atacar"] .turn,#faixa[data-estado="rolagem"] .turn,#faixa[data-estado="confirmar-fim"] .turn,#faixa[data-estado="desgraca-lista"] .turn{display:none}
   #fichachip{width:162px;left:10px;bottom:66px}
   #ficha{width:25%;min-width:0;max-width:none;padding:8px 7px}
   #ficha h1{font-size:14px}
