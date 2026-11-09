@@ -1,0 +1,120 @@
+/* Entrada do protótipo (tranche t-entrada-mestre): ecrã de entrada sobre
+   o Layout de referência oficial (LAYOUT-PAGINA-ENTRADA + EMENDA 06/11
+   21:02). Enquanto a entrada está pendente, o DOM do jogo nasce
+   escondido: o jogo não faz boot nem constrói nada antes da escolha.
+   Posições = as zonas medidas do layout (paisagem governa; retrato
+   espelha). Estilo = o da casa (ouro, painéis escuros, Georgia). */
+
+html.entrada-pendente body > *:not(#entrada) { display: none !important; }
+
+#entrada {
+  position: fixed; inset: 0; z-index: 200; overflow: hidden;
+  background:
+    linear-gradient(rgba(6, 8, 6, .80), rgba(6, 8, 6, .90)),
+    url('textura-chao-pintado.jpg') center / cover no-repeat #0a0f0a;
+  color: var(--pergaminho, #efe6cf);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* ---------- placa do título (provisória: texto no estilo do jogo;
+   a arte pintada é da página final, com o vídeo) ---------- */
+.ent-placa {
+  position: absolute; left: 29%; width: 42%; top: 4%; height: 17%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; pointer-events: none;
+}
+.ent-titulo {
+  font-family: Georgia, 'DejaVu Serif', serif; font-weight: 700;
+  font-size: clamp(26px, 6.2vh, 54px); letter-spacing: .14em;
+  color: var(--ouro-claro); text-shadow: 0 2px 14px rgba(0, 0, 0, .85), 0 0 34px rgba(201, 162, 39, .35);
+}
+.ent-faixa {
+  margin-top: 4px; font-family: Georgia, 'DejaVu Serif', serif;
+  font-size: clamp(10px, 1.9vh, 15px); letter-spacing: .34em; text-transform: uppercase;
+  color: var(--ouro);
+}
+
+/* ---------- coluna de botões (Estado B do layout) ---------- */
+.ent-btn {
+  position: absolute; left: 36.5%; width: 27%; min-height: 44px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  background: rgba(28, 21, 12, .88); color: var(--pergaminho, #efe6cf);
+  border: 1px solid rgba(201, 162, 39, .8); border-radius: 8px;
+  font-size: clamp(14px, 2.4vh, 20px); font-weight: 700; cursor: pointer;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .5);
+}
+.ent-btn:active { background: rgba(52, 40, 18, .92); }
+.ent-btn .sub {
+  font-size: clamp(10px, 1.7vh, 13px); font-weight: 600;
+  color: var(--ouro-claro); letter-spacing: .02em;
+}
+/* O «Entrar como Mestre» ocupa a faixa do antigo Continuar: destaque. */
+#ent-mestre {
+  top: 50%; height: 10%;
+  background: linear-gradient(180deg, rgba(84, 62, 16, .92), rgba(52, 40, 14, .92));
+  border-color: var(--ouro-vivo); color: var(--ouro-claro);
+}
+#ent-jogadora { top: 62.5%; height: 8%; }
+#ent-config {
+  left: 41.5%; width: 17%; top: 73.5%; height: 6%;
+  font-size: clamp(12px, 2vh, 16px);
+}
+.ent-ajuda {
+  position: absolute; left: 36.5%; width: 27%; top: 82.5%;
+  text-align: center; font-size: clamp(11px, 1.8vh, 14px);
+  color: var(--pergaminho-fraco, #cbbd97);
+}
+
+/* ---------- painéis (senha e configurações): mesma zona da coluna ---------- */
+.ent-painel {
+  position: absolute; left: 31%; width: 38%; top: 34%;
+  max-height: 62%; overflow-y: auto;
+  background: rgba(16, 12, 7, .94); border: 1px solid rgba(201, 162, 39, .8);
+  border-radius: 10px; padding: 16px 18px 14px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .6);
+}
+.ent-painel h2 {
+  font-family: Georgia, 'DejaVu Serif', serif; font-size: 13px;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--ouro);
+  margin: 0 0 10px; text-align: center;
+}
+.ent-painel label.cl, .ent-painel .cl { font-size: 13px; }
+.ent-campo {
+  width: 100%; box-sizing: border-box; height: 46px; margin: 4px 0 8px;
+  background: rgba(10, 8, 5, .9); color: #fff8e5;
+  border: 1px solid rgba(201, 162, 39, .8); border-radius: 8px;
+  font-size: 17px; padding: 0 12px;
+}
+.ent-campo:focus-visible { outline: 2px solid var(--ouro-vivo); outline-offset: -2px; }
+.ent-erro {
+  min-height: 18px; margin: 2px 0 6px; font-size: 13px; color: #f0a596;
+}
+.ent-linha-botoes { display: flex; gap: 8px; }
+.ent-accao {
+  flex: 1; height: 46px; border-radius: 8px; cursor: pointer;
+  border: 1px solid rgba(201, 162, 39, .8);
+  background: var(--ouro); color: #1c1508; font-size: 15px; font-weight: 800;
+}
+.ent-accao.sec {
+  background: rgba(28, 21, 12, .85); color: var(--pergaminho-fraco, #cbbd97); font-weight: 700;
+}
+.ent-nota { font-size: 12px; color: var(--pergaminho-fraco, #cbbd97); margin: 8px 0 2px; }
+.ent-esquecer {
+  width: 100%; height: 42px; margin-top: 6px; border-radius: 8px; cursor: pointer;
+  border: 1px solid rgba(201, 162, 39, .55); background: rgba(28, 21, 12, .85);
+  color: var(--ouro-claro); font-size: 13px; font-weight: 700;
+}
+.ent-painel .cfgrow { margin: 7px 0; }
+
+/* ---------- retrato: as mesmas bandas, espelhadas ---------- */
+@media (orientation: portrait) {
+  .ent-placa { left: 8%; width: 84%; top: 5%; height: 11.5%; }
+  .ent-titulo { font-size: clamp(22px, 8.4vw, 40px); letter-spacing: .08em; }
+  .ent-faixa { font-size: clamp(9px, 3.2vw, 13px); letter-spacing: .26em; }
+  .ent-btn { left: 21%; width: 58%; }
+  #ent-mestre { top: 46%; height: 8.5%; }
+  #ent-jogadora { top: 56.5%; height: 6.5%; }
+  #ent-config { left: 29.5%; width: 41%; top: 65%; height: 6.5%; }
+  .ent-ajuda { left: 21%; width: 58%; top: 73%; }
+  .ent-painel { left: 8%; width: 84%; top: 30%; max-height: 66%; }
+}

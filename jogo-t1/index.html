@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" class="entrada-pendente">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -7,6 +7,7 @@
   <link rel="icon" href="data:,">
   <title>Campo de Batalha · Assimilação</title>
   <link rel="stylesheet" href="jogo.css">
+  <link rel="stylesheet" href="entrada.css">
 </head>
 <body>
   <main id="mapa" aria-label="Campo de batalha tridimensional"></main>
@@ -91,13 +92,11 @@
     <div id="acoes" class="actions"></div>
   </nav>
 
-  <script src="vendor/three.min.js"></script>
-  <script src="vendor/GLTFLoader.js"></script>
-  <script src="mundo.js"></script>
-  <script src="cena.js"></script>
-  <script src="visual.js"></script>
-  <script src="levelup.js"></script>
-  <script src="vlab-completo.js"></script>
-  <script src="jogo.js"></script>
+  <!-- Entrada do protótipo (tranche t-entrada-mestre): a página nasce na
+       entrada (três botões do Layout de referência) e os scripts do jogo
+       só são injectados por entrada.js depois da escolha — antes disso
+       o jogo não faz boot nem constrói nada, nem da Party nem do Mestre.
+       A ordem de injecção é a mesma das tags que aqui estavam. -->
+  <script src="entrada.js"></script>
 </body>
 </html>
