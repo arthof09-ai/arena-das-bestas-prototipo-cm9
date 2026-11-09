@@ -106,6 +106,43 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
 }
 .ent-painel .cfgrow { margin: 7px 0; }
 
+/* ---------- a porta do Google (tranche t-entrada-google) ---------- */
+/* Botão branco, no jeito que as pessoas reconhecem como «Google». */
+.ent-google {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  background: #fff; color: #1f1f1f; border: 1px solid rgba(0, 0, 0, .25);
+  border-radius: 8px; cursor: pointer; font-weight: 700;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .5);
+}
+.ent-google:active { background: #e8e8e8; }
+.ent-google .g-marca {
+  font-family: Georgia, 'DejaVu Serif', serif; font-weight: 700; font-size: 1.15em;
+  color: #4285f4;
+}
+/* Na vista 1, o botão do Google fica na zona da cena, acima da coluna. */
+#ent-google-btn {
+  position: absolute; left: 36.5%; width: 27%; top: 24.5%; min-height: 46px;
+  padding: 6px 10px; font-size: clamp(13px, 2.2vh, 18px);
+}
+.ent-outra-conta {
+  position: absolute; left: 36.5%; width: 27%; top: 32.5%;
+  background: none; border: none; cursor: pointer; padding: 4px;
+  color: var(--ouro-claro); font-size: clamp(11px, 1.8vh, 13px);
+  text-decoration: underline; text-align: center;
+}
+.ent-erro-google {
+  position: absolute; left: 36.5%; width: 27%; top: 36.5%;
+  min-height: 18px; margin: 0; text-align: center;
+  font-size: 13px; color: #f0a596;
+}
+/* Dentro dos painéis, o botão do Google é uma linha inteira. */
+.ent-google.painel { width: 100%; min-height: 46px; margin-top: 10px; padding: 0 12px; font-size: 15px; }
+.ent-ligacao {
+  display: block; margin: 10px auto 0; background: none; border: none; cursor: pointer;
+  color: var(--ouro-claro); font-size: 14px; font-weight: 700;
+  text-decoration: underline; padding: 6px;
+}
+
 /* ---------- retrato: as mesmas bandas, espelhadas ---------- */
 @media (orientation: portrait) {
   .ent-placa { left: 8%; width: 84%; top: 5%; height: 11.5%; }
@@ -117,4 +154,7 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   #ent-config { left: 29.5%; width: 41%; top: 65%; height: 6.5%; }
   .ent-ajuda { left: 21%; width: 58%; top: 73%; }
   .ent-painel { left: 8%; width: 84%; top: 30%; max-height: 66%; }
+  #ent-google-btn { left: 21%; width: 58%; top: 19.5%; }
+  .ent-outra-conta { left: 21%; width: 58%; top: 27.5%; }
+  .ent-erro-google { left: 21%; width: 58%; top: 31%; }
 }
