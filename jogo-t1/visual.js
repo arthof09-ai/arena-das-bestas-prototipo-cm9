@@ -172,7 +172,14 @@
             const i = Math.max(0, Math.min(255, (x / 1024 * 255) | 0)), j = Math.max(0, Math.min(255, (y / 1024 * 255) | 0));
             return img.data[(j * 256 + i) * 4];
         };
+        /* RISCOS-CHAO (09/11/2026, queixa do Mestre): bandeira das
+         * famílias de traços do TERRENO. Com ela desligada, traco
+         * não pinta — mas os sorteios rnd dos ciclos chamadores
+         * continuam a correr, por isso a corrente não se desloca
+         * e tudo o que se pinta depois (anel incl.) fica igual. */
+        let tracoTerreno = true;
         const traco = (x, y, ang, comp, larg, r, gg2, b, alfa) => {
+            if (!tracoTerreno) return;
             g.strokeStyle = 'rgba(' + (r | 0) + ',' + (gg2 | 0) + ',' + (b | 0) + ',' + alfa + ')';
             g.lineWidth = larg; g.beginPath(); g.moveTo(x, y);
             g.lineTo(x + Math.cos(ang) * comp, y + Math.sin(ang) * comp); g.stroke();
@@ -224,6 +231,7 @@
          * comprimento e alfa são escalados depois de sorteados — por isso
          * tudo o que se pinta a jusante fica idêntico. */
         const fatorArena = (x, y) => sstep(6.19, 12.11, Math.hypot((x - 512) / 1.22, y - 512) / 8.5333);
+        tracoTerreno = false; // RISCOS-CHAO: daqui aos sulcos fundos só pintam as 3 famílias removidas
         for (let i = 0; i < 340; i++) { // SULCOS (volta 2): riscos escuros de direcção livre, também sobre o aro e o disco central
             const x = rnd() * 1024, y = rnd() * 1024, ang = rnd() * Math.PI * 2;
             const comp = 6 + rnd() * 13, larg = 1.4 + rnd() * 1.8, alfa = 0.08 + rnd() * 0.09;
@@ -278,6 +286,7 @@
             const f = fatorArena(x, y);
             traco(x, y, ang, comp * (0.05 + 0.95 * f), larg * (0.35 + 0.65 * f), 16, 12, 7, alfa * (0.33 + 0.67 * f));
         }
+        tracoTerreno = true; // RISCOS-CHAO: fim da janela das famílias removidas
         g.lineCap = 'butt';
         /* ---------- LIMPEZA-VISUAL C2R/E4 v4: matéria multi-escala dentro da arena ----------
          * A bancada de arte reprovou a v3 neste ponto: as manchas de uma só
