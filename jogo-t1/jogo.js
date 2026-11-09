@@ -690,10 +690,47 @@
   const GUARDA_IA_MS = 5000;   // relógio de guarda do movimento da IA (G-13.3)
   /* Reserva de movimento DELA (D-13.13): manda a ficha dela —
      Deslocamento 9 m. A casa do motor publicado vale 1,5 m (Q5). */
-  const DESLOCAMENTO_ONG_M = 9, CASA_M = 1.5;
+  const DESLOCAMENTO_ONG_M = 9;
+  /* Tranche ESCALA (palavra do Mestre, desempate de 09/11/2026 à
+     Ordem 6: «ainda não tem essa mecânica, mas precisa ter»): a
+     escala — quanto vale cada casa em metros — é definição do
+     Mestre e muda-se A MEIO da batalha, sem custo. Nasce da
+     preferência deste aparelho ('hudt1-escala'; padrão 1,5 m, a
+     medida oficial do mundo) e um save pode repô-la (o save manda
+     na partida, como o ambiente). As posições vivem em casas e
+     NUNCA se convertem; a reserva de movimento vive em metros —
+     mudar a escala não reescreve nem o total da vez nem o já
+     gasto: só muda o PREÇO das casas seguintes. */
+  const ESCALAS_CASA_M = [1, 1.5, 2];
+  let CASA_M = 1.5;
+  try { const v = Number(localStorage.getItem('hudt1-escala'));
+        if (ESCALAS_CASA_M.includes(v)) CASA_M = v; } catch (_) {}
+  /* Assentar a escala: valida o domínio, grava a preferência,
+     pinta o painel do Mestre e — com o Mover aberto — redesenha o
+     alcance ao preço novo. Silencioso a pedido (carregar save,
+     voltar um turno): nesses gestos a frase é a do próprio gesto.
+     A reserva NÃO se toca: o restante em casas recalcula-se sozinho
+     em cada leitura (floor(reserva / CASA_M)). */
+  function escalaAssentar(nova, opcoes) {
+    if (!ESCALAS_CASA_M.includes(nova)) return false;
+    const mudou = nova !== CASA_M;
+    CASA_M = nova;
+    try { localStorage.setItem('hudt1-escala', String(nova)); } catch (_) {}
+    escSincronizarPainel();
+    if (mudou && estado === 'mover') desenharAlcance();
+    if (mudou && !(opcoes && opcoes.silencioso)) {
+      let frase = `Escala: cada casa passa a valer <b>${fmtM(CASA_M)}</b>. As posições não mudam; o movimento já gasto continua gasto.`;
+      if (estado === 'mover') {
+        const casas = Math.floor(reservaMovimento / CASA_M);
+        frase += ` Restam <b>${fmtM(reservaMovimento)}</b> — ${casas} ${casas === 1 ? 'casa' : 'casas'} ao preço novo.`;
+      }
+      say(frase);
+    }
+    return true;
+  }
   /* LA-0: as constantes de alcance vivem em METROS; a conversão
      para casas (a régua das distâncias BFS) faz-se num sítio só. */
-  const alcanceEmCasas = metros => metros / CASA_M;
+  const alcanceEmCasas = metros => Math.max(1, metros / CASA_M);
   /* FICHAS só tem a ficha completa da PRÓPRIA (Ong) — é a única ficha
      que pode aparecer neste aparelho. Não há entradas mecânicas de
      figuras alheias neste objecto, de propósito (ver VISTA, abaixo). */
@@ -1661,6 +1698,13 @@
   let custoPendente = null;     // casas do caminho por toque, a descontar no moveend dela
   let caminhoPendente = null;   // o path (motor) desse caminho — custo do Parar pelas casas andadas (D-13.15)
   let passoEmCurso = false;     // um passo de seta está a animar (pressões novas ignoram-se)
+  /* Tranche ESCALA: o preço da casa captura-se no DESPACHO do
+     movimento (custoPendentePreco / passoPreco) — o débito do
+     moveend cobra o preço de quando o movimento começou, nunca o
+     de uma escala mudada a meio da animação. Só se lêem com o
+     respectivo pendente vivo, e cada despacho os escreve. */
+  let custoPendentePreco = null;
+  let passoPreco = null;
   let contextoIA = null;        // { id, seq, relogio, destino? } do movimento/ataque da IA em voo — consumo único (G-13.3(d)); destino só no movimento (E-1)
   let guardaExpiradaIA = null;  // M-009: { id, seq } da última guarda de 5 s expirada cuja figura ainda vem a caminho — a chegada tardia dela diz-se, não se engole em silêncio
   /* Reserva de destino em voo (tranche do congelamento «Duas figuras
@@ -2151,6 +2195,7 @@
       v.id !== PROPRIA && v.posicao.x === nx && v.posicao.y === ny);
     if (ocupada) { supRegistar('bloqueada', { acao: 'mover', actor: PROPRIA, razao: 'Casa ocupada' }); say('Essa casa está ocupada.'); return; }
     passoEmCurso = true;
+    passoPreco = CASA_M;   // ESCALA: preço capturado no despacho do passo
     vlabCapturarPartida([{ x: u.posicao.x, y: u.posicao.y }, { x: nx, y: ny }]);   // tranche VLAB: adjacências à partida + meio do caminho
     supPartidaMovimentoOng({ x: nx, y: ny }, 1,
       [{ x: u.posicao.x, y: u.posicao.y }, { x: nx, y: ny }]);   // T1.7: caminho da seta = [actual, seguinte]
@@ -3320,6 +3365,7 @@
       // O custo (casas do caminho) e o caminho em si ficam pendentes:
       // descontam-se uma única vez, no moveend dela (§3.3/D-13.15).
       custoPendente = destino.passos;
+      custoPendentePreco = CASA_M;   // ESCALA: preço capturado no despacho
       caminhoPendente = destino.path;
       view.showMovement([]); view.showHover(null);
       say(`<b>${u ? u.nome : nomeCena(selecionada)}</b> está a andar…`);
@@ -3460,11 +3506,12 @@
         const idx = caminhoPendente.findIndex(c => c.x === u.posicao.x && c.y === u.posicao.y);
         casas = idx >= 0 ? idx + 1 : 0;
       }
-      reservaMovimento -= casas * CASA_M;
+      reservaMovimento -= casas * (custoPendentePreco != null ? custoPendentePreco : CASA_M);   // ESCALA: cobra o preço do despacho
       custoPendente = null;
+      custoPendentePreco = null;
       caminhoPendente = null;
     }
-    if (eraPasso) { passoEmCurso = false; reservaMovimento -= CASA_M; }
+    if (eraPasso) { passoEmCurso = false; reservaMovimento -= (passoPreco != null ? passoPreco : CASA_M); passoPreco = null; }
     if (reservaMovimento < 0) reservaMovimento = 0;
     /* O redesenho e a frase do restante só acontecem com o estado
        ACTUAL em 'mover'/'movendo' (E-T13L-3): se ela já saiu do
@@ -4020,6 +4067,7 @@
     const u = unidade(selecionada);
     estado = 'movendo'; parado = false; renderAcoes();
     custoPendente = destino.passos;
+    custoPendentePreco = CASA_M;   // ESCALA: preço capturado no despacho
     caminhoPendente = destino.path;
     view.showMovement([]); view.showHover(null);
     say(`<b>${u ? u.nome : nomeCena(selecionada)}</b> está a andar…`);
@@ -4288,7 +4336,10 @@
          snapshot como cópia do estado semântico, com a versão da
          curva registada (só registo; os derivados recalculam-se). */
       ambiente: { ...ambientePartida },
-      ambienteCurva: 'v1'
+      ambienteCurva: 'v1',
+      /* Tranche ESCALA: a escala é estado da PARTIDA — entra no
+         snapshot (o «voltar» repõe a escala daquele turno). */
+      escala: CASA_M
     };
   }
   function supSnapshot() {
@@ -4389,6 +4440,11 @@
         razao: snap.ambiente ? 'Ambiente do snapshot inválido — Noite seca do ritual aplicada'
                              : 'Snapshot sem ambiente — Noite seca do ritual declarada' });
     }
+    /* Tranche ESCALA: a escala do snapshot volta com o resto, em
+       silêncio. Snapshot antigo sem o campo mantém a escala actual
+       (declarado — sem default inventado por cima dela). */
+    if (typeof snap.escala === 'number' && ESCALAS_CASA_M.includes(snap.escala))
+      escalaAssentar(snap.escala, { silencioso: true });
     /* C-39: declarações de reacção são decisões da linha do tempo
        abandonada — o restauro apaga-as todas, como o Continuar. */
     for (const idDecl of Object.keys(REACCOES_DECLARADAS)) delete REACCOES_DECLARADAS[idDecl];
@@ -4581,8 +4637,12 @@
     /* Tranche AMBIENTE: 'ambiente'/'ambienteCurva' são campos
        OPCIONAIS do estado (save antigo sem eles é válido — carrega
        com Noite seca declarada no aplicar); qualquer outra chave
-       fora da lista continua inválida. */
-    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva')) return INV;
+       fora da lista continua inválida.
+       Tranche ESCALA: 'escala' é campo OPCIONAL do estado, na mesma
+       régua (save antigo sem ele é válido — mantém a escala actual
+       no aplicar). Sem esta excepção, TODO o save com escala era
+       rejeitado aqui, antes de qualquer outra conferência. */
+    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala')) return INV;
     const ids = ELENCO.map(u => u.id);
     const inteiro = n => Number.isInteger(n);
     const finito = n => typeof n === 'number' && Number.isFinite(n);
@@ -4643,10 +4703,17 @@
     if (typeof o.transformada !== 'boolean' || typeof o.atacou !== 'boolean') return INV;
     if (!finito(o.reservaMovimento) || o.reservaMovimento < 0
       || o.reservaMovimento > DESLOCAMENTO_ONG_M + 1e-9) return INV;
-    /* VOLTA 2 (S-CONF-03): a reserva anda casa a casa (CASA_M =
-       1,5 m) — tem de ser MÚLTIPLO de 1,5 (tolerância 1e-9);
-       7,3 passa a inválido. */
-    { const passosReserva = o.reservaMovimento / CASA_M;
+    /* VOLTA 2 (S-CONF-03): a reserva anda casa a casa — tem de ser
+       MÚLTIPLO do preço da casa (tolerância 1e-9); 7,3 é inválido.
+       Tranche ESCALA: com o campo 'escala' presente, a reserva pode
+       ter sido gasta a preços MISTOS (a escala mudou a meio da vez)
+       — a régua passa a ser o múltiplo de 0,5 m, o mdc dos três
+       preços {1 · 1,5 · 2}: toda a reserva alcançável é uma base
+       (múltiplo de 0,5) menos uma soma de preços (múltiplos de 0,5).
+       Sem o campo (saves antigos), fica a régua original: múltiplo
+       de 1,5, a única escala que existia quando foram escritos. */
+    { const reguaReserva = ('escala' in e) ? 0.5 : 1.5;
+      const passosReserva = o.reservaMovimento / reguaReserva;
       if (Math.abs(passosReserva - Math.round(passosReserva)) > 1e-9) return INV; }
     if (o.alvo !== null && (!ids.includes(o.alvo) || o.alvo === PROPRIA
       || porId(o.alvo).vivo !== true)) return INV;   // alvo-próprio ou morto
@@ -4680,6 +4747,10 @@
       if (typeof a.raios !== 'boolean') return INV;
     }
     if ('ambienteCurva' in e && e.ambienteCurva !== 'v1') return INV;
+    /* Tranche ESCALA: o campo, QUANDO PRESENTE, tem de ser um dos
+       três preços oficiais {1 · 1,5 · 2}; fora do domínio é
+       SAVE_ESTADO_INVALIDO (erro nomeado), nunca clamp silencioso. */
+    if ('escala' in e && !ESCALAS_CASA_M.includes(e.escala)) return INV;
     /* PORTA C-23: o bloco do motor confere-se com a mesma régua. */
     return validarVlabParaAplicar(e.vlab);
   }
@@ -4735,7 +4806,10 @@
         /* Tranche AMBIENTE: o ambiente da partida entra na captura
            (estado semântico, cópia) com a versão da curva. */
         ambiente: { ...ambientePartida },
-        ambienteCurva: 'v1'
+        ambienteCurva: 'v1',
+        /* Tranche ESCALA: a escala da partida entra na captura —
+           carregar repõe-na (a escala é estado da partida). */
+        escala: CASA_M
       };
     },
     aplicar(e) {
@@ -4763,6 +4837,7 @@
           batalhaFim, dadoEstado, roladasDados, supCongelado,
           vlab: JSON.parse(JSON.stringify(ESTADO_VLAB)),
           ambiente: { ...ambientePartida },   // AMBIENTE: o pré-estado cobre também o ambiente (atomicidade S-CONF-02)
+          escala: CASA_M,   // ESCALA: idem — o pré-estado cobre também a escala
           reaccoes: { ...REACCOES_DECLARADAS },
           mortePropriaAdjudicada, partidaPendente, correrUsado,
           desvincular: opcoesMovimento.desvincular,
@@ -4875,6 +4950,11 @@
           ambAssentar({ ...AMBIENTE_RITUAL }, { imediato: true });
           supRegistar('ambiente', { origem: 'save', razao: 'Save sem ambiente — Noite seca do ritual declarada' });
         }
+        /* Tranche ESCALA: a escala do save assenta com o resto, em
+           silêncio (a frase é a do carregar). Save antigo sem o
+           campo mantém a escala actual — declarado: não se inventa
+           um default por cima da definição do Mestre. */
+        if ('escala' in e) escalaAssentar(e.escala, { silencioso: true });
         supPilha.length = 0;
         supSnapshot();
         supRestaurando = false;
@@ -4923,6 +5003,9 @@
                do pré-estado — aplicação que não aconteceu não muda o céu. */
             if (preSave.ambiente && ambDominioValido(preSave.ambiente))
               try { ambAssentar({ ...preSave.ambiente }, { imediato: true }); } catch (__) {}
+            /* ESCALA: a aplicação falhada repõe também a escala do
+               pré-estado — aplicação que não aconteceu não muda o preço. */
+            try { escalaAssentar(preSave.escala, { silencioso: true }); } catch (__) {}
             batalhaFim = preSave.batalhaFim;
             dadoEstado = preSave.dadoEstado >>> 0; roladasDados = preSave.roladasDados;
             ataquePendente = null; custoPendente = null; caminhoPendente = null;
@@ -5400,6 +5483,45 @@
       else ambAgendarAutoRaio();
     });
   ambAgendarAutoRaio();
+
+  /* ---------- Escala: painel do Mestre (só #cfgpop, antes de #stats) ----------
+   * A escala é definição do Mestre (desempate de 09/11): a secção
+   * nasce SÓ com MODO_MESTRE, no padrão do Ambiente — na vista da
+   * jogadora NADA disto é criado (sem nós, sem listeners, sem
+   * globais). Os três preços oficiais; apertar muda a escala NA
+   * HORA, a meio da batalha, sem custo e sem confirmação. O estado
+   * vive em CASA_M; esta superfície só o pinta e o pede. */
+  const escUI = { botoes: [] };
+  function escSincronizarPainel() {
+    for (const reg of escUI.botoes) reg.b.classList.toggle('on', reg.valor === CASA_M);
+  }
+  if (MODO_MESTRE) {
+    const tituloEsc = document.createElement('h3');
+    tituloEsc.textContent = 'Escala';
+    cfgEl.insertBefore(tituloEsc, $('stats'));
+    const linhaEsc = document.createElement('div');
+    linhaEsc.className = 'cfgrow';
+    const rotuloEsc = document.createElement('span');
+    rotuloEsc.className = 'cl';
+    rotuloEsc.innerHTML = 'Casa<small>quanto vale cada casa</small>';
+    const grupoEsc = document.createElement('div');
+    grupoEsc.className = 'seg';
+    grupoEsc.setAttribute('role', 'group');
+    grupoEsc.setAttribute('aria-label', 'Escala — metros por casa');
+    for (const valor of ESCALAS_CASA_M) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.id = 'esc-' + String(valor).replace('.', '-');
+      b.textContent = String(valor).replace('.', ',') + ' m';
+      b.addEventListener('click', () => escalaAssentar(valor, {}));
+      grupoEsc.appendChild(b);
+      escUI.botoes.push({ valor, b });
+    }
+    linhaEsc.appendChild(rotuloEsc);
+    linhaEsc.appendChild(grupoEsc);
+    cfgEl.insertBefore(linhaEsc, $('stats'));
+    escSincronizarPainel();
+  }
 
   /* ---------- Supervisor: superfície do Mestre (só #cfgpop) ----------
    * S-001+M-016: esta superfície inteira só é CRIADA na vista do
