@@ -116,14 +116,6 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
   #sup-alertas,#sup-json,#sup-ultimo,#sup-dicas{grid-column:1 / -1}
 }
 
-/* ---------- selo «TESTE — resolvedor local» (spec §4.3 / M-006) ----------
-   Permanente e discreto, centrado no topo; pointer-events:none para
-   nunca roubar um toque ao campo. */
-#selo-teste{position:fixed;top:max(10px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);
-  z-index:26;pointer-events:none;white-space:nowrap;font-size:10px;font-weight:700;letter-spacing:.14em;
-  color:var(--pergaminho-fraco);background:rgba(16,12,8,.55);border:1px solid var(--linha-fraca);
-  border-radius:999px;padding:4px 10px}
-
 /* ---------- ficha fechada: chip flutuante (só a própria) ---------- */
 #fichachip{position:fixed;left:12px;bottom:68px;width:182px;z-index:20;text-align:left;
   background:var(--painel);border:1px solid var(--linha);border-radius:11px;padding:8px 10px 9px}
