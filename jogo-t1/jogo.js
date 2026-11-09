@@ -1201,6 +1201,25 @@
       ESTADO_VLAB[atacanteId].armaCaida = false;
     }
     const reacaoEmUso = alvoFicha.reacaoDefensiva || null;
+    /* CORRECÇÃO DA E3 (re-prova E7, 09/11/2026): a fotografia
+       pré-golpe do estado de morte DELA tira-se AQUI, antes de
+       o motor resolver — este adaptador é o funil único de
+       todas as resoluções (IA, oportunidade e o golpe dela). A
+       ficha de alvo passa a referência VIVA de
+       ESTADO_VLAB.ong.estadoMorte ao motor (vlabFichaAlvo); se
+       um motor futuro a mutar no lugar durante a resolução,
+       quando o consumidor correr o objecto já traz os valores
+       pós-golpe e nenhuma leitura lá dentro recupera o
+       «antes» (a E3 fotografava dentro do consumidor, já
+       depois da resolução — a E7 mediu a regra a morrer em
+       silêncio nesse mundo). A fase e o número de falhas
+       fotografados viajam no recibo (soDoMestre, o canal
+       só-do-Mestre) e o consumidor decide contra eles. Só com
+       ela por alvo: o ramo de morte do consumidor só existe
+       para ela. */
+    const fotoAlvoAntes = (alvoId === PROPRIA && ESTADO_VLAB.ong.estadoMorte)
+      ? { fase: ESTADO_VLAB.ong.estadoMorte.fase, falhas: ESTADO_VLAB.ong.estadoMorte.falhas | 0 }
+      : null;
     const saidaMotor = vlabComDmg(() => VLAB_MOTOR.resolverAtaque({
       atacante: vlabFichaAtacante(atacanteId), alvo: alvoFicha, tecnica, contexto }));
     /* C-39: a Reacção declarada consome-se SÓ com a resolução
@@ -1212,7 +1231,12 @@
       delete REACCOES_DECLARADAS[alvoId];
       if (ESTADO_VLAB[alvoId]) ESTADO_VLAB[alvoId].reacaoDisponivel = false;
     }
-    return vlabFiltrarReciboAtaque(saidaMotor, atacanteId, alvoId);
+    const recibo = vlabFiltrarReciboAtaque(saidaMotor, atacanteId, alvoId);
+    if (fotoAlvoAntes && recibo && !recibo.erro) {
+      if (!recibo.soDoMestre) recibo.soDoMestre = {};
+      recibo.soDoMestre.fotoAlvoAntes = fotoAlvoAntes;
+    }
+    return recibo;
   }
   /* Consome o lado do ATACANTE de uma saída (desgraças e bandeiras).
      Devolve a info da falha crítica (ou null). */
@@ -1297,10 +1321,45 @@
       danoSofrido = FICHAS.ong.vida.total - dep.vidaActual;
       atualizarChipVida();
     }
+    /* Tranche ATAQUE-CAIDA (regra do Mestre, 09/11/2026): a fase
+       ANTES do golpe distingue a queda nova da falha nova. Com ela
+       já 'aMorrer', um golpe que lhe sobe as falhas não é outra
+       queda — o chamador não volta a anunciar que ela caiu; é uma
+       falha de morte por golpe ('falhaDeMorte'), que o chamador
+       narra e regista como falha. Sem subida de falhas, nada de
+       morte muda (null, como um acerto comum). O nascimento da
+       corrida e a reentrada da estabilizada continuam 'aMorrer'. */
+    const emAntesGolpe = ESTADO_VLAB.ong.estadoMorte;
+    /* CORRECÇÃO DA E3 (re-prova E7, 09/11/2026): a fotografia
+       pré-golpe já não se tira aqui dentro. A E3 fotografava o
+       número neste ponto, mas a resolução corre ANTES do
+       consumo (o chamador resolve e só depois consome) — a E7
+       mediu que, num motor que mute o objecto no lugar, a foto
+       lia já o número pós-golpe, a comparação lia o número
+       contra si mesmo e a regra morria em silêncio (casos
+       H-A/H-F da re-prova). Quem fotografa é o ADAPTADOR,
+       antes de chamar o motor: a fase e o número de falhas
+       viajam no recibo (soDoMestre.fotoAlvoAntes) e a decisão
+       abaixo é contra eles. Sem foto no recibo (recibo montado
+       à mão, fora do adaptador), cai-se na leitura do objecto
+       vivo, como a E3 fazia — com o motor de hoje os dois
+       caminhos lêem os mesmos valores, porque nada muta o
+       objecto entre a resolução e o consumo. */
+    const fotoAntes = (saida.soDoMestre || {}).fotoAlvoAntes || null;
+    const faseAntes = fotoAntes ? fotoAntes.fase
+      : (emAntesGolpe ? emAntesGolpe.fase : null);
+    const falhasAntes = fotoAntes ? (fotoAntes.falhas | 0)
+      : (emAntesGolpe ? (emAntesGolpe.falhas | 0) : null);
     if (dep.estadoMorte) ESTADO_VLAB.ong.estadoMorte = dep.estadoMorte;
     if (dep.morteAdjudicada) return 'morreu';
     if (dep.estadoMorte && dep.estadoMorte.fase === 'aMorrer'
-        && vlabVidaOng() <= 0) return 'aMorrer';
+        && vlabVidaOng() <= 0) {
+      if (faseAntes === 'aMorrer'
+          && (dep.estadoMorte.falhas | 0) > falhasAntes)
+        return 'falhaDeMorte';
+      if (faseAntes === 'aMorrer') return null;
+      return 'aMorrer';
+    }
     return null;
   }
   /* ---------- consumo da cura nela (Q4) ----------
@@ -1536,7 +1595,18 @@
         mostrarImpacto(PROPRIA);
         supRegistar('accao', { acao: 'ataque', actor: aoo.inimigoId, alvo: PROPRIA, acerto: true, dano: s.totalEfectivo, oportunidade: true });
         const desfecho = vlabAplicarAlvoDepois(PROPRIA, s);
-        frases.push(`${nome} golpeia-a de oportunidade ao sair — ela perdeu <b>${s.totalEfectivo}</b> de vida.`);
+        if (desfecho === 'falhaDeMorte') {
+          /* Espelho do ramo da IA: a falha por golpe regista-se e
+             narra-se como agravamento, sem anunciar outra queda.
+             (Inalcançável em jogo hoje: caída, ela não se move —
+             fica o ramo coerente para o dia em que o for.) */
+          const em = ESTADO_VLAB.ong.estadoMorte;
+          supRegistar('accao', { acao: 'falha-de-morte-por-golpe', actor: aoo.inimigoId, alvo: PROPRIA, oportunidade: true,
+            sucessos: em ? em.sucessos : null, falhas: em ? em.falhas : null });
+          frases.push(`${nome} golpeia-a de oportunidade — ela, caída, piora visivelmente.`);
+        } else {
+          frases.push(`${nome} golpeia-a de oportunidade ao sair — ela perdeu <b>${s.totalEfectivo}</b> de vida.`);
+        }
         if (desfecho === 'morreu') { fimDeBatalha('morte'); break; }
         if (desfecho === 'aMorrer') { entrarAMorrer(); break; }
       } else if (s.resultado === 'falhaCritica') {
@@ -2504,6 +2574,27 @@
     const desfecho = vlabAplicarAlvoDepois(PROPRIA, s);
     if (desfecho === 'morreu') { fimDeBatalha('morte'); return; }
     if (desfecho === 'aMorrer') { entrarAMorrer(); return; }
+    if (desfecho === 'falhaDeMorte') {
+      /* Regra do Mestre (09/11/2026): golpe que acerta nela caída,
+         em testes de morte, equivale a 1 falha. Narra-se o
+         agravamento e regista-se a falha no Supervisor com os
+         contadores, como nos testes — sem voltar a anunciar a
+         queda que já tinha acontecido. Correcção de registo (E2
+         da bancada): a frase abaixo NÃO é «a frase que o sistema
+         já usa» — as três grafias de agravamento NÃO são a mesma
+         frase; partilham só o núcleo final «piora visivelmente.»:
+         relógio «A Ong, caída, piora visivelmente.» · IA (esta)
+         «{monstro} {verbo} a Ong caída — ela piora
+         visivelmente.» · oportunidade «{nome} golpeia-a de
+         oportunidade — ela, caída, piora visivelmente.». A
+         diferença é defensável (esta frase tem de nomear o
+         atacante) — corrige-se a alegação, não a frase. */
+      const em = ESTADO_VLAB.ong.estadoMorte;
+      supRegistar('accao', { acao: 'falha-de-morte-por-golpe', actor: id, alvo: PROPRIA,
+        sucessos: em ? em.sucessos : null, falhas: em ? em.falhas : null });
+      say(`<b>${nomeCena(id)}</b> ${verbos.acerto} a <b>Ong</b> caída — ela piora visivelmente.`);
+      return;
+    }
     say(`<b>${nomeCena(id)}</b> ${verbos.acerto} a <b>Ong</b> — ela perdeu <b>${total}</b> de vida.`);
   }
   /* M-015: o chip reflecte SEMPRE a figura dela, nas duas barras e no
