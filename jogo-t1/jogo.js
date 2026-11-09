@@ -287,7 +287,7 @@
   try {
     view = Campo3D.create(mapaEl, { area: AREA, units: ELENCO, qualidade });
   } catch (error) {
-    msgTxt.innerHTML = '<b>WebGL indisponível</b> — tenta outro navegador.';
+    msgTxt.innerHTML = '<b>WebGL indisponível</b> — tente outro navegador.';
     return;
   }
 
@@ -1524,7 +1524,7 @@
      desistir dela antes do Confirmar continua a ser o fluxo
      legítimo de cancelar uma declaração. */
   const rolagemPorResolver = () => !!(ataquePendente && ataquePendente.tipo === 'chicote');
-  const FRASE_ROLAGEM_PENDENTE = 'A rolagem já saiu — aperta <b>Confirmar</b> para resolver o golpe.';
+  const FRASE_ROLAGEM_PENDENTE = 'A rolagem já saiu — aperte <b>Confirmar</b> para resolver o golpe.';
   let apresentacaoEmCurso = false;   // T-D: uma apresentação de confronto da cena está a decorrer (o fluxo espera por ela)
   let continuarAposApresentacao = false;   // T-D: um «Continuar» premido durante o gesto executa-se quando ele fecha
   /* T-D/R1: o contador de ataques COM apresentação já NÃO vive aqui:
@@ -1602,7 +1602,7 @@
   const nomeCena = id => (ELENCO.find(u => u.id === id) || {}).nome
     || (unidade(id) || {}).nome || id;
   function say(html) {
-    if (!campoPronto) { msgTxt.textContent = falhaArranque || 'A carregar o campo…'; return; }
+    if (!campoPronto) { msgTxt.textContent = falhaArranque || 'A preparar o campo…'; return; }
     msgTxt.innerHTML = html;
   }
 
@@ -1616,7 +1616,7 @@
     if (!campoPronto) {
       document.getElementById('faixa').dataset.estado = falhaArranque ? 'falha-carregamento' : 'carregando';
       acoesEl.classList.remove('compacta');
-      acoesEl.innerHTML = !falhaArranque ? 'A carregar…'
+      acoesEl.innerHTML = !falhaArranque ? 'A preparar…'
         : falhaDefinitiva ? 'A batalha não começou.'
         : B('tentar-modelos', '↻', 'Tentar de novo', 'primary');
       return;
@@ -1829,12 +1829,12 @@
     const tapado = atraves !== undefined && atraves <= alcanceEmCasas(DADOS_COMBATE.ong.alcance);
     if (contexto === 'confirmar') {
       return tapado
-        ? 'O caminho até ele está tapado por outras figuras — aproxima-te com <b>Mover</b> e tenta outra vez.'
-        : 'O alvo está longe demais — aproxima-te com <b>Mover</b> e tenta outra vez.';
+        ? 'O caminho até ele está tapado por outras figuras — aproxime-se com <b>Mover</b> e tente outra vez.'
+        : 'O alvo está longe demais — aproxime-se com <b>Mover</b> e tente outra vez.';
     }
     return tapado
-      ? `<b>${nomeCena(alvoId)}</b> — o caminho até ele está tapado por outras figuras — aproxima-te com <b>Mover</b> antes de atacar.`
-      : `<b>${nomeCena(alvoId)}</b> está longe demais — aproxima-te com <b>Mover</b> antes de atacar.`;
+      ? `<b>${nomeCena(alvoId)}</b> — o caminho até ele está tapado por outras figuras — aproxime-se com <b>Mover</b> antes de atacar.`
+      : `<b>${nomeCena(alvoId)}</b> está longe demais — aproxime-se com <b>Mover</b> antes de atacar.`;
   }
 
   /* ---------- números de dano flutuantes (por parcela) ----------
@@ -1918,14 +1918,14 @@
   /* ---------- a reserva de movimento dela (T1.3 §3) ---------- */
   const fmtM = m => (Math.round(m * 10) / 10).toFixed(1).replace('.', ',') + ' m';
   function fraseRestante() {
-    return `A mover <b>Ong</b> · restam <b>${fmtM(reservaMovimento)}</b> — toca numa casa acesa ou anda pelas <b>setas do teclado</b>, casa a casa. As setas seguem o mapa.`;
+    return `A mover <b>Ong</b> · restam <b>${fmtM(reservaMovimento)}</b> — toque numa casa acesa ou ande pelas <b>setas do teclado</b>, casa a casa. As setas seguem o mapa.`;
   }
   function entrarMover() {
     const u = unidade(selecionada);
     if (!u) return;
-    if (estado === 'movendo' || view.getState().moving) { say('Espera — a figura ainda está a andar.'); return; }
+    if (estado === 'movendo' || view.getState().moving) { say('Espere — a figura ainda está a andar.'); return; }
     if (reservaMovimento < CASA_M) {
-      say(`A <b>Ong</b> andou o que podia andar nesta vez — aperta <b>Atacar</b> ou <b>Encerrar</b>.`);
+      say(`A <b>Ong</b> andou o que podia andar nesta vez — aperte <b>Atacar</b> ou <b>Encerrar</b>.`);
       return;
     }
     alcance = calcularAlcance();
@@ -1947,7 +1947,7 @@
   /* Reserva esgotada: o modo Mover fecha sozinho para a base. */
   function esgotarReserva() {
     sairMover();
-    say(`A <b>Ong</b> andou o que podia andar nesta vez — aperta <b>Atacar</b> ou <b>Encerrar</b>.`);
+    say(`A <b>Ong</b> andou o que podia andar nesta vez — aperte <b>Atacar</b> ou <b>Encerrar</b>.`);
   }
   /* Um passo de seta (§3.4): uma casa na direcção da GRELHA (nunca
      da câmera), pela mesma API e pelo mesmo adaptador do toque.
@@ -2060,8 +2060,8 @@
   }
   function fraseEsperaVez() {
     say(batalhaFim
-      ? 'A batalha acabou — aperta <b>Recomeçar</b>.'
-      : `É a vez de <b>${nomeCena(vezAtual)}</b> — espera que ele aja.`);
+      ? 'A batalha acabou — aperte <b>Recomeçar</b>.'
+      : `É a vez de <b>${nomeCena(vezAtual)}</b> — espere que ele aja.`);
   }
   function iniciarVez(id) {
     vezAtual = id;
@@ -2454,10 +2454,10 @@
     estado = 'fim';
     atualizarVez(); renderAcoes();
     say(causa === 'vitoria'
-      ? 'Os inimigos caíram todos — <b>vitória</b> da <b>Ong</b> nesta batalha. Aperta <b>Recomeçar</b> para jogar outra vez.'
+      ? 'Os inimigos caíram todos — <b>vitória</b> da <b>Ong</b> nesta batalha. Aperte <b>Recomeçar</b> para jogar outra vez.'
       : causa === 'estabilizada'
-      ? 'A <b>Ong</b> caiu, mas estabilizou — fim desta batalha. Aperta <b>Recomeçar</b> para jogar outra vez.'
-      : 'A <b>Ong</b> caiu — fim desta batalha. Aperta <b>Recomeçar</b> para jogar outra vez.');
+      ? 'A <b>Ong</b> caiu, mas estabilizou — ela volta com <b>1 de Vida</b> e fica caída, sem lutar, até receber uma cura. A cura soma por cima desse 1.'
+      : 'A <b>Ong</b> caiu — fim desta batalha. Aperte <b>Recomeçar</b> para jogar outra vez.');
   }
   /* Terminar a batalha (M-014): a saída que a especificação reserva
      à mesa — fecha o encontro a meio, SEM a Ong cair (sem setVivo):
@@ -2475,7 +2475,7 @@
     supRestauroVoo = null;   // EM-TJ12J13-01: fim declarado — o par de restauro também não atravessa o fim
     estado = 'fim';
     atualizarVez(); renderAcoes();
-    say('A batalha <b>terminou</b> — a mesa fechou este encontro. Aperta <b>Recomeçar</b> para jogar outra vez.');
+    say('A batalha <b>terminou</b> — a mesa fechou este encontro. Aperte <b>Recomeçar</b> para jogar outra vez.');
   }
 
   /* ---------- acções da faixa ---------- */
@@ -2494,7 +2494,7 @@
        mundo (EXP-R1: pós-gelo, silêncio é proibido nesta casca). */
     if (supCongelado) {
       if (acao === 'recomecar') location.reload();
-      else say('A batalha parou — aperta <b>Recomeçar</b>.');
+      else say('A batalha parou — aperte <b>Recomeçar</b>.');
       return;
     }
     /* Guarda de vez (§1.5): na vez de um monstro, cliques em botões
@@ -2559,7 +2559,7 @@
       /* Correr (Parte C): a validação e o novo limite são do motor
          (validarCorrer); a página só apresenta e aplica o orçamento. */
       if (estado !== 'mover' && estado !== 'movendo') return;
-      if (!VLAB_MOTOR) { say('O motor de combate não respondeu — tenta outra vez.'); return; }
+      if (!VLAB_MOTOR) { say('O motor de combate não respondeu — tente outra vez.'); return; }
       if (correrUsado) { say('Ela já está a correr nesta vez.'); return; }
       const base = vlabDeslocBaseOng();
       const val = VLAB_MOTOR.validarCorrer({ deslocamentoBase: base, acaoPadraoDisponivel: !atacou });
@@ -2583,7 +2583,7 @@
     if (acao === 'cancelar') {
       const restavam = fmtM(reservaMovimento);
       sairMover();
-      say(`Ficas por aqui — restavam <b>${restavam}</b> nesta vez.`);
+      say(`Você fica por aqui — restavam <b>${restavam}</b> nesta vez.`);
       return;
     }
     if (acao === 'parar') {
@@ -2602,8 +2602,8 @@
       // ficam acessíveis; o Chicote valida o seu alvo ao ser escolhido.
       estado = 'atacar'; renderAcoes();
       say(alvo
-        ? `Atacar <b>${nomeCena(alvo)}</b> com a <b>Ong</b> · escolhe o ataque na faixa.`
-        : 'Escolhe o Chicote ou a Transformação da <b>Ong</b>. A Transformação é sobre si própria.');
+        ? `Atacar <b>${nomeCena(alvo)}</b> com a <b>Ong</b> · escolha o ataque na faixa.`
+        : 'Escolha o Chicote ou a Transformação da <b>Ong</b>. A Transformação é sobre si própria.');
       return;
     }
     if (acao === 'consumivel') {
@@ -2619,16 +2619,16 @@
          (rolagem, mover, …) a acção não abre a confirmação nem
          arrasta pendentes (as casas acesas do Mover ficariam
          fantasmas na base após o Voltar). */
-      if (estado !== 'base') { say('Primeiro volta às acções base.'); return; }
+      if (estado !== 'base') { say('Primeiro volte às acções base.'); return; }
       /* M-014: pedir a confirmação — a batalha não fecha por um toque. */
       estado = 'confirmar-fim'; renderAcoes();
-      say(`Terminar esta batalha? A rodada ${rodada} fica por fechar — aperta <b>Sim, terminar</b> para fechar, ou <b>Voltar</b> para continuar a jogar.`);
+      say(`Terminar esta batalha? A rodada ${rodada} fica por fechar — aperte <b>Sim, terminar</b> para fechar, ou <b>Voltar</b> para continuar a jogar.`);
       return;
     }
     if (acao === 'terminar-sim') {
       /* LB-C-05: terminar-sim só a partir de confirmar-fim — directo
          da base (ou de outro estado) não fecha a batalha. */
-      if (estado !== 'confirmar-fim') { say('Primeiro aperta <b>Terminar</b> para confirmar.'); return; }
+      if (estado !== 'confirmar-fim') { say('Primeiro aperte <b>Terminar</b> para confirmar.'); return; }
       terminarBatalha(); return;
     }
     if (acao === 'ataque-basico') {
@@ -2665,7 +2665,7 @@
           const livre = FICHAS.ong.alma.total - FICHAS.ong.alma.comprometido - paGasto;
           say(`Alma livre não chega — o ${c.arma} custa <b>8 PA</b> e a livre dela é ${livre}.`);
         } else {
-          say('O ataque não se resolveu — tenta outra vez.');
+          say('O ataque não se resolveu — tente outra vez.');
         }
         return;
       }
@@ -2683,7 +2683,7 @@
       if (rol.ajusteVantagemDesvantagem < 0) soma += ' − ' + (-rol.ajusteVantagemDesvantagem);
       const notaVD = rol.niveisLiquidos !== 0
         ? ` · (${rol.niveisLiquidos > 0 ? 'a melhor' : 'a pior'} de ${rol.conjuntosDeFaces.length} rolagens — ${rol.niveisLiquidos > 0 ? 'Vantagem' : 'Desvantagem'})` : '';
-      say(`${c.arma} de <b>Ong</b> contra <b>${nomeCena(alvo)}</b> · <b>${rol.expressao} → ${soma} = ${rol.total}</b>${notaVD} · aperta <b>Confirmar</b> para saber se acertou.`);
+      say(`${c.arma} de <b>Ong</b> contra <b>${nomeCena(alvo)}</b> · <b>${rol.expressao} → ${soma} = ${rol.total}</b>${notaVD} · aperte <b>Confirmar</b> para saber se acertou.`);
       return;
     }
     if (acao === 'transformacao') {
@@ -2695,7 +2695,7 @@
       ataquePendente = { tipo: 'transformacao', nome: 'Transformação' };
       estado = 'rolagem'; renderAcoes();
       say(livre >= t.custo
-        ? `Transformação · custa <b>${t.custo} PA</b> dos ${livre} livres — ficarias com <b>${livre - t.custo}</b> de alma livre · o Chicote passa a 8d6+34 e a Defesa dela sobe.`
+        ? `Transformação · custa <b>${t.custo} PA</b> dos ${livre} livres — você ficaria com <b>${livre - t.custo}</b> de alma livre · o Chicote passa a 8d6+34 e a Defesa dela sobe.`
         : `Transformação · custa <b>${t.custo} PA</b> e a alma livre dela é ${livre} — não chega.`);
       return;
     }
@@ -2746,14 +2746,14 @@
            sem frase de desgraça, erro nomeado no registo. */
         if (s2.erro) {
           supRegistar('bloqueada', { acao: 'ataque', actor: PROPRIA, alvo, razao: s2.erro.codigo });
-          say('O ataque não se resolveu — tenta outra vez.');
+          say('O ataque não se resolveu — tente outra vez.');
           return;
         }
         s = s2;
       }
       if (s.erro) {
         supRegistar('bloqueada', { acao: 'ataque', actor: PROPRIA, alvo, razao: s.erro.codigo });
-        say('O ataque não se resolveu — tenta outra vez.');
+        say('O ataque não se resolveu — tente outra vez.');
         return;
       }
       /* O custo da técnica paga-se ao resolver (acerte ou erre) —
@@ -2829,7 +2829,7 @@
       if (apresentacaoEmCurso) { continuarAposApresentacao = true; return; }
       estado = 'base'; renderAcoes();
       say(atacou
-        ? 'A <b>Ong</b> já atacou nesta vez — aperta <b>Encerrar</b> para fechar a vez dela.'
+        ? 'A <b>Ong</b> já atacou nesta vez — aperte <b>Encerrar</b> para fechar a vez dela.'
         : 'É a vez da <b>Ong</b>.');
       return;
     }
@@ -2940,18 +2940,18 @@
        apagar ataquePendente, sem repintar a faixa); correcções
        finais (EXP-R1): responde com a frase do mundo, sem
        silêncio. */
-    if (supCongelado) { say('A batalha parou — aperta <b>Recomeçar</b>.'); return; }
+    if (supCongelado) { say('A batalha parou — aperte <b>Recomeçar</b>.'); return; }
     // Na vez de um monstro (ou no fim), o chip responde como os
     // toques: frase de espera (§1.5); a ficha dela vê-se antes e depois.
     if (vezAtual !== PROPRIA || batalhaFim) { fraseEsperaVez(); return; }
     // Passo de seta em curso: o toque não cancela o passo (E-T13L-2).
-    if (estado === 'mover' && (passoEmCurso || view.getState().moving)) { say('Espera — ainda está a andar.'); return; }
-    if (estado === 'movendo') { say(`Espera — <b>${nomeCena(selecionada)}</b> ainda está a andar.`); return; }
+    if (estado === 'mover' && (passoEmCurso || view.getState().moving)) { say('Espere — ainda está a andar.'); return; }
+    if (estado === 'movendo') { say(`Espere — <b>${nomeCena(selecionada)}</b> ainda está a andar.`); return; }
     /* M-010: com um resultado por ler (estado 'resultado' ou gesto
        do golpe ainda a decorrer), o chip também não destrói a saída:
        responde com a frase de espera e a ficha fica para depois do
        Continuar. */
-    if (estado === 'resultado' || apresentacaoEmCurso) { say('Aperta <b>Continuar</b> para seguir.'); return; }
+    if (estado === 'resultado' || apresentacaoEmCurso) { say('Aperte <b>Continuar</b> para seguir.'); return; }
     /* J1 (carta IBX-213): com uma rolagem por resolver, o chip
        também não a destrói — a ficha fica para depois do
        Confirmar, como já acontece com o resultado (M-010). */
@@ -2959,7 +2959,7 @@
     if (estado === 'mover') limparAjudaMover();
     estado = 'base'; ataquePendente = null;
     selecionar(PROPRIA); abrirFicha(PROPRIA); renderAcoes();
-    say('A tua ficha, <b>Ong</b>.');
+    say('A sua ficha, <b>Ong</b>.');
   });
 
   /* ---------- toque no mundo: hitTest (contenção), nunca íman ----------
@@ -2971,7 +2971,7 @@
        congelada — o toque não muta NADA (sem alvo novo, sem
        estado, sem abrir cartão nem ficha); correcções finais
        (EXP-R1): responde com a frase do mundo, sem silêncio. */
-    if (supCongelado) { say('A batalha parou — aperta <b>Recomeçar</b>.'); return; }
+    if (supCongelado) { say('A batalha parou — aperte <b>Recomeçar</b>.'); return; }
     fecharCfg();
     // Intercepção à entrada (§1.5/§1.7): na vez de um monstro ou no
     // fim da batalha, qualquer toque só produz a frase de espera —
@@ -2980,7 +2980,7 @@
     // Passo de seta em curso (E-T13L-2): o toque não chama view.move
     // (a cena cancelaria a fila do passo sem o moveend dele e o
     // desconto da reserva desalinhava).
-    if (estado === 'mover' && (passoEmCurso || view.getState().moving)) { say('Espera — ainda está a andar.'); return; }
+    if (estado === 'mover' && (passoEmCurso || view.getState().moving)) { say('Espere — ainda está a andar.'); return; }
     /* M-010: enquanto houver um resultado por ler — estado
        'resultado' (antes OU depois do gesto) ou apresentação do
        golpe ainda em curso — o toque NÃO troca de alvo, NÃO repõe o
@@ -2989,7 +2989,7 @@
        Continuar e a frase do golpe sobrevivem. (Antes, o ramo de
        figura repunha estado='base' e ataquePendente=null também a
        partir de 'resultado' — era assim que a saída se destruía.) */
-    if (estado === 'resultado' || apresentacaoEmCurso) { say('Aperta <b>Continuar</b> para seguir.'); return; }
+    if (estado === 'resultado' || apresentacaoEmCurso) { say('Aperte <b>Continuar</b> para seguir.'); return; }
     /* J1 (carta IBX-213): com uma rolagem por resolver, o toque
        também não troca de alvo nem a apaga — a rolagem fica até
        ao Confirmar (a protecção do M-010, um estado mais cedo,
@@ -2997,7 +2997,7 @@
     if (rolagemPorResolver()) { say(FRASE_ROLAGEM_PENDENTE); return; }
     const hit = view.hitTest(clientX, clientY);
     if (estado === 'movendo') {
-      say(`Espera — <b>${nomeCena(selecionada)}</b> ainda está a andar.`);
+      say(`Espere — <b>${nomeCena(selecionada)}</b> ainda está a andar.`);
       return;
     }
     if (hit.unitId) {
@@ -3007,14 +3007,14 @@
         // A própria: abre a ficha dela. Em Mover, o toque nela só diz
         // que ela já está aqui (a casa dela não é destino).
         if (estado === 'mover') {
-          say('<b>Ong</b> já está aqui — toca numa casa acesa para andar.');
+          say('<b>Ong</b> já está aqui — toque numa casa acesa para andar.');
           return;
         }
         if (estado === 'atacar' || estado === 'rolagem' || estado === 'consumivel' || estado === 'confirmar-fim') {
           estado = 'base'; ataquePendente = null; renderAcoes();
         }
         abrirFicha(PROPRIA);
-        say('A tua ficha, <b>Ong</b>.');
+        say('A sua ficha, <b>Ong</b>.');
         return;
       }
       /* Outra figura: NUNCA se torna a figura activa (decisão do
@@ -3028,23 +3028,23 @@
         estado = 'base'; ataquePendente = null; renderAcoes();
       }
       abrirFicha(hit.unitId);
-      say(`<b>${nome}</b> é o teu alvo. Aperta <b>Atacar</b> para a atacar com a Ong, ou <b>Mover</b> para te aproximares.`);
+      say(`<b>${nome}</b> é o seu alvo. Aperte <b>Atacar</b> para a atacar com a Ong, ou <b>Mover</b> para você se aproximar.`);
       return;
     }
     if (estado === 'mover') {
       const cel = casaMotor(hit.cell);
-      if (!cel) { say('Toca numa casa do campo para andar.'); return; }
+      if (!cel) { say('Toque numa casa do campo para andar.'); return; }
       const u = unidade(selecionada);
       if (u && cel.x === u.posicao.x && cel.y === u.posicao.y) {
-        say(`<b>${u.nome}</b> já está nessa casa — escolhe outra.`);
+        say(`<b>${u.nome}</b> já está nessa casa — escolha outra.`);
         return;
       }
       const destino = alcance.get(chave(cel.x, cel.y));
       if (!destino) {
         supRegistar('bloqueada', { acao: 'mover', actor: PROPRIA, razao: 'Casa fora da reserva de movimento' });
         say(ajudaGrid
-          ? 'Essa casa está longe demais — escolhe uma das <b>casas acesas</b>.'
-          : `Longe demais — restam-te <b>${fmtM(reservaMovimento)}</b> nesta vez.`);
+          ? 'Essa casa está longe demais — escolha uma das <b>casas acesas</b>.'
+          : `Longe demais — você ainda tem <b>${fmtM(reservaMovimento)}</b> nesta vez.`);
         return;
       }
       estado = 'movendo'; parado = false; renderAcoes();
@@ -3062,9 +3062,9 @@
       });
       return;
     }
-    if (estado === 'resultado') { say('Aperta <b>Continuar</b> para seguir.'); return; }
-    if (estado !== 'base') { say('Isso é o chão. Aperta <b>Voltar</b> para regressar às acções base.'); return; }
-    say('Isso é o chão. Aperta <b>Mover</b>, toca numa casa acesa. Ficha: toca na figura.');
+    if (estado === 'resultado') { say('Aperte <b>Continuar</b> para seguir.'); return; }
+    if (estado !== 'base') { say('Isso é o chão. Aperte <b>Voltar</b> para regressar às acções base.'); return; }
+    say('Isso é o chão. Aperte <b>Mover</b>, toque numa casa acesa. Ficha: toque na figura.');
   }
 
   /* O tratador de moveend ramifica por quem andou e pelo contexto
@@ -3210,8 +3210,8 @@
         desenharAlcance();
         renderAcoes();
         say(foiParado
-          ? `<b>Ong</b> parou. Restam <b>${fmtM(reservaMovimento)}</b> — continua a andar, ou aperta <b>Cancelar</b> para voltar às acções.`
-          : `<b>Ong</b> chegou. Restam <b>${fmtM(reservaMovimento)}</b> — continua a andar, ou aperta <b>Cancelar</b> para voltar às acções.`);
+          ? `<b>Ong</b> parou. Restam <b>${fmtM(reservaMovimento)}</b> — continue a andar, ou aperte <b>Cancelar</b> para voltar às acções.`
+          : `<b>Ong</b> chegou. Restam <b>${fmtM(reservaMovimento)}</b> — continue a andar, ou aperte <b>Cancelar</b> para voltar às acções.`);
       }
     }
     /* Tranche VLAB: saída de adjacência — se ela partiu de junto
@@ -3382,7 +3382,7 @@
      ouvinte, sem superfície. */
   const btnAlertaEl = $('btn-alerta');
   if (btnAlertaEl) btnAlertaEl.addEventListener('click', () => say(supAlertas.length
-    ? 'Alertas: vê nas configurações (⚙).'
+    ? 'Alertas: veja nas configurações (⚙).'
     : 'Alertas: <b>nenhum</b> por agora.'));
 
   function sincronizarCamera() {
@@ -3393,7 +3393,7 @@
   }
   $('cam-fixa').addEventListener('click', () => {
     view.setCamera('fixa');
-    say('Câmera <b>Fixa</b> — vês o campo todo.');
+    say('Câmera <b>Fixa</b> — você vê o campo todo.');
   });
   $('cam-seguir').addEventListener('click', () => {
     view.setCamera('seguir');
@@ -3401,7 +3401,7 @@
   });
   $('cam-360').addEventListener('click', () => {
     view.setCamera('360');
-    say('Câmera <b>360°</b> — arrasta no mapa para girar à volta da figura.');
+    say('Câmera <b>360°</b> — arraste no mapa para girar à volta da figura.');
   });
 
   function mostrarZoom() {
@@ -3422,7 +3422,7 @@
      → 360°), em vez de terminar sem resposta nenhuma. */
   function fraseArrasto() {
     if (view.getState().camera === '360') return;
-    say('O arrasto só gira na câmera <b>360°</b> — muda em <b>⚙ → Câmera → 360°</b>.');
+    say('O arrasto só gira na câmera <b>360°</b> — mude em <b>⚙ → Câmera → 360°</b>.');
   }
   $('zoom-mais').addEventListener('click', () => { view.setZoom(view.getState().zoom + .25); mostrarZoom(); fraseZoom(); });
   $('zoom-menos').addEventListener('click', () => { view.setZoom(view.getState().zoom - .25); mostrarZoom(); fraseZoom(); });
@@ -3847,10 +3847,10 @@
      mudado desde a escolha. Isso não é uma verificação duplicada. */
   function validarAlvoAtaqueOng(contexto) {
     if (!alvo) return { razao: 'Sem alvo escolhido',
-      mensagem: 'Primeiro <b>toca no inimigo</b> que queres atacar — ele fica marcado como alvo.' };
+      mensagem: 'Primeiro <b>toque no inimigo</b> que você quer atacar — ele fica marcado como alvo.' };
     const u = unidade(alvo);
     if (!u || u.vivo === false) return { razao: 'O alvo já não está na batalha',
-      mensagem: 'O alvo já não está na batalha — escolhe outro inimigo.' };
+      mensagem: 'O alvo já não está na batalha — escolha outro inimigo.' };
     if (distanciaAte(alvo) > alcanceEmCasas(DADOS_COMBATE.ong.alcance)) return { razao: 'Alvo fora de alcance',
       mensagem: fraseForaDeAlcance(alvo, contexto) };
     return null;
@@ -3861,9 +3861,9 @@
   function supValidarAcaoOng(acao) {
     if (acao === 'atacar') {
       if (estado === 'movendo' || view.getState().moving) return { razao: 'A figura ainda está a andar',
-        mensagem: 'Espera — a figura ainda está a andar.' };
+        mensagem: 'Espere — a figura ainda está a andar.' };
       if (atacou) return { razao: 'A Ong já atacou nesta vez',
-        mensagem: 'A <b>Ong</b> já atacou nesta vez — aperta <b>Encerrar</b> para fechar a vez dela.' };
+        mensagem: 'A <b>Ong</b> já atacou nesta vez — aperte <b>Encerrar</b> para fechar a vez dela.' };
       /* Emenda da bancada (sentença Q1-(B) da tranche da página):
          COM alvo escolhido, a recusa de alvo morto ou fora de
          alcance regista-se já na casca «atacar», pela mesma régua
@@ -3877,7 +3877,7 @@
       return null;
     }
     if (acao === 'ataque-basico') {
-      if (estado !== 'atacar' || atacou) return { razao: 'Ataque básico sem condições para acontecer', duro: true, mensagem: atacou ? 'A <b>Ong</b> já atacou nesta vez — aperta <b>Encerrar</b> para fechar a vez dela.' : 'Primeiro aperta <b>Atacar</b> para escolher o golpe.' };
+      if (estado !== 'atacar' || atacou) return { razao: 'Ataque básico sem condições para acontecer', duro: true, mensagem: atacou ? 'A <b>Ong</b> já atacou nesta vez — aperte <b>Encerrar</b> para fechar a vez dela.' : 'Primeiro aperte <b>Atacar</b> para escolher o golpe.' };
       return validarAlvoAtaqueOng('atacar');
     }
     if (acao === 'transformacao') {
@@ -3908,7 +3908,7 @@
     }
     if (acao === 'encerrar') {
       if (estado === 'movendo' || view.getState().moving)
-        return { razao: 'Não pode encerrar a vez enquanto anda', duro: true, mensagem: 'Espera — a figura ainda está a andar.' };
+        return { razao: 'Não pode encerrar a vez enquanto anda', duro: true, mensagem: 'Espere — a figura ainda está a andar.' };
       return null;
     }
     return null;
@@ -3976,7 +3976,7 @@
          registo), para o Mestre cruzar com o registo da sua cópia.
          Emite-se uma vez: a guarda supCongelado já o garante. No
          Mestre nada muda — a razão continua visível em #sup-alertas. */
-      say(`A batalha parou por um erro do jogo — aperta <b>Recomeçar</b>. Se puderes, diz ao Mestre que parou no erro nº ${supAlertas.length}.`);
+      say(`A batalha parou por um erro do jogo — aperte <b>Recomeçar</b>. Se você puder, diga ao Mestre que parou no erro nº ${supAlertas.length}.`);
     }
     geracaoAuto++;
     if (relogioAuto) { clearTimeout(relogioAuto); relogioAuto = null; }
@@ -6181,7 +6181,7 @@
         categoria: 'jogabilidade', padrao: 'espera-de-quem-joga', actor: PROPRIA, rodada: pior.rodada, vez: PROPRIA,
         assunto: 'isolada', medida: Math.round(pior.durMs), limiar: Math.round(20000 / pior.vel),
         prioridade: pior.durMs * pior.vel / 20000,
-        texto: `Entre uma vez tua e a outra, passaram ${supCritSeg(pior.durMs)} segundos a ver os monstros, na rodada ${pior.rodada}.`
+        texto: `Entre uma vez sua e a outra, passaram ${supCritSeg(pior.durMs)} segundos a ver os monstros, na rodada ${pior.rodada}.`
       });
       return;
     }
@@ -6196,7 +6196,7 @@
         categoria: 'jogabilidade', padrao: 'espera-de-quem-joga', actor: PROPRIA, rodada: r, vez: PROPRIA,
         assunto: 'mediana', medida: Math.round(medReal), limiar: Math.round(12000 / velRef),
         prioridade: medJogo / 12000,
-        texto: `Entre uma vez tua e a outra, passam cerca de ${supCritSeg(medReal)} segundos a ver os monstros.`
+        texto: `Entre uma vez sua e a outra, passam cerca de ${supCritSeg(medReal)} segundos a ver os monstros.`
       });
     }
   }
@@ -6208,7 +6208,7 @@
         supCritEmitir({
           categoria: 'jogabilidade', padrao: 'toques-sem-efeito', actor: PROPRIA, rodada: r, vez: PROPRIA,
           assunto: 'seguidas:' + k, medida: n, limiar: 3, prioridade: n / 3,
-          texto: `Tocaste ${n} vezes seguidas e o jogo só disse que não dava. A razão foi sempre a mesma: ${razao}.`
+          texto: `Você tocou ${n} vezes seguidas e o jogo só disse que não dava. A razão foi sempre a mesma: ${razao}.`
         });
       }
     }
@@ -6309,7 +6309,7 @@
       if (estado === 'mover') {
         const restavam = fmtM(reservaMovimento);
         sairMover();
-        say(`Ficas por aqui — restavam <b>${restavam}</b> nesta vez.`);
+        say(`Você fica por aqui — restavam <b>${restavam}</b> nesta vez.`);
       }
       return;
     }
@@ -6333,7 +6333,7 @@
   marcarQualidade();
   marcarDanos();
   atualizarChipVida();
-  say('A carregar o campo…');
+  say('A preparar o campo…');
   view.ready.then(() => {
     const falhas = view.getStats().models.filter(m => m.loadError);
     if (falhas.some(m => m.id === PROPRIA)) {
@@ -6354,7 +6354,7 @@
     renderAcoes();
     /* A nota de modelo em falta JUNTA-SE à dica da primeira vez —
        nunca a sobrescreve (observação do juiz na análise do pacote). */
-    say('É a vez da <b>Ong</b>. Aperta <b>Mover</b> e toca numa casa acesa para andar.'
+    say('É a vez da <b>Ong</b>. Aperte <b>Mover</b> e toque numa casa acesa para andar.'
       + (falhas.length
         ? `<br>Modelo indisponível: ${falhas.map(m => nomeCena(m.id)).join(', ')}. Marcador ativo.`
         : ''));
@@ -6366,7 +6366,7 @@
     falhaDefinitiva = error instanceof TypeError || error instanceof RangeError;
     falhaArranque = falhaDefinitiva
       ? 'Erro nos dados das figuras — a batalha não começou.'
-      : 'Não foi possível preparar as figuras. A batalha não começou. Aperta Tentar de novo.';
+      : 'Não foi possível preparar as figuras. A batalha não começou. Aperte Tentar de novo.';
     renderAcoes(); say('');
   });
 })();

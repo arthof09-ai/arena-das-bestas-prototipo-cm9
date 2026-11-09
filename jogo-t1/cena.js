@@ -932,7 +932,7 @@
             }
             const contextLost = e => {
                 e.preventDefault();
-                emit('error', { message: 'Contexto gráfico perdido. Atualiza a página.' });
+                emit('error', { message: 'Contexto gráfico perdido. Atualize a página.' });
             };
             renderer.domElement.addEventListener('webglcontextlost', contextLost);
             setQualidade(options.qualidade || 'alta');
