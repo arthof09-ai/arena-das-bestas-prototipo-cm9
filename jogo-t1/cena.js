@@ -324,7 +324,7 @@
              * dos tectos do pulso) e os fogos PERSISTENTES — o de casa
              * (estado de terreno) e o de pessoa (estado «A Arder»).
              * As chamas são volumes de shader com ruído a subir
-             * (volta 3, 10/11; antes: gotas de 09/11 — ver «A FORMA DO FOGO»)
+             * (volta 4, 10/11; antes: volta 3 e gotas de 09/11 — ver «A FORMA DO FOGO»)
              * 09/11 — ver «A FORMA DO FOGO» junto a FOGO_DEFS), nas
              * cores do mundo (0xff631d com núcleo 0xffdf8e), em escala de incêndio —
              * maiores que qualquer tocha/fogueira, com brilho laranja
@@ -462,7 +462,7 @@
                 emit('raio', { instante: now });
                 return true;
             }
-            /* A FORMA DO FOGO — VOLTA 3 (10/11; o Mestre reprovou a
+            /* A FORMA DO FOGO — VOLTA 4 (10/11; sobre a base da volta 3 — o Mestre reprovou a
              * gota da volta 2: «tá bem fraco… não parece uma chama de
              * verdade de algo queimando» e lavrou a régua: «precisa ser
              * algo natural e realista»). A chama nasce outra vez, como
@@ -488,7 +488,26 @@
              * mudam semente, materiais e escala. Custo por fogo: 2
              * chamadas (chamas) + 1 (brasas) + 1 (brilho) — a volta 2
              * gastava 14. A mecânica não se toca: quem acende/apaga e
-             * quando é da casca, como sempre. */
+             * quando é da casca, como sempre.
+             * VOLTA 4 (10/11, mais tarde): o Mestre aprovou a volta 3
+             * «por enquanto» e mandou crescer — a chama estava «muito
+             * pequena, muito magra» — e deu ao fogo de PESSOA desenho
+             * próprio: «o fogo nele… a animação dele a queimar». A
+             * técnica fica (shader fbm); mudam a ESCALA e o PERFIL: a
+             * casa arde maior e mais cheia (planos de ~1,95/2,43 m de
+             * largura × 3,2/3,6 m de altura; meia-largura da silhueta
+             * 0,68→0,14 com erosão menor no corpo e igual nas pontas)
+             * e a pessoa ganha parâmetros de ENVOLVIMENTO em
+             * FOGO_PARAMS (chama de 1,55/1,85 m × 2,15/2,45 m à volta
+             * do corpo — LARGAS de propósito: medido nesta volta, o
+             * corpo das figuras tem ~1,4 m de largura e uma chama mais
+             * estreita que o corpo fica escondida dentro dele, só com
+             * a base a espreitar aos pés; a esta largura as línguas
+             * saem pelos lados e por cima da cabeça — lê-se uma
+             * pessoa a arder sem a engolir numa fogueira). Cada
+             * grupo roda pela
+             * semente (ângulo de ouro): quebra o padrão repetido dos
+             * planos e a estrela da base (reserva 1 da conferência). */
             function fogoGeo() {
                 if (FOGO_GEO) return FOGO_GEO;
                 const pos = [], uvs = [], idx = [];
@@ -541,7 +560,7 @@
                         'void main() { vUv = uv; vec3 p = position;',
                         '  float h = uv.y;',
                         '  float ond = sin(h * 4.3 - uTempo * 3.1 + uSemente) * 0.6 + sin(h * 8.9 - uTempo * 5.3 + uSemente * 1.7) * 0.4;',
-                        '  p.x += ond * 0.045 * h * h; p.z += cos(h * 3.7 - uTempo * 2.6 + uSemente * 2.3) * 0.035 * h * h;',
+                        '  p.x += ond * 0.055 * h * h; p.z += cos(h * 3.7 - uTempo * 2.6 + uSemente * 2.3) * 0.045 * h * h;',
                         '  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }'
                     ].join('\n'),
                     fragmentShader: [
@@ -552,7 +571,7 @@
                         '  vec3 c = mix(vec3(0.42, 0.045, 0.008), vec3(0.85, 0.17, 0.02), smoothstep(0.0, 0.38, h));',
                         '  c = mix(c, vec3(1.0, 0.44, 0.06), smoothstep(0.38, 0.62, h));',
                         '  c = mix(c, vec3(1.0, 0.74, 0.24), smoothstep(0.62, 0.84, h));',
-                        '  c = mix(c, vec3(1.0, 0.90, 0.58), smoothstep(0.88, 1.0, h));',
+                        '  c = mix(c, vec3(1.0, 0.90, 0.58), smoothstep(0.92, 1.0, h));',
                         '  return c; }',
                         'void main() {',
                         '  vec2 uv = vUv;',
@@ -562,19 +581,80 @@
                         '  float nF = fbm(vec2(uv.x * 7.0 - uSemente * 0.53, uv.y * 6.0 - t * 2.7 + uSemente * 1.93));',
                         '  float bal = (nG - 0.5) * (0.50 + 0.55 * ext) * uv.y;',
                         '  float cx = abs(uv.x * 2.0 - 1.0 + bal * 2.0);',
-                        '  float meiaL = mix(0.54, 0.09, pow(uv.y, 0.8));',
-                        '  float erode = (nG - 0.5) * (0.42 + 0.95 * uv.y + 0.35 * ext) + (nF - 0.5) * 0.38;',
+                        '  float meiaL = mix(0.68, 0.14, pow(uv.y, 0.7));',
+                        '  float erode = (nG - 0.5) * (0.30 + 1.10 * uv.y + 0.30 * ext) + (nF - 0.5) * 0.34;',
                         '  float d = cx / max(meiaL, 0.001) + erode * 1.35;',
-                        '  float corpo = 1.0 - smoothstep(0.42, 1.0, d);',
+                        '  float corpo = 1.0 - smoothstep(0.50, 1.02, d);',
                         '  if (corpo <= 0.004) discard;',
-                        '  float calor = clamp(1.18 - d * 0.82 - uv.y * 0.52 + (nF - 0.5) * 0.38 - ext * 0.22, 0.0, 1.0);',
+                        '  float calor = clamp(1.10 - d * 0.80 - uv.y * 0.55 + (nF - 0.5) * 0.36 - ext * 0.22, 0.0, 1.0);',
                         '  vec3 cor = rampa(calor);',
                         '  float trem = 0.80 + 0.38 * n1(t * 2.2 + uSemente * 2.31) + 0.14 * n1(t * 6.7 + uSemente * 0.97);',
                         '  float alfa = corpo * uEnv * mix(0.85, 0.50, ext);',
-                        '  float inten = mix(0.62, 0.42, ext) * trem;',
+                        '  float inten = mix(0.60, 0.40, ext) * trem;',
                         '  gl_FragColor = vec4(cor * inten, alfa); }'
                     ].join('\n'),
                     transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide
+                });
+            }
+            /* CASCA DA PESSOA A ARDER (volta 4): cilindro de chama À VOLTA
+             * do corpo (raio 0,95 m em baixo, 0,66 m em cima — fora do corpo
+             * (~1,4 m de largura) e a apertar para a chama fechar sobre ela), com o
+             * mesmo ruído fractal a subir. Os planos cruzados passam pelo
+             * centro do corpo e o corpo opaco esconde-os (medido: a 1,85 m
+             * de largura continuavam invisíveis nela); a casca vive FORA do
+             * corpo — a parte da frente desenha-se por cima dela, a de trás
+             * fica escondida: lê-se uma pessoa dentro das chamas. O ruído é
+             * amostrado num domínio circular (cos/sen) para a emenda do
+             * cilindro não se ver. */
+            function fogoMatCasca(semente) {
+                return new T.ShaderMaterial({
+                    uniforms: { uTempo: { value: 0 }, uEnv: { value: 0 }, uSemente: { value: semente } },
+                    vertexShader: [
+                        'uniform float uTempo; uniform float uSemente;',
+                        'varying vec2 vUv; varying vec3 vNormV; varying vec3 vPosV;',
+                        FOGO_GLSL_RUIDO,
+                        'void main() { vUv = uv; vec3 p = position;',
+                        '  float ang = atan(p.z, p.x);',
+                        '  float subir = uTempo * 0.5 + uSemente;',
+                        '  float n = fbm(vec2(cos(ang) * 1.35 + sin(ang) * 0.95, uv.y * 2.0 - subir + sin(ang) * 1.35));',
+                        '  float n2 = fbm(vec2(cos(ang) * 3.4 + 17.0, uv.y * 4.5 - subir * 1.9));',
+                        '  float r = 1.0 + (n - 0.5) * 0.30 + (n2 - 0.5) * 0.14;',
+                        '  p.x *= r; p.z *= r;',
+                        '  vNormV = normalMatrix * normal;',
+                        '  vec4 mv = modelViewMatrix * vec4(p, 1.0); vPosV = mv.xyz;',
+                        '  gl_Position = projectionMatrix * mv; }'
+                    ].join('\n'),
+                    fragmentShader: [
+                        'uniform float uTempo; uniform float uEnv; uniform float uSemente;',
+                        'varying vec2 vUv; varying vec3 vNormV; varying vec3 vPosV;',
+                        FOGO_GLSL_RUIDO,
+                        'vec3 rampa(float h) {',
+                        '  vec3 c = mix(vec3(0.42, 0.045, 0.008), vec3(0.85, 0.17, 0.02), smoothstep(0.0, 0.38, h));',
+                        '  c = mix(c, vec3(1.0, 0.44, 0.06), smoothstep(0.38, 0.62, h));',
+                        '  c = mix(c, vec3(1.0, 0.74, 0.24), smoothstep(0.62, 0.84, h));',
+                        '  c = mix(c, vec3(1.0, 0.90, 0.58), smoothstep(0.92, 1.0, h));',
+                        '  return c; }',
+                        'void main() {',
+                        '  vec2 uv = vUv;',
+                        '  float t = uTempo;',
+                        '  float subir = t * 0.5 + uSemente;',
+                        '  float circ = uv.x * 6.28318;',
+                        '  vec2 anel = vec2(cos(circ), sin(circ)) * 1.35;',
+                        '  float nG = fbm(vec2(anel.x + anel.y * 0.7, uv.y * 2.0 - subir + anel.y));',
+                        '  float nF = fbm(vec2((anel.x + anel.y * 0.7) * 2.6 + 31.7, uv.y * 5.0 - subir * 1.9 + anel.y * 2.2));',
+                        '  float topo = uv.y + (nG - 0.5) * 0.60 + (nF - 0.5) * 0.24;',
+                        '  float corpo = 1.0 - smoothstep(0.40, 0.92, topo);',
+                        '  float mancha = fbm(vec2((anel.x + anel.y * 0.7) * 1.05 - subir * 0.3, uv.y * 1.15 - subir * 0.45));',
+'  corpo *= (smoothstep(0.24, 0.68, mancha) * 0.88 + 0.12) * (0.72 + 0.50 * nF);',
+'  corpo *= 0.55 + 0.45 * smoothstep(0.0, 0.09, uv.y);',
+                        '  float calor = clamp(1.06 - uv.y * 0.52 + (nF - 0.5) * 0.36, 0.0, 1.0);',
+                        '  float facing = abs(dot(normalize(vNormV), normalize(-vPosV)));',
+                        '  corpo *= 0.45 + 0.55 * smoothstep(0.02, 0.45, facing);',
+                        '  vec3 cor = rampa(calor);',
+                        '  gl_FragColor = vec4(cor * 0.58 * corpo * uEnv, 1.0);',
+                        '}'
+                    ].join('\n'),
+                    transparent: true, blending: T.AdditiveBlending, depthWrite: false, side: T.FrontSide, fog: false
                 });
             }
             function fogoMatBrasas(semente, altura) {
@@ -622,42 +702,68 @@
                 const h = n => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
                 return h(i) + (h(i + 1) - h(i)) * s;
             }
-            function fogoCriarGrupo(escala, comLuz) {
+            /* VOLTA 4 — parâmetros por tipo. A técnica é a mesma
+             * (shader fbm da volta 3); o que se separa é a ESCALA e a
+             * presença: a casa arde como incêndio de chão (chama larga
+             * e alta, maior que a casa onde nasce); a pessoa arde
+             * ENVOLVIDA — chama à volta do corpo, à escala dela, a
+             * subir por ela, sem a engolir. Larguras/alturas/brasas
+             * multiplicam a `escala` da chamada (casa 1,5 · pessoa 1). */
+            const FOGO_PARAMS = {
+                casa:   { largIn: 1.30, altIn: 2.15, largOut: 1.62, altOut: 2.40, brasas: 30, raioB: .45, sobem: 2.9, luzAlt: 1.05 },
+                pessoa: { largIn: 1.55, altIn: 2.15, largOut: 1.85, altOut: 2.45, brasas: 20, raioB: .50, sobem: 2.9, luzAlt: .8 }
+            };
+            function fogoCriarGrupo(escala, comLuz, tipo) {
                 const grupo = new T.Group();
                 const semente = Math.random() * 100;
-                const matIn = fogoMatChama(semente, 0);
+                const P = FOGO_PARAMS[tipo === 'pessoa' ? 'pessoa' : 'casa'];
+                const mats = [];
+                const matIn = fogoMatChama(semente, 0); mats.push(matIn);
                 const mIn = new T.Mesh(fogoGeo(), matIn);
-                mIn.scale.set(.95 * escala, 1.6 * escala, .95 * escala);
+                mIn.scale.set(P.largIn * escala, P.altIn * escala, P.largIn * escala);
                 mIn.frustumCulled = false;
                 grupo.add(mIn);
-                const matOut = fogoMatChama(semente + 37.7, 1);
+                const matOut = fogoMatChama(semente + 37.7, 1); mats.push(matOut);
                 const mOut = new T.Mesh(fogoGeo(), matOut);
-                mOut.scale.set(1.24 * escala, 1.8 * escala, 1.24 * escala);
+                mOut.rotation.y = Math.PI / 6;   /* a camada de fora roda 30° sobre a de dentro:
+                 * os planos desencontrados dissolvem a estrela de pontas da base */
+                mOut.scale.set(P.largOut * escala, P.altOut * escala, P.largOut * escala);
                 mOut.frustumCulled = false;
                 grupo.add(mOut);
+                if (tipo === 'pessoa') {
+                    /* a casca cilíndrica que envolve o corpo (ver fogoMatCasca);
+                     * geometria própria por grupo — liberta-se com ele */
+                    const casca = new T.Mesh(new T.CylinderGeometry(0.66, 0.95, 2.5, 18, 4, true), fogoMatCasca(semente + 71.3));
+                    casca.position.y = 1.25;
+                    casca.frustumCulled = false;
+                    mats.push(casca.material);
+                    grupo.add(casca);
+                }
                 /* brasas GPU: nascem na base, sobem acima da chama,
                  * encolhem e apagam-se — ciclo por partícula, no shader */
-                const nB = escala > 1 ? 22 : 10;
+                const nB = P.brasas;
                 const posB = new Float32Array(nB * 3), semB = new Float32Array(nB);
                 for (let i = 0; i < nB; i++) {
-                    const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * .30 * escala;
+                    const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * P.raioB * escala;
                     posB[i * 3] = Math.cos(a) * r; posB[i * 3 + 1] = 0; posB[i * 3 + 2] = Math.sin(a) * r;
                     semB[i] = Math.random() * 100;
                 }
                 const geoB = new T.BufferGeometry();
                 geoB.setAttribute('position', new T.BufferAttribute(posB, 3));
                 geoB.setAttribute('aSemente', new T.BufferAttribute(semB, 1));
-                const matB = fogoMatBrasas(semente, 2.2 * escala);
+                const matB = fogoMatBrasas(semente, P.sobem * escala);
                 const pontos = new T.Points(geoB, matB);
                 pontos.frustumCulled = false;
                 grupo.add(pontos);
                 let luz = null;
                 if (comLuz) {
                     luz = new T.PointLight(0xff792b, 0, 11, 2);
-                    luz.position.set(0, .8 * escala, 0);
+                    luz.position.set(0, P.luzAlt * escala, 0);
                     grupo.add(luz);
                 }
-                return { grupo, luz, matsChama: [matIn, matOut], brasasMat: matB, semente };
+                grupo.rotation.y = semente * 2.39996;   /* ângulo de ouro × semente: cada fogo com a sua
+                 * orientação — quebra o padrão repetido dos planos cruzados */
+                return { grupo, luz, matsChama: mats, brasasMat: matB, semente };
             }
             function fogoTremular(f, env, now) {
                 const ts = now / 1000;
@@ -669,7 +775,7 @@
                 }
                 if (f.luz) {
                     const tr = ruidoJS(ts * 2.3 + f.semente) * .62 + ruidoJS(ts * 6.3 + f.semente * 1.7) * .38;
-                    f.luz.intensity = 6.2 * env * (0.70 + 0.58 * tr);
+                    f.luz.intensity = 6.6 * env * (0.70 + 0.58 * tr);
                 }
             }
             function acenderFogoCasa(x, z) {
@@ -678,9 +784,9 @@
                 if (existente) { existente.apagar = 0; return; }
                 const bx = wx(x), bz = wz(z);
                 const comLuz = [...fogosCasas.values()].filter(f => f.luz).length < 4;
-                const f = fogoCriarGrupo(1.5, comLuz);
+                const f = fogoCriarGrupo(1.5, comLuz, 'casa');
                 f.grupo.position.set(bx, world.height(bx, bz), bz);
-                const brilho = new T.Mesh(new T.CircleGeometry(.88, 24), new T.MeshBasicMaterial({ map: fogoTexturaBrasa(), color: 0xff7a26, transparent: true, opacity: .26, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false, fog: false }));
+                const brilho = new T.Mesh(new T.CircleGeometry(1.02, 24), new T.MeshBasicMaterial({ map: fogoTexturaBrasa(), color: 0xff7a26, transparent: true, opacity: .26, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false, fog: false }));
                 brilho.rotation.x = -Math.PI / 2;
                 brilho.position.y = .05;
                 f.grupo.add(brilho);
@@ -699,7 +805,7 @@
                     if (existente) return;
                     const u = units.get(id);
                     if (!u || !u.root) return;
-                    const f = fogoCriarGrupo(.85, false);
+                    const f = fogoCriarGrupo(1, false, 'pessoa');
                     f.t0 = performance.now();
                     u.root.add(f.grupo);
                     fogosPessoas.set(id, f);
