@@ -457,6 +457,17 @@
             if (o.isInstancedMesh && o.geometry && o.geometry.type === 'IcosahedronGeometry') {
                 const m = new T.Matrix4(), v = new T.Vector3(), q = new T.Quaternion(), sc = new T.Vector3();
                 let mudou = false;
+                /* TRANCHE PEDRAS/CÂMERA (10/11/2026, crítica do Mestre —
+                   «um monte de coisa voando no mapa»): o lote das pedras
+                   espalhadas do mundo (icosaedro de detalhe 0; as
+                   ruínas são detalhe 1 e NÃO se tocam) nasceu assente
+                   em world.height, mas o chão que se vê é alturaNova
+                   (mundo + relevo): onde o relevo desce, a pedra ficava
+                   suspensa no ar (medido: 210 das 425 visíveis, a pior
+                   a 2,50 m). Cada pedra que fica visível desce/sobe
+                   pelo relevo do seu (x,z) — o enterramento que ela já
+                   trazia fica exactamente o mesmo. */
+                const lotePedras = o.geometry.attributes.position.count === 60;
                 for (let i = 0; i < o.count; i++) {
                     o.getMatrixAt(i, m); m.decompose(v, q, sc);
                     // VOLTA 3: dentro da arena (r < 6,5 m) saem também as
@@ -464,6 +475,9 @@
                     // pincelada do chão (Disfarce item 4)
                     if (Math.max(sc.x, sc.y, sc.z) > 0.45 || Math.hypot(v.x, v.z) < 6.5) {
                         sc.set(0, 0, 0); m.compose(v, q, sc); o.setMatrixAt(i, m); mudou = true;
+                    } else if (lotePedras) {
+                        const dy = relevo(v.x, v.z);
+                        if (dy) { v.y += dy; m.compose(v, q, sc); o.setMatrixAt(i, m); mudou = true; }
                     }
                 }
                 if (mudou) o.instanceMatrix.needsUpdate = true;
@@ -1505,6 +1519,10 @@
         }, 2000);
         setTimeout(() => clearInterval(contarPecas), 90000);
 
+        /* TRANCHE PEDRAS/CÂMERA: a altura do chão QUE SE VÊ (mundo +
+           relevo) fica acessível à cena — a câmera livre mede o seu
+           chão por ela, não pela altura antiga do mundo. */
+        world.alturaVisivel = alturaNova;
         return world;
     };
 

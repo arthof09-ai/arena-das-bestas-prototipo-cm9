@@ -1018,11 +1018,18 @@
             /* O passo de andar: a matemática do ciclo da sala (manípulo +
                teclas → (mx, mz) normalizado · frente/direita só do yaw no
                plano do chão · 4,2 u/s · vertical 3,0 u/s separada), com o
-               dt do jogo (preso a 0,08) e os clamps do desenho v2 §6:
-               bordas = arena + 3 em cada lado · altura presa a
-               [world.height debaixo dos pés + 0,4 · 12] a cada quadro —
-               andar não pede altura, mas o chão empurra para cima: nunca
-               se enterra. Sem colisão, de propósito (§6). */
+               dt do jogo (preso a 0,08). TRANCHE PEDRAS/CÂMERA
+               (10/11/2026, palavra do Mestre — «fico travado dentro do
+               círculo; isso nunca deveria existir»): a prisão da
+               arena + 3 m do desenho v2 §6 MORREU. A livre anda pelo
+               terreno inteiro; os únicos limites são de sanidade
+               técnica — bordas na orla do plano do mundo (±175 m; o
+               plano tem 360 m), chão medido pela altura do chão que
+               se vê (world.alturaVisivel = mundo + relevo) + 0,4 a
+               cada quadro (andar não pede altura, mas o chão empurra
+               para cima: nunca se enterra) e tecto de 45 m (~6× a
+               cota mais alta do terreno, ~7,2 m). Sem colisão, de
+               propósito (§6). */
             function passoAndarLivre(dt) {
                 const t = ctrlLivre.teclas;
                 let mx = ctrlLivre.joyX + ((t['d'] || t['arrowright']) ? 1 : 0) - ((t['a'] || t['arrowleft']) ? 1 : 0);
@@ -1032,12 +1039,13 @@
                     const s = Math.sin(ctrlLivre.yaw), c = Math.cos(ctrlLivre.yaw), vel = 4.2 * velLivre * (t['shift'] ? 2.2 : 1);
                     ctrlLivre.pos.x += (c * mx + s * mz) * vel * dt;
                     ctrlLivre.pos.z += (c * mz - s * mx) * vel * dt;
-                    ctrlLivre.pos.x = clamp(ctrlLivre.pos.x, -area.cols * CELL / 2 - 3, area.cols * CELL / 2 + 3);
-                    ctrlLivre.pos.z = clamp(ctrlLivre.pos.z, -area.rows * CELL / 2 - 3, area.rows * CELL / 2 + 3);
+                    ctrlLivre.pos.x = clamp(ctrlLivre.pos.x, -175, 175);
+                    ctrlLivre.pos.z = clamp(ctrlLivre.pos.z, -175, 175);
                 }
                 const sobe = ctrlLivre.sobe + ((t['e'] || t['pageup']) ? 1 : 0) - ((t['q'] || t['pagedown']) ? 1 : 0);
                 if (sobe) ctrlLivre.pos.y += sobe * 3.0 * velLivre * dt;
-                ctrlLivre.pos.y = clamp(ctrlLivre.pos.y, world.height(ctrlLivre.pos.x, ctrlLivre.pos.z) + .4, 12);
+                const alturaSolo = world.alturaVisivel ? world.alturaVisivel(ctrlLivre.pos.x, ctrlLivre.pos.z) : world.height(ctrlLivre.pos.x, ctrlLivre.pos.z);
+                ctrlLivre.pos.y = clamp(ctrlLivre.pos.y, alturaSolo + .4, 45);
             }
             function baseWidth() {
                 if (mode === 'seguir')
