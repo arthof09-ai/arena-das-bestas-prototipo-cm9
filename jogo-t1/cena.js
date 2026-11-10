@@ -789,6 +789,22 @@
                 casa:   { largIn: 1.30, altIn: 2.15, largOut: 1.62, altOut: 2.40, brasas: 30, raioB: .45, sobem: 2.9, luzAlt: 1.05 },
                 pessoa: { largIn: 1.55, altIn: 2.15, largOut: 1.85, altOut: 2.45, brasas: 20, raioB: .50, sobem: 2.9, luzAlt: .8 }
             };
+            /* ESTÁGIOS DA CASA A ARDER (emenda pela palavra do
+             * Mestre, 10/11/2026 17:45): a chama MOSTRA a idade da
+             * casa — turno 1 FORTE (a chama da volta 4, intocada:
+             * escala 1,00) · turno 2 MÉDIO (0,70 da altura/largura)
+             * · turno 3 FRACO (0,40 — um foguinho baixo a tremer).
+             * Brasas (contagem por drawRange), brilho de chão e luz
+             * acompanham para baixo na mesma tabela. Quem conta a
+             * idade é a casca (jogo.js); aqui só se pinta o estágio
+             * pedido por definirEstagioFogoCasa, com transição
+             * suave da escala no grupo. O fogo da PESSOA não tem
+             * estágios: continua o de sempre. */
+            const FOGO_ESTAGIOS = {
+                1: { esc: 1.00, brasas: 1.00, brilho: 1.00, luz: 1.00 },
+                2: { esc: 0.70, brasas: 0.55, brilho: 0.60, luz: 0.65 },
+                3: { esc: 0.40, brasas: 0.25, brilho: 0.35, luz: 0.40 }
+            };
             function fogoCriarGrupo(escala, comLuz, tipo) {
                 const grupo = new T.Group();
                 const semente = Math.random() * 100;
@@ -839,7 +855,7 @@
                 }
                 grupo.rotation.y = semente * 2.39996;   /* ângulo de ouro × semente: cada fogo com a sua
                  * orientação — quebra o padrão repetido dos planos cruzados */
-                return { grupo, luz, matsChama: mats, brasasMat: matB, semente };
+                return { grupo, luz, matsChama: mats, brasasMat: matB, semente, pontosB: pontos, nBrasas: nB };
             }
             function fogoTremular(f, env, now) {
                 const ts = now / 1000;
@@ -851,7 +867,7 @@
                 }
                 if (f.luz) {
                     const tr = ruidoJS(ts * 2.3 + f.semente) * .62 + ruidoJS(ts * 6.3 + f.semente * 1.7) * .38;
-                    f.luz.intensity = 6.6 * env * (0.70 + 0.58 * tr);
+                    f.luz.intensity = 6.6 * env * (f.fatorLuz == null ? 1 : f.fatorLuz) * (0.70 + 0.58 * tr);
                 }
             }
             function acenderFogoCasa(x, z) {
@@ -868,12 +884,26 @@
                 f.grupo.add(brilho);
                 f.brilho = brilho;
                 f.t0 = performance.now(); f.apagar = 0;
+                f.estagio = 1; f.escAlvo = 1; f.escActual = 1; f.fatorLuz = 1; f.fatorBrilho = 1;
                 scene.add(f.grupo);
                 fogosCasas.set(chave, f);
             }
             function apagarFogoCasa(x, z) {
                 const f = fogosCasas.get(x + ',' + z);
                 if (f && !f.apagar) f.apagar = performance.now();
+            }
+            /* Pinta o estágio da idade (emenda 10/11): guarda os
+             * alvos da tabela FOGO_ESTAGIOS; a escala do grupo
+             * desce suave no ciclo de animação (raioActualizar) e
+             * as brasas cortam-se já por drawRange. Chamada só na
+             * criação e em cada virada de ronda — nunca por frame. */
+            function definirEstagioFogoCasa(x, z, estagio) {
+                const f = fogosCasas.get(x + ',' + z);
+                if (!f) return;
+                const E = FOGO_ESTAGIOS[estagio] || FOGO_ESTAGIOS[1];
+                f.estagio = estagio;
+                f.escAlvo = E.esc; f.fatorLuz = E.luz; f.fatorBrilho = E.brilho;
+                if (f.pontosB) f.pontosB.geometry.setDrawRange(0, Math.max(1, Math.round((f.nBrasas || 0) * E.brasas)));
             }
             function setUnidadeAArder(id, on) {
                 const existente = fogosPessoas.get(id);
@@ -914,8 +944,16 @@
                     let env = Math.min(1, (now - f.t0) / 150);
                     if (f.apagar) env = Math.min(env, Math.max(0, 1 - (now - f.apagar) / 400));
                     if (f.apagar && env <= 0) { raioLibertar(f.grupo); fogosCasas.delete(chave); continue; }
+                    /* a escala do estágio desce suave: a chama
+                     * encolhe a olhos vistos na virada de ronda,
+                     * sem salto (emenda 10/11) */
+                    if (f.escActual == null) f.escActual = 1;
+                    const escAlvoF = f.escAlvo == null ? 1 : f.escAlvo;
+                    f.escActual += (escAlvoF - f.escActual) * 0.06;
+                    if (Math.abs(escAlvoF - f.escActual) < 0.003) f.escActual = escAlvoF;
+                    f.grupo.scale.setScalar(f.escActual);
                     fogoTremular(f, env, now);
-                    if (f.brilho) f.brilho.material.opacity = .20 * env * (.75 + .4 * ruidoJS(now / 1000 * 2.6 + f.semente));
+                    if (f.brilho) f.brilho.material.opacity = .20 * env * (f.fatorBrilho == null ? 1 : f.fatorBrilho) * (.75 + .4 * ruidoJS(now / 1000 * 2.6 + f.semente));
                 }
                 for (const f of fogosPessoas.values())
                     fogoTremular(f, Math.min(1, (now - f.t0) / 150), now);
@@ -1605,7 +1643,7 @@
                     pose(u);
                 }, aplicarAmbiente, getAmbienteAplicado() {
                     return { hora: ambActual.hora, chuva: ambActual.chuva, raios: ambAlvo.raios, emTransicao: !!ambTrans, derivados: ambDerivados };
-                }, dispararRaio, raioArenaVisual, acenderFogoCasa, apagarFogoCasa, setUnidadeAArder, limparFogos, setCapChuva(n) {
+                }, dispararRaio, raioArenaVisual, acenderFogoCasa, apagarFogoCasa, definirEstagioFogoCasa, setUnidadeAArder, limparFogos, setCapChuva(n) {
                     ambCapChuva = n == null ? null : Math.max(0, Math.floor(n));
                     ambReaplicar();
                 }, setTremulacao(on) {

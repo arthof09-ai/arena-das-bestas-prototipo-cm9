@@ -730,6 +730,18 @@
    * dano do raio FIXO 15, PROVISÓRIO por palavra expressa dele ·
    * dano do fogo 1d8 enquanto estiver na casa em chamas; ao sair, a
    * chuva apaga o fogo na pessoa — sem chuva, sair não apaga.
+   * Emenda pela palavra dele de 10/11/2026 (17:45): o fogo vindo do
+   * raio, NA CHUVA, dura TRÊS TURNOS certos — enquanto chove, a
+   * rolagem de extinção pela chuva e o desconto do combustível
+   * deixam de mandar e a vida conta-se em turnos de existência (a
+   * «idade» da casa: nasce a 1 e apaga-se quando passa de 3). E a
+   * chama MOSTRA a idade: turno 1 forte · turno 2 um pouco menor ·
+   * turno 3 um foguinho bem fraco — o dano é o MESMO nos três
+   * turnos; a leitura é estética e referencial, para os players
+   * verem o fogo a sumir daquele canto. Sem chuva, o combustível
+   * de sempre (1d6) continua a mandar na duração e a idade só
+   * pinta o estágio. O fogo da PESSOA (A Arder) não entra nesta
+   * regra: continua o de sempre.
    * O evento de regras chama-se raioArena e vive no relógio das
    * RONDAS (momento de ambiente, início da ronda) — distinto do
    * relâmpago cosmético acima, que nunca cai nem fere.
@@ -752,7 +764,7 @@
   const RF_CHUVA_APAGA_PARADO = true;      // §5: quem está A Arder fora de casa em chamas, com chuva, apaga no início do próprio turno (antes do tick)
   const RF_FIM_SECO = 'acao-movimento';    // §5 lacuna do fim sem chuva: proposta 1 da bancada — apagar-se custa a Acção de Movimento (botão na vez dela; a IA dos monstros não o faz nesta casca)
   const RF_CRUZ_FOGO = true;   // palavra dele (09/11): onde o raio cai, arde uma CRUZ — 3×3 sem os cantos (5 casas); delta nomeado sobre o desenho de 05/11, ver rfAcenderCruz
-  const rfCasas = new Map();        // 'x,y' -> { x, y, combustivel } — casas a arder (estado de terreno)
+  const rfCasas = new Map();        // 'x,y' -> { x, y, combustivel, idade } — casas a arder (estado de terreno); idade = turnos de existência (emenda 10/11: na chuva manda a idade, tecto 3; sem chuva manda o combustível e a idade só pinta o estágio)
   const rfAArder = new Set();       // ids com o estado «A Arder» (registo próprio da casca: NÃO entra no array de estados do motor)
   const rfUltimoTick = new Map();   // id -> ronda do último tick (anti-duplicação: 1 tick por figura e ronda)
   let rfRodadaResolvida = 1;        // última ronda cujo momento de ambiente correu (a ronda 1 abre a batalha: sem momento — declarado)
@@ -857,9 +869,10 @@
      * SÓ-DO-MESTRE — nunca superfície) e, se estiver ocupada por
      * figura viva ferível, ela leva a parcela do raio e fica
      * A Arder. Re-impacto em casa a arder: renova o combustível
-     * e é um impacto completo outra vez. */
-    rfCasas.set(rfChave(x, y), { x, y, combustivel: rfRolarDado(6) });
-    try { view.acenderFogoCasa(x, y); } catch (_) {}
+     * e é um impacto completo outra vez — e renova a idade para 1
+     * (emenda 10/11: reacender é nascer outra vez, estágio forte). */
+    rfCasas.set(rfChave(x, y), { x, y, combustivel: rfRolarDado(6), idade: 1 });
+    try { view.acenderFogoCasa(x, y); view.definirEstagioFogoCasa(x, y, 1); } catch (_) {}
     if (RF_CRUZ_FOGO) rfAcenderCruz(x, y);
     const id = rfOcupante(x, y);
     const u = id ? unidade(id) : null;
@@ -904,14 +917,15 @@
      * na borda. Ambiguidade nomeada (não inventada): vizinha que
      * JÁ está a arder conserva o combustível que tem — a renovação
      * do desenho §2 é do impacto («um impacto completo outra vez»)
-     * e o braço da cruz não é um impacto. */
+     * e o braço da cruz não é um impacto — conserva também a
+     * idade (emenda 10/11: reacender é só no impacto). */
     const vizinhas = [[x, y - 1], [x, y + 1], [x - 1, y], [x + 1, y]];
     for (const [cx, cy] of vizinhas) {
       if (cx < AREA.origin.x || cy < AREA.origin.y) continue;
       if (cx >= AREA.origin.x + AREA.cols || cy >= AREA.origin.y + AREA.rows) continue;
       if (rfCasas.has(rfChave(cx, cy))) continue;
-      rfCasas.set(rfChave(cx, cy), { x: cx, y: cy, combustivel: rfRolarDado(6) });
-      try { view.acenderFogoCasa(cx, cy); } catch (_) {}
+      rfCasas.set(rfChave(cx, cy), { x: cx, y: cy, combustivel: rfRolarDado(6), idade: 1 });
+      try { view.acenderFogoCasa(cx, cy); view.definirEstagioFogoCasa(cx, cy, 1); } catch (_) {}
     }
   }
   function rfDispararArena() {
@@ -925,33 +939,56 @@
     rfResolverImpacto(x, y);
   }
   function ambienteMomentoRodada() {
-    /* O momento de ambiente (desenho §1/§4): início da ronda,
-     * antes da primeira vez. Ordem escrita, item a item:
-     * (1) extinção das casas já a arder, com a chuva lida NESTE
-     * instante; (2) desconto do combustível; (3) raios novos da
-     * ronda — pendente do botão primeiro, depois o automático da
-     * frequência (Pouca 1/6 · Forte 2/6). Casa acesa nesta ronda
-     * não rola extinção nem desconta nesta ronda. */
+    /* O momento de ambiente (desenho §1/§4 + emenda 10/11):
+     * início da ronda, antes da primeira vez. Ordem escrita, item
+     * a item: (1) a IDADE de cada casa a arder avança um turno;
+     * (2) a duração resolve-se com a chuva lida NESTE instante —
+     * COM CHUVA, manda a contagem da emenda: sem rolagem de
+     * extinção e sem desconto de combustível, a casa apaga-se
+     * quando a idade passa de 3 (viveu os turnos 1, 2 e 3) e a
+     * pessoa ocupante apaga-se com ela, como na antiga morte por
+     * rolagem com chuva; SEM CHUVA, manda o combustível de
+     * sempre (−1 por momento, apaga a 0); (3) a vista recebe o
+     * estágio da idade nova (1 forte · 2 médio · 3 fraco); (4)
+     * raios novos da ronda — pendente do botão primeiro, depois
+     * o automático da frequência (Pouca 1/6 · Forte 2/6). Casa
+     * acesa nesta ronda não envelhece nem desconta nesta ronda
+     * (acende depois deste momento, no passo 4, ou a meio da
+     * ronda pelo botão/relógio de exploração).
+     * Fronteiras da emenda, declaradas: chuva que pára a meio da
+     * vida devolve a casa ao combustível — que nunca foi
+     * descontado debaixo de chuva; casa já velha (idade ≥3) que
+     * apanhe chuva apaga-se no momento seguinte, porque na
+     * chuva a vida conta-se em turnos de existência e a idade
+     * não se perdoa. */
     if (batalhaFim || supCongelado) return;
     const chuva = ambientePartida.chuva;
     for (const [chave, c] of [...rfCasas]) {
-      if (chuva > 0 && rfRolarDado(6) <= (chuva === 1 ? 2 : 5)) {
-        rfCasas.delete(chave);
-        try { view.apagarFogoCasa(c.x, c.y); } catch (_) {}
-        const oc = rfOcupante(c.x, c.y);
-        if (oc && rfAArder.has(oc)) {
-          rfApagarPessoa(oc);
-          rfDizer(oc === PROPRIA
-            ? 'A chuva apaga a casa — e o fogo da <b>Ong</b>.'
-            : `A chuva apaga a casa — e o fogo de <b>${nomeCena(oc)}</b>.`);
+      c.idade = (c.idade >= 1 ? c.idade : 1) + 1;   // envelhece um turno (emenda 10/11)
+      if (chuva > 0) {
+        /* NA CHUVA manda a contagem: três turnos de existência
+         * e apaga — sem rolagem, sem desconto de combustível. */
+        if (c.idade > 3) {
+          rfCasas.delete(chave);
+          try { view.apagarFogoCasa(c.x, c.y); } catch (_) {}
+          const oc = rfOcupante(c.x, c.y);
+          if (oc && rfAArder.has(oc)) {
+            rfApagarPessoa(oc);
+            rfDizer(oc === PROPRIA
+              ? 'A chuva apaga a casa — e o fogo da <b>Ong</b>.'
+              : `A chuva apaga a casa — e o fogo de <b>${nomeCena(oc)}</b>.`);
+          }
+          continue;
         }
-        continue;
+      } else {
+        c.combustivel -= 1;
+        if (c.combustivel <= 0) {
+          rfCasas.delete(chave);
+          try { view.apagarFogoCasa(c.x, c.y); } catch (_) {}
+          continue;
+        }
       }
-      c.combustivel -= 1;
-      if (c.combustivel <= 0) {
-        rfCasas.delete(chave);
-        try { view.apagarFogoCasa(c.x, c.y); } catch (_) {}
-      }
+      try { view.definirEstagioFogoCasa(c.x, c.y, Math.min(c.idade, 3)); } catch (_) {}
     }
     if (batalhaFim) return;
     if (ambPodeTerRaios()) {
@@ -1019,8 +1056,12 @@
     try { view.limparFogos(); } catch (_) {}
     if (!rf) return;
     for (const c of rf.casas || []) {
-      rfCasas.set(rfChave(c.x, c.y), { x: c.x, y: c.y, combustivel: c.combustivel });
-      try { view.acenderFogoCasa(c.x, c.y); } catch (_) {}
+      /* Emenda 10/11: a idade volta com o snapshot e a vista
+       * recebe o estágio dela; snapshots antigos (sem o campo)
+       * nascem com idade 1 — declarado. */
+      const idade = (c.idade >= 1 ? c.idade : 1);
+      rfCasas.set(rfChave(c.x, c.y), { x: c.x, y: c.y, combustivel: c.combustivel, idade });
+      try { view.acenderFogoCasa(c.x, c.y); view.definirEstagioFogoCasa(c.x, c.y, Math.min(idade, 3)); } catch (_) {}
     }
     for (const id of rf.aArder || []) rfIncendiarPessoa(id);
     /* EM-AV2-06: a memória do último tick volta com o snapshot.
@@ -5227,7 +5268,7 @@
          save (o estado do Ambiente guardado continua a ser
          {hora, chuva, raios}). */
       raioFogo: {
-        casas: [...rfCasas.values()].map(c => ({ x: c.x, y: c.y, combustivel: c.combustivel })),
+        casas: [...rfCasas.values()].map(c => ({ x: c.x, y: c.y, combustivel: c.combustivel, idade: c.idade })),
         aArder: [...rfAArder],
         /* EM-AV2-06: a memória do último tick entra no snapshot —
            sem ela, o restauro limpava-a e um monstro restaurado
@@ -5765,7 +5806,7 @@
              atomicidade do load vale para ele (aplicação falhada
              repõe os fogos que havia). */
           raioFogo: {
-            casas: [...rfCasas.values()].map(c => ({ x: c.x, y: c.y, combustivel: c.combustivel })),
+            casas: [...rfCasas.values()].map(c => ({ x: c.x, y: c.y, combustivel: c.combustivel, idade: c.idade })),
             aArder: [...rfAArder],
             ultimoTick: [...rfUltimoTick]
           },
