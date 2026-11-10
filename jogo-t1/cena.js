@@ -323,7 +323,8 @@
              * (o raio a cair numa casa dada + clarão no impacto, dentro
              * dos tectos do pulso) e os fogos PERSISTENTES — o de casa
              * (estado de terreno) e o de pessoa (estado «A Arder»).
-             * As chamas são gotas alongadas aditivas (forma nova de
+             * As chamas são volumes de shader com ruído a subir
+             * (volta 3, 10/11; antes: gotas de 09/11 — ver «A FORMA DO FOGO»)
              * 09/11 — ver «A FORMA DO FOGO» junto a FOGO_DEFS), nas
              * cores do mundo (0xff631d com núcleo 0xffdf8e), em escala de incêndio —
              * maiores que qualquer tocha/fogueira, com brilho laranja
@@ -461,35 +462,52 @@
                 emit('raio', { instante: now });
                 return true;
             }
-            /* A FORMA DO FOGO — melhoria pedida pelo Mestre (09/11:
-             * «o fogo também quero mais realista»; a L8 do relatório
-             * da volta 2: os icosaedros liam-se pedra/cristal). A chama
-             * é uma gota alongada (lathe): larga na base, a estreitar
-             * até à ponta. A geometria é ÚNICA e partilhada por todos
-             * os fogos (casas e pessoas); por instância só mudam
-             * escala, fase e opacidade. Cada chama tem casca aditiva
-             * quente (0xff631d) e núcleo claro (0xffdf8e) — as cores
-             * da casa — e vive de três senos desencontrados: estica,
-             * afina, inclina-se e gira, cada chama com a sua fase
-             * (nada pulsa ao mesmo tempo, nem entre casas). As brasas
-             * são pontos aditivos que sobem, balançam e recomeçam.
-             * A luz mantém a tremulação de sempre (sin 9t / sin 17t). */
+            /* A FORMA DO FOGO — VOLTA 3 (10/11; o Mestre reprovou a
+             * gota da volta 2: «tá bem fraco… não parece uma chama de
+             * verdade de algo queimando» e lavrou a régua: «precisa ser
+             * algo natural e realista»). A chama nasce outra vez, como
+             * VOLUME DE SHADER: três planos cruzados (0°/60°/120°,
+             * abertos ~9° para fora) com ruído fractal (fbm) a SUBIR —
+             * a silhueta nasce larga na base, afina a tremer para cima
+             * e as pontas desprendem-se em ilhas, como fogo fotografado.
+             * O gradiente é o de uma chama real: núcleo amarelo-claro
+             * curto na base, corpo laranja, pontas vermelho-escuras —
+             * com os brilhos CAPADOS (a lição de 05/11: partículas
+             * aditivas sem tecto leram «explosão branca saturada»; os
+             * sprites puros leram «fogueira acesa» — aqui não há
+             * sprites de chama e a soma das camadas é orçada abaixo da
+             * saturação). Duas camadas: a interior (o corpo quente) e a
+             * exterior (maior, mais vermelha, mais erodida — as línguas
+             * de fora). A tremulação NÃO tem ritmo: vem de ruído 1D,
+             * no shader e na luz — «brilho que pulsa sem ritmo certo».
+             * As brasas são pontos GPU que SOBEM acima da chama, com
+             * ciclo próprio por partícula (zero CPU por frame). A luz
+             * de casa (0xff792b/dist 11, tecto 4) e o brilho de chão
+             * ficam os de sempre — só muda a tremulação, agora por
+             * ruído. Geometria ÚNICA partilhada (FOGO_GEO); por fogo só
+             * mudam semente, materiais e escala. Custo por fogo: 2
+             * chamadas (chamas) + 1 (brasas) + 1 (brilho) — a volta 2
+             * gastava 14. A mecânica não se toca: quem acende/apaga e
+             * quando é da casca, como sempre. */
             function fogoGeo() {
                 if (FOGO_GEO) return FOGO_GEO;
-                const perfil = [[0, 0], [.22, .01], [.325, .10], [.335, .24], [.255, .44], [.155, .66], [.07, .86], [0, 1.08]];
-                FOGO_GEO = new T.LatheGeometry(perfil.map(p => new T.Vector2(p[0], p[1])), 7);
-                /* gradiente por vértice (cinzento multiplicador): base a
-                 * 1,0 e ponta a 0,40 — com a mistura aditiva, a ponta
-                 * soma menos luz e lê-se a dissolver-se, como a chama
-                 * verdadeira; gravado uma vez na geometria partilhada. */
-                const posG = FOGO_GEO.attributes.position;
-                const coresG = new Float32Array(posG.count * 3);
-                for (let i2 = 0; i2 < posG.count; i2++) {
-                    const tG = Math.min(1, Math.max(0, posG.getY(i2) / 1.08));
-                    const sG = 1 - .60 * Math.pow(tG, 1.25);
-                    coresG[i2 * 3] = sG; coresG[i2 * 3 + 1] = sG; coresG[i2 * 3 + 2] = sG;
+                const pos = [], uvs = [], idx = [];
+                let base = 0;
+                for (let k = 0; k < 3; k++) {
+                    const p = new T.PlaneGeometry(1, 1, 1, 4);
+                    p.translate(0, .5, 0);
+                    p.rotateX(-.16);
+                    p.rotateY(k * Math.PI / 3);
+                    const pp = p.attributes.position, pu = p.attributes.uv, pi = p.index.array;
+                    for (let i = 0; i < pp.count; i++) { pos.push(pp.getX(i), pp.getY(i), pp.getZ(i)); uvs.push(pu.getX(i), pu.getY(i)); }
+                    for (let i = 0; i < pi.length; i++) idx.push(pi[i] + base);
+                    base += pp.count;
+                    p.dispose();
                 }
-                FOGO_GEO.setAttribute('color', new T.BufferAttribute(coresG, 3));
+                FOGO_GEO = new T.BufferGeometry();
+                FOGO_GEO.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+                FOGO_GEO.setAttribute('uv', new T.Float32BufferAttribute(uvs, 2));
+                FOGO_GEO.setIndex(idx);
                 return FOGO_GEO;
             }
             let FOGO_TEX_BRASA = null;
@@ -503,36 +521,133 @@
                 FOGO_TEX_BRASA = new T.CanvasTexture(cv);
                 return FOGO_TEX_BRASA;
             }
-            const FOGO_DEFS = [
-                [0, 0, .80, 1.12], [.26, .10, .55, .78], [-.24, -.09, .52, .72],
-                [.05, -.24, .45, .62], [-.09, .22, .40, .55], [.17, -.15, .33, .44]
-            ];
+            const FOGO_GLSL_RUIDO = [
+                'float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }',
+                'float vnoise(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);',
+                '  float a = hash21(i); float b = hash21(i + vec2(1.0, 0.0)); float c = hash21(i + vec2(0.0, 1.0)); float d = hash21(i + vec2(1.0, 1.0));',
+                '  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y); }',
+                'float fbm(vec2 p) { float v = 0.0; float amp = 0.55;',
+                '  for (int i = 0; i < 4; i++) { v += amp * vnoise(p); p = p * 2.03 + vec2(17.3, 9.1); amp *= 0.5; } return v; }',
+                'float n1(float x) { float i = floor(x); float f = fract(x); f = f * f * (3.0 - 2.0 * f);',
+                '  return mix(hash21(vec2(i, 7.7)), hash21(vec2(i + 1.0, 7.7)), f); }'
+            ].join('\n');
+            function fogoMatChama(semente, camada) {
+                return new T.ShaderMaterial({
+                    uniforms: { uTempo: { value: 0 }, uEnv: { value: 0 }, uSemente: { value: semente }, uCamada: { value: camada } },
+                    vertexShader: [
+                        'uniform float uTempo; uniform float uSemente;',
+                        'varying vec2 vUv;',
+                        FOGO_GLSL_RUIDO,
+                        'void main() { vUv = uv; vec3 p = position;',
+                        '  float h = uv.y;',
+                        '  float ond = sin(h * 4.3 - uTempo * 3.1 + uSemente) * 0.6 + sin(h * 8.9 - uTempo * 5.3 + uSemente * 1.7) * 0.4;',
+                        '  p.x += ond * 0.045 * h * h; p.z += cos(h * 3.7 - uTempo * 2.6 + uSemente * 2.3) * 0.035 * h * h;',
+                        '  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }'
+                    ].join('\n'),
+                    fragmentShader: [
+                        'uniform float uTempo; uniform float uEnv; uniform float uSemente; uniform float uCamada;',
+                        'varying vec2 vUv;',
+                        FOGO_GLSL_RUIDO,
+                        'vec3 rampa(float h) {',
+                        '  vec3 c = mix(vec3(0.42, 0.045, 0.008), vec3(0.85, 0.17, 0.02), smoothstep(0.0, 0.38, h));',
+                        '  c = mix(c, vec3(1.0, 0.44, 0.06), smoothstep(0.38, 0.62, h));',
+                        '  c = mix(c, vec3(1.0, 0.74, 0.24), smoothstep(0.62, 0.84, h));',
+                        '  c = mix(c, vec3(1.0, 0.90, 0.58), smoothstep(0.88, 1.0, h));',
+                        '  return c; }',
+                        'void main() {',
+                        '  vec2 uv = vUv;',
+                        '  float t = uTempo;',
+                        '  float ext = uCamada > 0.5 ? 1.0 : 0.0;',
+                        '  float nG = fbm(vec2(uv.x * 3.0 + uSemente * 1.37, uv.y * 2.1 - t * 1.45 + uSemente * 0.71));',
+                        '  float nF = fbm(vec2(uv.x * 7.0 - uSemente * 0.53, uv.y * 6.0 - t * 2.7 + uSemente * 1.93));',
+                        '  float bal = (nG - 0.5) * (0.50 + 0.55 * ext) * uv.y;',
+                        '  float cx = abs(uv.x * 2.0 - 1.0 + bal * 2.0);',
+                        '  float meiaL = mix(0.54, 0.09, pow(uv.y, 0.8));',
+                        '  float erode = (nG - 0.5) * (0.42 + 0.95 * uv.y + 0.35 * ext) + (nF - 0.5) * 0.38;',
+                        '  float d = cx / max(meiaL, 0.001) + erode * 1.35;',
+                        '  float corpo = 1.0 - smoothstep(0.42, 1.0, d);',
+                        '  if (corpo <= 0.004) discard;',
+                        '  float calor = clamp(1.18 - d * 0.82 - uv.y * 0.52 + (nF - 0.5) * 0.38 - ext * 0.22, 0.0, 1.0);',
+                        '  vec3 cor = rampa(calor);',
+                        '  float trem = 0.80 + 0.38 * n1(t * 2.2 + uSemente * 2.31) + 0.14 * n1(t * 6.7 + uSemente * 0.97);',
+                        '  float alfa = corpo * uEnv * mix(0.85, 0.50, ext);',
+                        '  float inten = mix(0.62, 0.42, ext) * trem;',
+                        '  gl_FragColor = vec4(cor * inten, alfa); }'
+                    ].join('\n'),
+                    transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide
+                });
+            }
+            function fogoMatBrasas(semente, altura) {
+                return new T.ShaderMaterial({
+                    uniforms: { uTempo: { value: 0 }, uEnv: { value: 0 }, uAltura: { value: altura }, uAlturaPx: { value: 800 }, uTamM: { value: .05 } },
+                    vertexShader: [
+                        'attribute float aSemente;',
+                        'uniform float uTempo; uniform float uAltura; uniform float uAlturaPx; uniform float uTamM;',
+                        'varying float vCiclo; varying float vSem;',
+                        'void main() { vSem = aSemente;',
+                        '  float vel = 0.10 + fract(aSemente * 7.13) * 0.11;',
+                        '  float ciclo = fract(uTempo * vel + aSemente * 11.7);',
+                        '  vCiclo = ciclo;',
+                        '  vec3 p = position;',
+                        '  float enc = 1.0 - ciclo * 0.45;',
+                        '  p.x *= enc; p.z *= enc;',
+                        '  p.y = ciclo * uAltura;',
+                        '  p.x += sin(uTempo * 1.9 + aSemente * 43.7 + p.y * 1.3) * 0.05 * (0.4 + ciclo);',
+                        '  p.z += cos(uTempo * 1.6 + aSemente * 31.9 + p.y * 1.1) * 0.05 * (0.4 + ciclo);',
+                        '  vec4 mv = modelViewMatrix * vec4(p, 1.0);',
+                        '  float dist = max(0.1, -mv.z);',
+                        '  float esc = uAlturaPx * 0.5 * projectionMatrix[1][1] / dist;',
+                        '  gl_PointSize = clamp(uTamM * (0.7 + fract(aSemente * 3.31) * 0.8) * (1.0 - ciclo * 0.45) * esc, 1.2, 42.0);',
+                        '  gl_Position = projectionMatrix * mv; }'
+                    ].join('\n'),
+                    fragmentShader: [
+                        'uniform float uTempo; uniform float uEnv;',
+                        'varying float vCiclo; varying float vSem;',
+                        FOGO_GLSL_RUIDO,
+                        'void main() {',
+                        '  vec2 pc = gl_PointCoord - vec2(0.5);',
+                        '  float r = length(pc) * 2.0;',
+                        '  float a = smoothstep(1.0, 0.1, r);',
+                        '  float cint = 0.65 + 0.6 * n1(uTempo * 3.1 + vSem * 51.0);',
+                        '  vec3 cor = mix(vec3(1.0, 0.60, 0.16), vec3(0.70, 0.14, 0.02), vCiclo);',
+                        '  float alfa = a * pow(1.0 - vCiclo, 1.25) * uEnv * cint;',
+                        '  if (alfa <= 0.004) discard;',
+                        '  gl_FragColor = vec4(cor, alfa); }'
+                    ].join('\n'),
+                    transparent: true, depthWrite: false, blending: T.AdditiveBlending
+                });
+            }
+            function ruidoJS(x) {
+                const i = Math.floor(x), fr = x - i, s = fr * fr * (3 - 2 * fr);
+                const h = n => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
+                return h(i) + (h(i + 1) - h(i)) * s;
+            }
             function fogoCriarGrupo(escala, comLuz) {
                 const grupo = new T.Group();
-                const geo = fogoGeo();
-                const chamas = [];
-                FOGO_DEFS.forEach(([ox, oz, sxz, sy]) => {
-                    const fase = Math.random() * Math.PI * 2;
-                    const matCasca = new T.MeshBasicMaterial({ color: C(0xff631d), transparent: true, opacity: .46, vertexColors: true, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide, toneMapped: false, fog: false });
-                    const m = new T.Mesh(geo, matCasca);
-                    const matNuc = new T.MeshBasicMaterial({ color: C(0xffdf8e), transparent: true, opacity: .68, vertexColors: true, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide, toneMapped: false, fog: false });
-                    const nuc = new T.Mesh(geo, matNuc);
-                    nuc.scale.set(.44, .56, .44); nuc.position.y = .03;
-                    m.add(nuc);
-                    m.position.set(ox * escala, 0, oz * escala);
-                    m.scale.set(sxz * escala, sy * escala, sxz * escala);
-                    m.castShadow = false;
-                    grupo.add(m);
-                    chamas.push({ m, ox: ox * escala, oz: oz * escala, sxz: sxz * escala, sy: sy * escala, fase, mats: [{ mat: matCasca, base: .46 }, { mat: matNuc, base: .68 }] });
-                });
-                /* brasas: pontos aditivos que sobem, balançam e recomeçam */
-                const nBrasa = escala > 1 ? 12 : 6;
-                const posB = new Float32Array(nBrasa * 3);
-                const brasas = [];
-                for (let i = 0; i < nBrasa; i++) brasas.push({ ox: (Math.random() - .5) * .7 * escala, oz: (Math.random() - .5) * .7 * escala, fase: Math.random(), vel: .25 + Math.random() * .35 });
+                const semente = Math.random() * 100;
+                const matIn = fogoMatChama(semente, 0);
+                const mIn = new T.Mesh(fogoGeo(), matIn);
+                mIn.scale.set(.95 * escala, 1.6 * escala, .95 * escala);
+                mIn.frustumCulled = false;
+                grupo.add(mIn);
+                const matOut = fogoMatChama(semente + 37.7, 1);
+                const mOut = new T.Mesh(fogoGeo(), matOut);
+                mOut.scale.set(1.24 * escala, 1.8 * escala, 1.24 * escala);
+                mOut.frustumCulled = false;
+                grupo.add(mOut);
+                /* brasas GPU: nascem na base, sobem acima da chama,
+                 * encolhem e apagam-se — ciclo por partícula, no shader */
+                const nB = escala > 1 ? 22 : 10;
+                const posB = new Float32Array(nB * 3), semB = new Float32Array(nB);
+                for (let i = 0; i < nB; i++) {
+                    const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * .30 * escala;
+                    posB[i * 3] = Math.cos(a) * r; posB[i * 3 + 1] = 0; posB[i * 3 + 2] = Math.sin(a) * r;
+                    semB[i] = Math.random() * 100;
+                }
                 const geoB = new T.BufferGeometry();
                 geoB.setAttribute('position', new T.BufferAttribute(posB, 3));
-                const matB = new T.PointsMaterial({ size: .11, map: fogoTexturaBrasa(), color: 0xffa63f, transparent: true, opacity: .85, blending: T.AdditiveBlending, depthWrite: false, sizeAttenuation: true, toneMapped: false, fog: false });
+                geoB.setAttribute('aSemente', new T.BufferAttribute(semB, 1));
+                const matB = fogoMatBrasas(semente, 2.2 * escala);
                 const pontos = new T.Points(geoB, matB);
                 pontos.frustumCulled = false;
                 grupo.add(pontos);
@@ -542,34 +657,19 @@
                     luz.position.set(0, .8 * escala, 0);
                     grupo.add(luz);
                 }
-                return { grupo, luz, chamas, brasas, brasasGeo: geoB, brasasMat: matB, brasasAltura: 1.6 * escala };
+                return { grupo, luz, matsChama: [matIn, matOut], brasasMat: matB, semente };
             }
             function fogoTremular(f, env, now) {
                 const ts = now / 1000;
-                for (const c of f.chamas) {
-                    const fl = Math.sin(ts * 11 + c.fase) * .55 + Math.sin(ts * 23 + c.fase * 1.7) * .30 + Math.sin(ts * 5.3 + c.fase * .6) * .35;
-                    c.m.scale.y = c.sy * env * (1 + fl * .14);
-                    c.m.scale.x = c.m.scale.z = c.sxz * env * (1 - fl * .09);
-                    c.m.rotation.z = Math.sin(ts * 7.3 + c.fase) * .09;
-                    c.m.rotation.y = ts * .6 + c.fase;
-                    c.m.position.x = c.ox + Math.sin(ts * 3.7 + c.fase * 2.1) * .025;
-                    c.m.position.z = c.oz + Math.cos(ts * 3.1 + c.fase) * .025;
-                    for (const mm of c.mats) mm.mat.opacity = mm.base * env * (.8 + .2 * fl);
-                }
-                if (f.brasas) {
-                    const pos = f.brasasGeo.attributes.position.array;
-                    f.brasas.forEach((b, i) => {
-                        const ciclo = (ts * b.vel + b.fase) % 1;
-                        pos[i * 3] = b.ox + Math.sin(ts * 2.2 + b.fase * 9) * .07 * ciclo;
-                        pos[i * 3 + 1] = ciclo * f.brasasAltura * env;
-                        pos[i * 3 + 2] = b.oz + Math.cos(ts * 1.9 + b.fase * 7) * .07 * ciclo;
-                    });
-                    f.brasasGeo.attributes.position.needsUpdate = true;
-                    f.brasasMat.opacity = .85 * env;
+                for (const m of f.matsChama) { m.uniforms.uTempo.value = ts; m.uniforms.uEnv.value = env; }
+                if (f.brasasMat) {
+                    f.brasasMat.uniforms.uTempo.value = ts;
+                    f.brasasMat.uniforms.uEnv.value = env;
+                    f.brasasMat.uniforms.uAlturaPx.value = renderer.domElement.height || 800;
                 }
                 if (f.luz) {
-                    const tr0 = Math.sin(ts * 9) * .1 + Math.sin(ts * 17) * .06;
-                    f.luz.intensity = 7.5 * env * (1 + tr0 * .9);
+                    const tr = ruidoJS(ts * 2.3 + f.semente) * .62 + ruidoJS(ts * 6.3 + f.semente * 1.7) * .38;
+                    f.luz.intensity = 6.2 * env * (0.70 + 0.58 * tr);
                 }
             }
             function acenderFogoCasa(x, z) {
@@ -580,7 +680,7 @@
                 const comLuz = [...fogosCasas.values()].filter(f => f.luz).length < 4;
                 const f = fogoCriarGrupo(1.5, comLuz);
                 f.grupo.position.set(bx, world.height(bx, bz), bz);
-                const brilho = new T.Mesh(new T.CircleGeometry(.72, 24), new T.MeshBasicMaterial({ color: 0xff7a26, transparent: true, opacity: .26, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false, fog: false }));
+                const brilho = new T.Mesh(new T.CircleGeometry(.88, 24), new T.MeshBasicMaterial({ map: fogoTexturaBrasa(), color: 0xff7a26, transparent: true, opacity: .26, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false, fog: false }));
                 brilho.rotation.x = -Math.PI / 2;
                 brilho.position.y = .05;
                 f.grupo.add(brilho);
@@ -633,7 +733,7 @@
                     if (f.apagar) env = Math.min(env, Math.max(0, 1 - (now - f.apagar) / 400));
                     if (f.apagar && env <= 0) { raioLibertar(f.grupo); fogosCasas.delete(chave); continue; }
                     fogoTremular(f, env, now);
-                    if (f.brilho) f.brilho.material.opacity = .26 * env;
+                    if (f.brilho) f.brilho.material.opacity = .20 * env * (.75 + .4 * ruidoJS(now / 1000 * 2.6 + f.semente));
                 }
                 for (const f of fogosPessoas.values())
                     fogoTremular(f, Math.min(1, (now - f.t0) / 150), now);
