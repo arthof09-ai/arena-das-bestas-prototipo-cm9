@@ -210,8 +210,47 @@
             const chuvaPts = new T.Points(chuvaGeo, chuvaMat);
             chuvaPts.frustumCulled = false; chuvaPts.visible = false; chuvaPts.renderOrder = 5;
             scene.add(chuvaPts);
-            let ambAlvo = { hora: 23, chuva: 0, raios: false };
-            let ambActual = { hora: 23, chuva: 0 };
+            /* A NEVE (VOLTA 3 — palavra dele: a precipitação antiga
+             * de pontos «não tava ruim, só era neve — tem que ter a
+             * opção de chuva e a opção de neve»). Sistema irmão da
+             * chuva: um THREE.Points, um só draw call, as mesmas
+             * posições-mãe com outra semente — mas o floco é um
+             * DISCO SUAVE (queda radial de alfa, sem traço), cai
+             * DEVAGAR (1,3 m/s contra os 17 m/s da chuva) e deriva
+             * com o vento: balanço senoidal próprio de cada floco.
+             * Contagens próprias [Sem, Pouca, Forte] — o floco é
+             * maior (0,075 m, com variação por floco; era 0,055 m
+             * na volta 3 e lia-se fraco — afinação da candidata
+             * final, palavra dele: «aumentar só um pouquinho»; a
+             * opacidade Forte subiu de .85 para .92) e lê-se com
+             * menos pontos que a chuva. Nunca visível ao mesmo
+             * tempo que a chuva: ambEscrever acende um sistema ou
+             * o outro, conforme o tipo (ambActual.precip). */
+            const NEVE_CONT = [0, 800, 2000];
+            const NEVE_OPACIDADE = [0, .55, .92];
+            const neveGeo = new T.BufferGeometry();
+            {
+                const pos = new Float32Array(CHUVA_MAX * 3);
+                let s = 41713;
+                const rr = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+                for (let i = 0; i < CHUVA_MAX; i++) {
+                    const r = Math.sqrt(rr()) * 46, a = rr() * Math.PI * 2;
+                    pos[i * 3] = Math.cos(a) * r; pos[i * 3 + 1] = rr() * 30; pos[i * 3 + 2] = Math.sin(a) * r;
+                }
+                neveGeo.setAttribute('position', new T.BufferAttribute(pos, 3));
+                neveGeo.setDrawRange(0, 0);
+            }
+            const neveMat = new T.ShaderMaterial({
+                uniforms: { uTempo: { value: 0 }, uAlturaPx: { value: 800 }, uOpacidade: { value: 0 }, uTam: { value: .075 } },
+                vertexShader: 'uniform float uTempo; uniform float uAlturaPx; uniform float uTam; varying float vFase; void main() { vec3 p = position; p.y = mod(p.y - uTempo * 1.30, 30.0); p.x += sin(uTempo * 0.45 + position.y * 0.31 + position.x * 0.17) * 0.9; p.z += cos(uTempo * 0.36 + position.y * 0.23 + position.z * 0.19) * 0.7; vec4 mv = modelViewMatrix * vec4(p, 1.0); float dist = max(0.1, -mv.z); float escala = uAlturaPx * 0.5 * projectionMatrix[1][1] / dist; vFase = fract(position.x * 12.9898 + position.z * 78.233); gl_PointSize = clamp(uTam * (1.4 + vFase * 0.9) * escala, 2.0, 64.0); gl_Position = projectionMatrix * mv; }',
+                fragmentShader: 'uniform float uOpacidade; void main() { vec2 c = gl_PointCoord - vec2(0.5); float d = length(c); float a = smoothstep(0.5, 0.06, d) * uOpacidade; if (a < 0.012) discard; gl_FragColor = vec4(0.93, 0.96, 1.0, a); }',
+                transparent: true, depthWrite: false
+            });
+            const nevePts = new T.Points(neveGeo, neveMat);
+            nevePts.frustumCulled = false; nevePts.visible = false; nevePts.renderOrder = 5;
+            scene.add(nevePts);
+            let ambAlvo = { hora: 23, chuva: 0, raios: false, precip: 'chuva' };
+            let ambActual = { hora: 23, chuva: 0, precip: 'chuva' };
             let ambTrans = null, ambPulsoT0 = -1, ambUltimoRaio = -1e9, ambCapChuva = null;
             let ambDerivados = null, ambUltimaAmostra = null, ambUltimoHor = null;
             const ambDeltaHora = (de, para) => ((para - de + 36) % 24) - 12;
@@ -243,13 +282,25 @@
                     ambDesenharCeu(amostra, cf, pulsoE);
                 }
                 const tabela = quality === 'baixa' ? AMB_CHUVA.gotasBaixa : AMB_CHUVA.gotas;
-                let gotas = Math.round(ambNivel(tabela, cf));
+                /* Chuva e neve nunca juntas (VOLTA 3): o tipo manda
+                 * qual dos sistemas desenha; o outro fica a zero.
+                 * Os derivados guardam a contagem da CHUVA como
+                 * sempre — com neve, gotas = 0 (a âncora não muda:
+                 * sem precipitação, os dois sistemas estão vazios). */
+                const deNeve = ambActual.precip === 'neve';
+                let gotas = deNeve ? 0 : Math.round(ambNivel(tabela, cf));
                 if (ambCapChuva != null) gotas = Math.min(gotas, ambCapChuva);
                 chuvaGeo.setDrawRange(0, gotas);
                 chuvaPts.visible = gotas > 0;
                 chuvaMat.uniforms.uOpacidade.value = ambNivel(AMB_CHUVA.opacidade, cf);
                 chuvaMat.uniforms.uComp.value = quality === 'baixa' ? .42 : quality === 'media' ? .50 : .58;
                 chuvaMat.uniforms.uAlturaPx.value = renderer.domElement.height || 800;
+                let flocos = deNeve ? Math.round(ambNivel(NEVE_CONT, cf)) : 0;
+                if (ambCapChuva != null) flocos = Math.min(flocos, ambCapChuva);
+                neveGeo.setDrawRange(0, flocos);
+                nevePts.visible = flocos > 0;
+                neveMat.uniforms.uOpacidade.value = ambNivel(NEVE_OPACIDADE, cf);
+                neveMat.uniforms.uAlturaPx.value = renderer.domElement.height || 800;
                 if (world.ground && world.ground.material && world.ground.material.color) world.ground.material.color.setScalar(ambNivel(AMB_CHUVA.molhado, cf));
                 ambDerivados = { exposicao: amostra.exp, hemiInt: amostra.hemiInt, solInt: amostra.solInt, fogueiraBase: amostra.fogueira, tochasBase: world.ambienteBases.tochas, chamas: amostra.chamas, gotas };
                 ambUltimaAmostra = amostra; ambUltimoHor = horFinal;
@@ -271,22 +322,28 @@
                 if (!estado || !Number.isFinite(estado.hora) || estado.hora < 0 || estado.hora >= 24) throw new RangeError('Ambiente: hora fora de [0,24).');
                 if (![0, 1, 2].includes(estado.chuva)) throw new RangeError('Ambiente: chuva fora de {0,1,2}.');
                 if (typeof estado.raios !== 'boolean') throw new TypeError('Ambiente: raios booleano obrigatório.');
+                if (estado.precip !== undefined && estado.precip !== 'chuva' && estado.precip !== 'neve') throw new TypeError('Ambiente: precip fora de {chuva, neve}.');
                 if (!ambDecor) ambCapturarDecor();
-                ambAlvo = { hora: estado.hora, chuva: estado.chuva, raios: estado.raios };
+                /* precip ausente = 'chuva' (o contrato antigo não o
+                 * trazia — VOLTA 3). O TIPO troca na hora; a
+                 * intensidade continua a transitar como sempre. */
+                ambAlvo = { hora: estado.hora, chuva: estado.chuva, raios: estado.raios, precip: estado.precip === 'neve' ? 'neve' : 'chuva' };
                 ambPulsoT0 = -1;
                 if (opcoes.imediato) {
                     ambTrans = null;
-                    ambActual = { hora: ambAlvo.hora, chuva: ambAlvo.chuva };
+                    ambActual = { hora: ambAlvo.hora, chuva: ambAlvo.chuva, precip: ambAlvo.precip };
                     ambEscrever(ambAmostra(ambActual.hora), ambActual.chuva, 0);
                     renderer.shadowMap.needsUpdate = true;
                     emit('ambiente', { ...ambAlvo });
                     return { ...ambAlvo };
                 }
+                ambActual.precip = ambAlvo.precip;
                 ambTrans = { deHora: ambActual.hora, deChuva: ambActual.chuva, t0: performance.now() };
                 return { ...ambAlvo };
             }
             function ambTick(now) {
                 chuvaMat.uniforms.uTempo.value = now / 1000;
+                neveMat.uniforms.uTempo.value = now / 1000;
                 if (ambTrans) {
                     const ph = Math.min(1, (now - ambTrans.t0) / 7000), pc = Math.min(1, (now - ambTrans.t0) / 2500);
                     const eh = ph * ph * (3 - 2 * ph), ec = pc * pc * (3 - 2 * pc);
@@ -294,7 +351,7 @@
                     ambActual.chuva = ambTrans.deChuva + (ambAlvo.chuva - ambTrans.deChuva) * ec;
                     if (ph >= 1 && pc >= 1) {
                         ambTrans = null;
-                        ambActual = { hora: ambAlvo.hora, chuva: ambAlvo.chuva };
+                        ambActual = { hora: ambAlvo.hora, chuva: ambAlvo.chuva, precip: ambAlvo.precip };
                         ambEscrever(ambAmostra(ambActual.hora), ambActual.chuva, 0);
                         renderer.shadowMap.needsUpdate = true;
                         emit('ambiente', { ...ambAlvo });
@@ -1557,7 +1614,7 @@
                     observer.disconnect();
                     renderer.domElement.removeEventListener('webglcontextlost', contextLost);
                     [...units.keys()].forEach(removeUnit);
-                    chuvaGeo.dispose(); chuvaMat.dispose(); ambCeuTex.dispose();
+                    chuvaGeo.dispose(); chuvaMat.dispose(); neveGeo.dispose(); neveMat.dispose(); ambCeuTex.dispose();
                     release(scene);
                     sun.shadow.map?.dispose();
                     renderer.dispose();

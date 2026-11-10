@@ -299,7 +299,7 @@
    * mora o estado, a precedência de arranque, o painel do ⚙ (só
    * Mestre, mais abaixo), os sons, o relógio de raios e a escada
    * de degradação. A noite do ritual — {23, 0, false} — é a casa. */
-  const AMBIENTE_RITUAL = Object.freeze({ hora: 23, chuva: 0, raios: false });
+  const AMBIENTE_RITUAL = Object.freeze({ hora: 23, chuva: 0, raios: false, precip: 'chuva' });
   const AMBIENTE_ANcoras = [   // nome → hora exacta (tabela de aliases do painel)
     { nome: 'Madrugada', hora: 3.5 }, { nome: 'Amanhecer', hora: 6.5 },
     { nome: 'Dia', hora: 12.5 }, { nome: 'Entardecer', hora: 18.0 },
@@ -309,7 +309,17 @@
     return !!a && typeof a === 'object'
       && typeof a.hora === 'number' && Number.isFinite(a.hora) && a.hora >= 0 && a.hora < 24
       && (a.chuva === 0 || a.chuva === 1 || a.chuva === 2)
-      && typeof a.raios === 'boolean';
+      && typeof a.raios === 'boolean'
+      && (a.precip === undefined || a.precip === 'chuva' || a.precip === 'neve');
+  }
+  /* O tipo de precipitação resolvido de um estado qualquer:
+   * 'neve'/'chuva' explícitos mandam; ausente herda o tipo
+   * vigente (mudar a hora ou a intensidade nunca muda o tipo —
+   * VOLTA 3). */
+  function ambPrecipDe(e) {
+    if (e && e.precip === 'neve') return 'neve';
+    if (e && e.precip === 'chuva') return 'chuva';
+    return ambientePartida ? ambientePartida.precip : 'chuva';
   }
   function ambNomeHora(hora) {   // âncora mais próxima (distância circular em 24 h)
     let melhor = AMBIENTE_ANcoras[AMBIENTE_ANcoras.length - 1], md = Infinity;
@@ -321,7 +331,10 @@
   }
   const ambFmtHora = h => (Math.round(h * 10) / 10).toFixed(1).replace('.', ',') + 'h';
   function ambTextoEstado(e) {
-    const chuvaTxt = e.chuva === 2 ? 'Chuva forte' : e.chuva === 1 ? 'Chuva pouca' : 'Sem chuva';
+    const neve = ambPrecipDe(e) === 'neve';
+    const chuvaTxt = e.chuva === 2 ? (neve ? 'Neve forte' : 'Chuva forte')
+      : e.chuva === 1 ? (neve ? 'Neve pouca' : 'Chuva pouca')
+      : (neve ? 'Sem neve' : 'Sem chuva');
     return `Ambiente: ${ambNomeHora(e.hora)} · ${chuvaTxt} · ${e.raios ? 'Raios ligados' : 'Raios desligados'}`;
   }
   /* Precedência de arranque (MAPA-DE-TOQUE §Limites): preferência
@@ -331,7 +344,7 @@
     if (!MODO_MESTRE) return null;
     try {
       const j = JSON.parse(localStorage.getItem('hudt1-ultimo-ambiente') || 'null');
-      if (ambDominioValido(j)) return { hora: j.hora, chuva: j.chuva, raios: j.raios };
+      if (ambDominioValido(j)) return { hora: j.hora, chuva: j.chuva, raios: j.raios, precip: j.precip === 'neve' ? 'neve' : 'chuva' };
     } catch (_) {}
     return null;
   }
@@ -357,8 +370,8 @@
   }
   /* Superfície do painel (preenchida só no Mestre, mais abaixo) e
    * estado interno da degradação nomeada (apresentação local). */
-  const ambUI = { estadoEl: null, ponto: null, botoesHora: [], botoesChuva: [],
-    deslizador: null, leitura: null, togRaios: null, btnRaio: null, togSom: null, togTremulacao: null };
+  const ambUI = { estadoEl: null, ponto: null, botoesHora: [], botoesChuva: [], botoesPrecip: [],
+    deslizador: null, leitura: null, togRaios: null, btnRaio: null, togSom: null, togTremulacao: null, notaNeve: null };
   let ambDegrau = 0;                       // escada só-desce, por sessão
   const AMB_DEGRAUS = ['', 'POUCA', 'MÍNIMA', 'SÓ_SOM', 'DPR 1'];
   const ambAmostrasFps = [];
@@ -368,14 +381,18 @@
    * página nunca parte por o ambiente ainda não existir do outro lado. */
   function ambAplicarVista(e, imediato) {
     if (!view || typeof view.aplicarAmbiente !== 'function') return false;
-    try { view.aplicarAmbiente({ hora: e.hora, chuva: e.chuva, raios: e.raios }, { imediato: !!imediato }); return true; }
+    try { view.aplicarAmbiente({ hora: e.hora, chuva: e.chuva, raios: e.raios, precip: ambPrecipDe(e) }, { imediato: !!imediato }); return true; }
     catch (_) { return false; }
   }
   /* Assentar = gravar o estado da partida + aplicar + gravar a
    * preferência do Mestre + refrescar som, raios e painel. */
   function ambAssentar(novo, opcoes) {
     if (!ambDominioValido(novo)) return false;
-    ambientePartida = { hora: novo.hora, chuva: novo.chuva, raios: novo.raios };
+    /* Com neve não há raios (palavra dele, VOLTA 3): escolher
+     * Neve apaga os raios no estado; voltar a Chuva não os religa
+     * sozinho — ele religa se quiser. */
+    const precip = ambPrecipDe(novo);
+    ambientePartida = { hora: novo.hora, chuva: novo.chuva, raios: precip === 'neve' ? false : novo.raios, precip };
     ambAplicarVista(ambientePartida, !!(opcoes && opcoes.imediato));
     ambGravarPreferencia();
     ambAudioSincronizarChuva();
@@ -391,24 +408,74 @@
    * Contexto PREGUIÇOSO: nasce só no primeiro gesto real
    * (pointerdown/keydown) e só vale com state==='running' — até lá,
    * mudo sem erro e sem sons «em dívida» (nada se agenda para
-   * tocar depois). Chuva: buffer de ruído em loop PRÉ-GERADO (2 s)
-   * com 2 ganhos (Pouca/Forte) em crossfade de 2,5 s. Trovão: 3
+   * tocar depois). Chuva: GRAVAÇÃO REAL em loop
+   * (chuva-real.ogg; ver SOM-CHUVA) com 2 ganhos
+   * (Pouca/Forte) em crossfade de 2,5 s. Trovão: 3
    * variantes PRÉ-GERADAS na criação do contexto (ruído com
    * decaimento e passa-baixos à reprodução) — nunca sintetizadas
    * na hora do raio. Volumes baixos: sempre abaixo da voz. */
   const ambAudio = { ctx: null, master: null, ganhoPouca: null, ganhoForte: null,
-    trovoes: [], desbloqueado: false };
-  function ambGerarRuidoChuva(ctx) {
-    const len = ctx.sampleRate * 2, buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    let lento = 0;
-    for (let i = 0; i < len; i++) {
-      const branco = Math.random() * 2 - 1;
-      lento = (lento + 0.03 * branco) / 1.03;         // corpo grave do ruído
-      d[i] = Math.max(-1, Math.min(1, branco * 0.32 + lento * 2.6));
-    }
-    return buf;
+    trovoes: [], desbloqueado: false, fonteChuva: null };
+  /* SOM-CHUVA-INICIO — a chuva REAL (VOLTA 2 DO SOM, 10/11).
+   * A síntese da VOLTA 3 (ambSinteseChuva) foi REPROVADA pelo
+   * ouvido do Mestre («ainda acho ruim, reprovado») e a régua
+   * dele ficou escrita: a chuva «fica muito chiado, muito
+   * poluído, muito alto — tem que ser algo que não atrapalhe
+   * nem incomode nada: é um plano de fundo, não é uma trilha
+   * principal». A síntese SAIU (apagada; não fica morta no
+   * ficheiro): o som da chuva passa a ser uma GRAVAÇÃO REAL —
+   * «Rain (1).ogg» de ezwa (arquivo PDSounds), domínio
+   * público: aguaceiro forte de campo («raining cats and
+   * dogs»), 45 s reais. Tratamento (sede t-som-chuva-volta2):
+   * troço mais estável (7–35 s), passa-alto de 90 Hz e
+   * passa-baixo de 5,6 kHz suaves (fora o ronco e o sopro do
+   * microfone, sem apagar a chuva), loop de 28 s com
+   * crossfade de 6 s em potência igual — a costura não se
+   * ouve: o salto na fronteira é igual aos saltos do próprio
+   * material e não há vale de nível na emenda. RMS do
+   * ficheiro 0,12; bandas medidas: 5–9 kHz = 2,8% (a síntese
+   * crua media 4,4% na mesma régua). Ficheiro chuva-real.ogg:
+   * Vorbis mono, 28 s exactos, 267 406 B — OGG porque repete
+   * amostra a amostra, sem o enchimento que o MP3 mete nas
+   * pontas e partiria o loop.
+   * Carregamento com o contexto preguiçoso: fetch + decode em
+   * fundo; a fonte nasce ligada aos dois ganhos quando o
+   * buffer estiver pronto. Se o ficheiro falhar (rede/404), a
+   * chuva fica MUDA — nunca regressa ao chiado sintetizado.
+   * Sem filtro de reprodução: o lowpass de 2600 Hz era a rede
+   * da síntese e saiu com ela; o que o ficheiro traz é o que
+   * se ouve. Volumes de FUNDO (a régua final dele, 10/11
+   * 17:00): ganhos Forte 0,048 e Pouca 0,016 — 40% dos
+   * tectos da volta 2 do som (0,12/0,04). Com o master a
+   * 0,9, a chuva forte sai a RMS ≈ 0,005, atrás do jogo, e
+   * a pouca é quase um sussurro. A amostra que ele ouviu
+   * (amostra-chuva-real.wav, na sede da tranche) era este
+   * loop a (0,12 × 0,9), duas voltas inteiras; ele julgou-a
+   * e mandou baixar 60% — é esse o nível que entra. */
+  function ambCarregarChuvaReal(ctx) {
+    if (typeof fetch !== 'function' || typeof ctx.decodeAudioData !== 'function') return;
+    const ligar = buf => {
+      if (!buf || ambAudio.fonteChuva) return;
+      try {
+        const fonte = ctx.createBufferSource();
+        fonte.buffer = buf; fonte.loop = true;
+        fonte.connect(ambAudio.ganhoPouca); fonte.connect(ambAudio.ganhoForte);
+        fonte.start();
+        ambAudio.fonteChuva = fonte;
+      } catch (_) {}
+    };
+    try {
+      fetch('chuva-real.ogg')
+        .then(r => (r && r.ok) ? r.arrayBuffer() : null)
+        .then(ab => {
+          if (!ab) return;
+          const p = ctx.decodeAudioData(ab, ligar);
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        })
+        .catch(() => {});
+    } catch (_) {}
   }
+  /* SOM-CHUVA-FIM */
   function ambGerarTrovao(ctx, dur, aperto) {
     const len = Math.floor(ctx.sampleRate * dur), buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = buf.getChannelData(0);
@@ -431,14 +498,13 @@
       ambAudio.master = ctx.createGain();
       ambAudio.master.gain.value = ambSomLigado ? 0.9 : 0;
       ambAudio.master.connect(ctx.destination);
-      const fonte = ctx.createBufferSource();
-      fonte.buffer = ambGerarRuidoChuva(ctx); fonte.loop = true;
-      const filtro = ctx.createBiquadFilter(); filtro.type = 'lowpass'; filtro.frequency.value = 1400;
       ambAudio.ganhoPouca = ctx.createGain(); ambAudio.ganhoPouca.gain.value = 0;
       ambAudio.ganhoForte = ctx.createGain(); ambAudio.ganhoForte.gain.value = 0;
-      fonte.connect(filtro); filtro.connect(ambAudio.ganhoPouca); filtro.connect(ambAudio.ganhoForte);
       ambAudio.ganhoPouca.connect(ambAudio.master); ambAudio.ganhoForte.connect(ambAudio.master);
-      fonte.start();
+      /* A fonte da chuva (gravação real) carrega em fundo e
+       * liga-se aos dois ganhos quando estiver descodificada;
+       * até lá — ou se o ficheiro falhar — a chuva fica muda. */
+      ambCarregarChuvaReal(ctx);
       ambAudio.trovoes = [ambGerarTrovao(ctx, 1.9, 0.05), ambGerarTrovao(ctx, 2.6, 0.03), ambGerarTrovao(ctx, 3.2, 0.02)];
     } catch (_) { ambAudio.ctx = null; }
     return ambAudio.ctx;
@@ -449,8 +515,16 @@
     try {
       if (ambAudio.master) ambAudio.master.gain.setTargetAtTime(ambSomLigado ? 0.9 : 0, ctx.currentTime, 0.1);
       const activo = ambAudio.desbloqueado && ambSomLigado;
-      const alvoP = activo && ambientePartida.chuva === 1 ? 0.14 : 0;
-      const alvoF = activo && ambientePartida.chuva === 2 ? 0.32 : 0;
+      /* Com neve o som da precipitação cala-se (VOLTA 3,
+       * decisão de bom senso declarada: a neve é silenciosa;
+       * não se inventou um som de neve). */
+      /* Tectos de FUNDO (régua final do Mestre, 10/11 17:00):
+       * Forte 0,048 e Pouca 0,016 — 40% dos tectos da volta 2
+       * do som (0,12/0,04), que já tinham descido dos 0,36/0,14
+       * da era da síntese: «se diminuir 60% o volume, fica
+       * bom». A chuva senta-se atrás do jogo. */
+      const alvoP = activo && ambientePartida.precip !== 'neve' && ambientePartida.chuva === 1 ? 0.016 : 0;
+      const alvoF = activo && ambientePartida.precip !== 'neve' && ambientePartida.chuva === 2 ? 0.048 : 0;
       const agora = ctx.currentTime;   // crossfade de 2,5 s nos dois ganhos
       for (const par of [[ambAudio.ganhoPouca, alvoP], [ambAudio.ganhoForte, alvoF]]) {
         par[0].gain.cancelScheduledValues(agora);
@@ -493,8 +567,8 @@
    * cai em casa nenhuma, não fere, não acende. O raio que CAI é o
    * raioArena da secção «RAIO E FOGO» mais abaixo — relógio de
    * rondas, nunca este. O botão «⚡ Raio agora» também é de lá:
-   * põe um raioArena em fila para o momento de ambiente seguinte
-   * (pendente visível no botão, via ambDefinirRaioPendente).
+   * põe um raioArena em fila que resolve em segundos (VOLTA 3;
+   * pendente visível no botão, via ambDefinirRaioPendente).
    * Janela de protecção do clarão: nunca durante uma apresentação
    * de ataque nem enquanto um número de dano vive; bloqueado, o
    * automático adia (nova tentativa em 3 s). O relógio é do
@@ -522,13 +596,13 @@
   function ambAgendarAutoRaio() {
     ambLimparRelogioAutoRaio();
     if (!MODO_MESTRE) return;
-    if (!ambientePartida.raios || ambientePartida.chuva === 0) return;
+    if (!ambPodeTerRaios()) return;
     if (typeof document !== 'undefined' && document.hidden) return;
     ambRelogioAutoRaio = setTimeout(() => { ambRelogioAutoRaio = null; ambTentativaAutoRaio(); },
       30000 + Math.random() * 60000);
   }
   function ambTentativaAutoRaio() {
-    if (!MODO_MESTRE || !ambientePartida.raios || ambientePartida.chuva === 0) return;
+    if (!MODO_MESTRE || !ambPodeTerRaios()) return;
     if (typeof document !== 'undefined' && document.hidden) return;
     if (!view || typeof view.dispararRaio !== 'function') { ambAgendarAutoRaio(); return; }
     if (!ambJanelaRaioLivre() || !ambDispararRaioVista()) {
@@ -545,35 +619,95 @@
     if (!ambRaioPendente) ambPararVigiaPendente();
     ambSincronizarPainel();
   }
-  /* «⚡ Raio agora» (desenho «Raio e Fogo» §1): NÃO é um clarão —
-   * põe UM raioArena em fila, de alvo igualmente ao acaso, que
-   * resolve no momento de ambiente do início da ronda seguinte
-   * (o mesmo relógio dos automáticos, sem excepção). Pendente
-   * visível no botão; cancela-se se os raios ou a chuva desligarem
-   * antes (ambAoMudarRaios). Tecto: 1 por ronda — o limite é
-   * LACUNA §9.5 do desenho, com a proposta recomendada da bancada
-   * (1/ronda) construída; sem tecto o botão não se construía. */
-  let raioAgoraRodada = 0;
+  /* A porta única dos raios que CAEM (raioArena): ligados,
+   * precipitação a cair e tipo Chuva — com neve não há raios
+   * (VOLTA 3). O relâmpago cosmético usa a mesma porta. */
+  function ambPodeTerRaios() {
+    return !!(ambientePartida.raios && ambientePartida.chuva > 0 && ambientePartida.precip !== 'neve');
+  }
+  /* «⚡ Raio agora» (desenho «Raio e Fogo» §1, CORRIGIDO na
+   * VOLTA 3): NÃO é um clarão — põe UM raioArena em fila, de
+   * alvo igualmente ao acaso. O desenho antigo resolvia o
+   * pendente no momento de ambiente da ronda seguinte; fora de
+   * batalha (exploração, câmara livre) nenhuma ronda vira e o
+   * raio NUNCA caía — a queixa dele de 10/11 («ficou lá escrito
+   * raio pendente por muito tempo e depois nem um raio
+   * apareceu»). Agora o pendente resolve em SEGUNDOS (1,2–2,8 s
+   * sorteados), em batalha ou fora dela, pela mesma passagem de
+   * impacto de sempre (rfDispararArena). O momento de ronda
+   * continua a consumir um pendente que lá chegue (rede de
+   * segurança; quem resolve limpa a bandeira — nunca duplica).
+   * O tecto de 1/ronda da lacuna §9.5 CAI por ordem expressa
+   * dele («apertei para poder aparecer um raio quando eu
+   * quisesse na hora»): o limite é a fila de UM — novo pedido
+   * só com a fila vazia. Pendente visível no botão; cancela-se
+   * se os raios, a chuva ou o tipo mudarem antes (ambAoMudarRaios). */
+  let ambRaioAgoraTimer = null;
+  function ambCancelarRaioAgoraTimer() {
+    if (ambRaioAgoraTimer) { clearTimeout(ambRaioAgoraTimer); ambRaioAgoraTimer = null; }
+  }
+  function ambResolverRaioPendente() {
+    ambCancelarRaioAgoraTimer();
+    if (!ambRaioPendente) return;
+    ambDefinirRaioPendente(false);
+    if (!ambPodeTerRaios() || batalhaFim || supCongelado) return;   // as condições caíram: cancela em silêncio
+    rfDispararArena();
+  }
   function ambPedirRaioManual() {
-    if (!ambientePartida.raios || ambientePartida.chuva === 0) return;
-    if (ambRaioPendente) return;                    // já há um em fila
-    if (raioAgoraRodada === rodada) return;         // tecto desta ronda
-    raioAgoraRodada = rodada;
+    if (!ambPodeTerRaios()) return;
+    if (ambRaioPendente) return;                    // fila de um
     ambDefinirRaioPendente(true);
-    say('A tempestade junta-se — o raio cai no começo da ronda seguinte.');
+    say('A tempestade junta-se — o raio cai já a seguir.');
+    ambRaioAgoraTimer = setTimeout(ambResolverRaioPendente, 1200 + Math.random() * 1600);
   }
   function ambVigiaRaioPendente() {
-    /* A vigia de 250 ms pertencia ao pendente COSMÉTICO da REF_26
-     * (disparar no primeiro instante permitido). O pendente do
-     * raioArena resolve no momento de ambiente — sem vigia. A
-     * função fica como no-op defensivo: ambDefinirRaioPendente
-     * continua a chamável sem efeitos temporais. */
+    /* No-op defensivo herdado: o pendente do raioArena já não
+     * precisa de vigia — resolve pelo temporizador de segundos
+     * de ambPedirRaioManual (VOLTA 3). */
     ambPararVigiaPendente();
   }
+  /* Raios naturais em TEMPO REAL fora de ronda (VOLTA 3): o
+   * momento de ambiente só corre quando uma ronda vira; a
+   * explorar, a tempestade ficava muda para sempre — a outra
+   * metade da queixa. Este relógio dispara pela MESMA passagem
+   * do momento (rfDispararArena) SÓ quando nenhuma vez passou
+   * nos últimos AMB_EXPLORACAO_JANELA ms: batalha viva = o
+   * momento de ronda manda (um relógio de cada vez, nunca dois
+   * a disparar pelo mesmo céu). Cadências declaradas
+   * (uniformes): Chuva forte 20–60 s · Chuva pouca 60–150 s.
+   * Em fundo (document.hidden) o relógio dorme e rearma ao
+   * voltar (visibilitychange, junto ao do cosmético). */
+  const AMB_EXPLORACAO_JANELA = 120000;
+  const AMB_RAIO_EXPLORACAO_MS = { 1: [60000, 150000], 2: [20000, 60000] };
+  let ambRelogioExploracao = null, ambUltimoAvancoTS = 0;
+  function ambSincronizarRelogioExploracao() {
+    if (ambRelogioExploracao) { clearTimeout(ambRelogioExploracao); ambRelogioExploracao = null; }
+    if (!ambPodeTerRaios()) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+    const faixa = AMB_RAIO_EXPLORACAO_MS[ambientePartida.chuva];
+    if (!faixa) return;
+    ambRelogioExploracao = setTimeout(ambTentativaRaioExploracao,
+      faixa[0] + Math.random() * (faixa[1] - faixa[0]));
+  }
+  function ambTentativaRaioExploracao() {
+    ambRelogioExploracao = null;
+    if (!ambPodeTerRaios()) return;
+    if (typeof document !== 'undefined' && document.hidden) return;   // rearma no visibilitychange
+    if (ambUltimoAvancoTS && performance.now() - ambUltimoAvancoTS < AMB_EXPLORACAO_JANELA) {
+      ambSincronizarRelogioExploracao();   // batalha viva: o momento manda; este relógio espera
+      return;
+    }
+    if (batalhaFim || supCongelado) { ambSincronizarRelogioExploracao(); return; }
+    rfDispararArena();
+    ambSincronizarRelogioExploracao();
+  }
   function ambAoMudarRaios() {
-    if ((!ambientePartida.raios || ambientePartida.chuva === 0) && ambRaioPendente)
+    if (!ambPodeTerRaios() && ambRaioPendente) {
+      ambCancelarRaioAgoraTimer();
       ambDefinirRaioPendente(false);
+    }
     ambAgendarAutoRaio();
+    ambSincronizarRelogioExploracao();
   }
 
   /* ================= RAIO E FOGO — as regras (desenho julgado
@@ -808,8 +942,9 @@
       }
     }
     if (batalhaFim) return;
-    if (ambientePartida.raios && chuva > 0) {
+    if (ambPodeTerRaios()) {
       if (ambRaioPendente) {
+        ambCancelarRaioAgoraTimer();
         ambDefinirRaioPendente(false);
         rfDispararArena();
         if (batalhaFim) return;
@@ -820,6 +955,7 @@
     }
   }
   function ambMomentoSeNovaRodada() {
+    ambUltimoAvancoTS = performance.now();   // VOLTA 3: carimbo de «a batalha anda» para o relógio de exploração
     if (rodada === rfRodadaResolvida) return;
     rfRodadaResolvida = rodada;
     ambienteMomentoRodada();
@@ -5185,7 +5321,7 @@
        válido aplica-se JÁ (imediato); ausente/inválido repõe a
        Noite seca do ritual e DECLARA-SE no registo (sem silêncio). */
     if (snap.ambiente && ambDominioValido(snap.ambiente)) {
-      ambAssentar({ hora: snap.ambiente.hora, chuva: snap.ambiente.chuva, raios: snap.ambiente.raios }, { imediato: true });
+      ambAssentar({ hora: snap.ambiente.hora, chuva: snap.ambiente.chuva, raios: snap.ambiente.raios, precip: snap.ambiente.precip === 'neve' ? 'neve' : 'chuva' }, { imediato: true });
     } else {
       ambAssentar({ ...AMBIENTE_RITUAL }, { imediato: true });
       supRegistar('ambiente', { origem: 'supRestaurar',
@@ -5492,14 +5628,18 @@
        domínio semântico — hora finita em [0,24), chuva ∈ {0,1,2},
        raios booleano, sem chaves estranhas; fora do domínio é
        SAVE_ESTADO_INVALIDO (erro nomeado), nunca clamp silencioso.
-       A versão da curva, quando presente, tem de ser 'v1'. */
+       A versão da curva, quando presente, tem de ser 'v1'.
+       VOLTA 3: a chave precip é admitida (opcional — saves
+       antigos não a têm e lêem Chuva), com domínio
+       'chuva'|'neve' quando presente. */
     if ('ambiente' in e) {
       const a = e.ambiente;
       if (!a || typeof a !== 'object') return INV;
-      if (Object.keys(a).some(k => !['hora', 'chuva', 'raios'].includes(k))) return INV;
+      if (Object.keys(a).some(k => !['hora', 'chuva', 'raios', 'precip'].includes(k))) return INV;
       if (!finito(a.hora) || a.hora < 0 || a.hora >= 24) return INV;
       if (!(a.chuva === 0 || a.chuva === 1 || a.chuva === 2)) return INV;
       if (typeof a.raios !== 'boolean') return INV;
+      if ('precip' in a && a.precip !== 'chuva' && a.precip !== 'neve') return INV;
     }
     if ('ambienteCurva' in e && e.ambienteCurva !== 'v1') return INV;
     /* Tranche ESCALA: o campo, QUANDO PRESENTE, tem de ser um dos
@@ -5726,7 +5866,7 @@
            Save antigo sem o campo: Noite seca DECLARADA no registo
            (a validação já garantiu que um campo presente é válido). */
         if (e.ambiente && ambDominioValido(e.ambiente)) {
-          ambAssentar({ hora: e.ambiente.hora, chuva: e.ambiente.chuva, raios: e.ambiente.raios }, { imediato: true });
+          ambAssentar({ hora: e.ambiente.hora, chuva: e.ambiente.chuva, raios: e.ambiente.raios, precip: e.ambiente.precip === 'neve' ? 'neve' : 'chuva' }, { imediato: true });
         } else {
           ambAssentar({ ...AMBIENTE_RITUAL }, { imediato: true });
           supRegistar('ambiente', { origem: 'save', razao: 'Save sem ambiente — Noite seca do ritual declarada' });
@@ -5841,8 +5981,10 @@
       if (ambDegrau > 0) txt += ` · apresentação reduzida: ${AMB_DEGRAUS[ambDegrau]}`;
       ambUI.estadoEl.textContent = txt;
     }
-    if (ambUI.ponto) ambUI.ponto.hidden = (e.hora === AMBIENTE_RITUAL.hora && e.chuva === 0 && e.raios === false);
+    if (ambUI.ponto) ambUI.ponto.hidden = (e.hora === AMBIENTE_RITUAL.hora && e.chuva === 0 && e.raios === false && e.precip === 'chuva');
     for (const reg of ambUI.botoesHora) reg.b.classList.toggle('on', Math.abs(e.hora - reg.hora) < 0.051);
+    for (const reg of ambUI.botoesPrecip) reg.b.classList.toggle('on', e.precip === reg.precip);
+    if (ambUI.notaNeve) ambUI.notaNeve.hidden = e.precip !== 'neve';
     for (const reg of ambUI.botoesChuva) {
       reg.b.classList.toggle('on', e.chuva === reg.chuva);
       if (reg.chuva === 2)   // em qualidade Baixa, o Forte activo rotula a apresentação reduzida
@@ -5854,18 +5996,23 @@
     if (ambUI.leitura && document.activeElement !== ambUI.deslizador)
       ambUI.leitura.textContent = ambFmtHora(e.hora);
     if (ambUI.togRaios) {
+      const neveT = e.precip === 'neve';
       ambUI.togRaios.classList.toggle('on', e.raios);
       ambUI.togRaios.textContent = e.raios ? 'Ligados' : 'Desligados';
       ambUI.togRaios.setAttribute('aria-pressed', String(e.raios));
+      ambUI.togRaios.disabled = neveT;   // VOLTA 3: com neve não há raios — a razão está na nota sob a Precipitação
+      ambUI.togRaios.title = neveT ? 'Sem raios com neve' : '';
     }
     if (ambUI.btnRaio) {
-      /* RAIO E FOGO: em fila, o botão mostra o pendente; posto um
-       * «Raio agora» nesta ronda, o tecto de 1/ronda desliga-o até
-       * à ronda seguinte (desenho §1, lacuna §9.5). */
-      const tectoRodada = !ambRaioPendente && raioAgoraRodada === rodada;
-      ambUI.btnRaio.disabled = (!(e.raios && e.chuva !== 0) && !ambRaioPendente) || tectoRodada;
+      /* RAIO E FOGO (VOLTA 3): em fila, o botão mostra o pendente
+       * (que resolve em segundos); fora de fila, activo com
+       * raios ligados e precipitação a cair. Com neve fica
+       * desactivado — a razão visível é a nota do painel. */
+      const neveB = e.precip === 'neve';
+      ambUI.btnRaio.disabled = neveB || (!(e.raios && e.chuva !== 0) && !ambRaioPendente);
       ambUI.btnRaio.classList.toggle('amb-pendente', ambRaioPendente);
       ambUI.btnRaio.textContent = ambRaioPendente ? '⚡ Raio pendente…' : '⚡ Raio agora';
+      ambUI.btnRaio.title = neveB ? 'Sem raios com neve' : '';
     }
     if (ambUI.togSom) {
       ambUI.togSom.classList.toggle('on', ambSomLigado);
@@ -5970,6 +6117,41 @@
     linhaAmbChuva.appendChild(rotuloAmbChuva);
     linhaAmbChuva.appendChild(grupoAmbChuva);
     cfgEl.insertBefore(linhaAmbChuva, $('stats'));
+    /* Precipitação: Chuva | Neve (VOLTA 3 — palavra dele: «a
+     * chuva anterior não tava ruim, só era neve — tem que ter a
+     * opção de chuva e a opção de neve»). Os botões Sem/Pouca/
+     * Forte, acima, são a intensidade da precipitação escolhida.
+     * Com Neve, os raios apagam e o botão do raio desactiva; a
+     * nota por baixo diz porquê (visível só aqui, no painel do
+     * Mestre). A escolha guarda-se como as outras definições do
+     * Ambiente (preferência do aparelho + estado da partida). */
+    const linhaAmbPrecip = document.createElement('div');
+    linhaAmbPrecip.className = 'cfgrow vel';
+    const rotuloAmbPrecip = document.createElement('span');
+    rotuloAmbPrecip.className = 'cl';
+    rotuloAmbPrecip.textContent = 'Precipitação';
+    const grupoAmbPrecip = document.createElement('div');
+    grupoAmbPrecip.className = 'seg amb-seg';
+    grupoAmbPrecip.setAttribute('role', 'group');
+    grupoAmbPrecip.setAttribute('aria-label', 'Tipo de precipitação');
+    for (const tipo of [{ precip: 'chuva', nome: 'Chuva' }, { precip: 'neve', nome: 'Neve' }]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = tipo.nome;
+      b.addEventListener('click', () =>
+        ambAssentar({ hora: ambientePartida.hora, chuva: ambientePartida.chuva, raios: ambientePartida.raios, precip: tipo.precip }, {}));
+      grupoAmbPrecip.appendChild(b);
+      ambUI.botoesPrecip.push({ precip: tipo.precip, b });
+    }
+    linhaAmbPrecip.appendChild(rotuloAmbPrecip);
+    linhaAmbPrecip.appendChild(grupoAmbPrecip);
+    cfgEl.insertBefore(linhaAmbPrecip, $('stats'));
+    const notaNeveAmb = document.createElement('div');
+    notaNeveAmb.className = 'amb-estado';
+    notaNeveAmb.textContent = 'Com neve não há raios — o céu fica quieto.';
+    notaNeveAmb.hidden = ambientePartida.precip !== 'neve';
+    cfgEl.insertBefore(notaNeveAmb, $('stats'));
+    ambUI.notaNeve = notaNeveAmb;
     /* Raios: interruptor + «⚡ Raio agora» (inactivo salvo raios
        ligados e chuva ≠ Sem; pendente visível no próprio botão). */
     const linhaAmbRaios = document.createElement('div');
@@ -6272,10 +6454,11 @@
   }
   if (typeof document !== 'undefined')   // em fundo o agendador pausa; ao voltar, sorteia de novo
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) ambLimparRelogioAutoRaio();
-      else ambAgendarAutoRaio();
+      if (document.hidden) { ambLimparRelogioAutoRaio(); ambSincronizarRelogioExploracao(); }
+      else { ambAgendarAutoRaio(); ambSincronizarRelogioExploracao(); }
     });
   ambAgendarAutoRaio();
+  ambSincronizarRelogioExploracao();
 
   /* ---------- Escala: painel do Mestre (só #cfgpop, antes de #stats) ----------
    * A escala é definição do Mestre (desempate de 09/11): a secção
