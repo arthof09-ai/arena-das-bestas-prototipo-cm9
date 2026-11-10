@@ -653,16 +653,23 @@
                     transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide
                 });
             }
-            /* CASCA DA PESSOA A ARDER (volta 4): cilindro de chama À VOLTA
-             * do corpo (raio 0,95 m em baixo, 0,66 m em cima — fora do corpo
-             * (~1,4 m de largura) e a apertar para a chama fechar sobre ela), com o
-             * mesmo ruído fractal a subir. Os planos cruzados passam pelo
-             * centro do corpo e o corpo opaco esconde-os (medido: a 1,85 m
-             * de largura continuavam invisíveis nela); a casca vive FORA do
-             * corpo — a parte da frente desenha-se por cima dela, a de trás
-             * fica escondida: lê-se uma pessoa dentro das chamas. O ruído é
-             * amostrado num domínio circular (cos/sen) para a emenda do
-             * cilindro não se ver. */
+                        /* CASCA DA PESSOA A ARDER (volta 4; REFEITA na volta 5):
+             * cilindro de chama À VOLTA do corpo — a ideia da volta 4
+             * estava certa e o Mestre aprovou-a («a ideia ficou muito
+             * top»), mas a execução lia-se um VÉU dourado: frequência
+             * baixa, cor presa à altura e nenhum corte na superfície —
+             * uma campânula de brilho, não chamas. A volta 5 mantém a
+             * peça e muda-lhe a matéria: o MESMO campo das chamas das
+             * casas (fbm a subir) amostrado à volta do corpo com
+             * frequência de LÍNGUAS — cada coluna tem o seu teto, os
+             * sulcos entre línguas cortam a parede (discard: por onde
+             * não há chama vê-se ELA), a cor nasce do campo (núcleo
+             * quente na base de cada língua, pontas vermelhas) e o
+             * raio é deslocado no vértice pelo próprio ruído, mais
+             * forte no topo — a silhueta deixa de ser a de um tubo e
+             * passa a ser a de fogo a lamber um corpo. O ruído é
+             * amostrado num domínio circular (cos/sen) para a emenda
+             * do cilindro não se ver. */
             function fogoMatCasca(semente) {
                 return new T.ShaderMaterial({
                     uniforms: { uTempo: { value: 0 }, uEnv: { value: 0 }, uSemente: { value: semente } },
@@ -672,11 +679,14 @@
                         FOGO_GLSL_RUIDO,
                         'void main() { vUv = uv; vec3 p = position;',
                         '  float ang = atan(p.z, p.x);',
-                        '  float subir = uTempo * 0.5 + uSemente;',
-                        '  float n = fbm(vec2(cos(ang) * 1.35 + sin(ang) * 0.95, uv.y * 2.0 - subir + sin(ang) * 1.35));',
-                        '  float n2 = fbm(vec2(cos(ang) * 3.4 + 17.0, uv.y * 4.5 - subir * 1.9));',
-                        '  float r = 1.0 + (n - 0.5) * 0.30 + (n2 - 0.5) * 0.14;',
+                        '  vec2 an = vec2(cos(ang), sin(ang));',
+                        '  float subir = uTempo * 0.85 + uSemente;',
+                        '  float n = fbm(vec2(an.x * 2.2 + an.y * 1.4, uv.y * 1.7 - subir * 0.8 + an.y * 2.2));',
+                        '  float n2 = fbm(vec2(an.x * 4.6 + an.y * 3.0 + 17.0, uv.y * 3.4 - subir * 1.7 + an.y * 4.6));',
+                        '  float r = 1.0 + (n - 0.5) * (0.16 + 0.30 * uv.y) + (n2 - 0.5) * (0.08 + 0.14 * uv.y);',
                         '  p.x *= r; p.z *= r;',
+                        '  p.x += sin(uv.y * 3.1 - uTempo * 2.2 + uSemente * 1.3) * 0.05 * uv.y * uv.y;',
+                        '  p.z += cos(uv.y * 2.7 - uTempo * 1.8 + uSemente * 2.1) * 0.05 * uv.y * uv.y;',
                         '  vNormV = normalMatrix * normal;',
                         '  vec4 mv = modelViewMatrix * vec4(p, 1.0); vPosV = mv.xyz;',
                         '  gl_Position = projectionMatrix * mv; }'
@@ -694,21 +704,30 @@
                         'void main() {',
                         '  vec2 uv = vUv;',
                         '  float t = uTempo;',
-                        '  float subir = t * 0.5 + uSemente;',
+                        '  float subir = t * 0.85 + uSemente;',
                         '  float circ = uv.x * 6.28318;',
-                        '  vec2 anel = vec2(cos(circ), sin(circ)) * 1.35;',
-                        '  float nG = fbm(vec2(anel.x + anel.y * 0.7, uv.y * 2.0 - subir + anel.y));',
-                        '  float nF = fbm(vec2((anel.x + anel.y * 0.7) * 2.6 + 31.7, uv.y * 5.0 - subir * 1.9 + anel.y * 2.2));',
-                        '  float topo = uv.y + (nG - 0.5) * 0.60 + (nF - 0.5) * 0.24;',
-                        '  float corpo = 1.0 - smoothstep(0.40, 0.92, topo);',
-                        '  float mancha = fbm(vec2((anel.x + anel.y * 0.7) * 1.05 - subir * 0.3, uv.y * 1.15 - subir * 0.45));',
-'  corpo *= (smoothstep(0.24, 0.68, mancha) * 0.88 + 0.12) * (0.72 + 0.50 * nF);',
-'  corpo *= 0.55 + 0.45 * smoothstep(0.0, 0.09, uv.y);',
-                        '  float calor = clamp(1.06 - uv.y * 0.52 + (nF - 0.5) * 0.36, 0.0, 1.0);',
+                        '  vec2 an = vec2(cos(circ), sin(circ));',
+                        '  float nS = fbm(vec2(an.x * 1.6 + an.y * 1.1 + 7.3, uv.y * 1.3 - subir * 0.6 + an.y * 1.6));',
+                        '  float desvio = (nS - 0.5) * 0.85 * uv.y;',
+                        '  float caD = cos(desvio), saD = sin(desvio);',
+                        '  vec2 anR = vec2(an.x * caD - an.y * saD, an.x * saD + an.y * caD);',
+                        '  float nG = fbm(vec2(anR.x * 2.2 + anR.y * 1.4, uv.y * 1.7 - subir * 0.8 + anR.y * 2.2));',
+                        '  float nM = fbm(vec2(anR.x * 3.4 + anR.y * 2.2 + 13.7, uv.y * 3.6 - subir * 1.75 + anR.y * 3.4));',
+                        '  float nF = fbm(vec2(anR.x * 6.5 + anR.y * 4.2 + 41.3, uv.y * 6.5 - subir * 2.6 + anR.y * 6.5));',
+                        '  float teto = 0.42 + 0.66 * nG + (nM - 0.5) * 0.44;',
+                        '  float d = (uv.y - teto) * 2.4 + (0.5 - nM) * 1.70 + (0.5 - nF) * 0.40;',
+                        '  float corpo = 1.0 - smoothstep(0.25, 1.05, d);',
+                        '  if (corpo <= 0.004) discard;',
+                        '  float sulco = smoothstep(-0.15, 0.09, (nM - 0.5) * (1.4 + 1.5 * smoothstep(0.15, 0.60, uv.y)) + (nF - 0.5) * 0.55);',
+                        '  corpo *= mix(1.0, sulco, smoothstep(0.05, 0.35, uv.y));',
+                        '  corpo *= 0.50 + 0.50 * smoothstep(0.0, 0.08, uv.y);',
+                        '  float dentro = clamp(-d, 0.0, 0.8);',
+                        '  float calor = clamp(0.30 + nM * 0.74 + dentro * 0.30 - uv.y * 0.38 + (nF - 0.5) * 0.30, 0.0, 1.0);',
+                        '  float trem = 0.82 + 0.34 * n1(t * 2.3 + uSemente * 2.31) + 0.12 * n1(t * 6.9 + uSemente * 0.97);',
                         '  float facing = abs(dot(normalize(vNormV), normalize(-vPosV)));',
-                        '  corpo *= 0.45 + 0.55 * smoothstep(0.02, 0.45, facing);',
+                        '  corpo *= 0.72 + 0.28 * smoothstep(0.02, 0.45, facing);',
                         '  vec3 cor = rampa(calor);',
-                        '  gl_FragColor = vec4(cor * 0.58 * corpo * uEnv, 1.0);',
+                        '  gl_FragColor = vec4(cor * 0.47 * trem * corpo * uEnv, 1.0);',
                         '}'
                     ].join('\n'),
                     transparent: true, blending: T.AdditiveBlending, depthWrite: false, side: T.FrontSide, fog: false
@@ -790,7 +809,7 @@
                 if (tipo === 'pessoa') {
                     /* a casca cilíndrica que envolve o corpo (ver fogoMatCasca);
                      * geometria própria por grupo — liberta-se com ele */
-                    const casca = new T.Mesh(new T.CylinderGeometry(0.66, 0.95, 2.5, 18, 4, true), fogoMatCasca(semente + 71.3));
+                    const casca = new T.Mesh(new T.CylinderGeometry(0.66, 0.95, 2.5, 24, 5, true), fogoMatCasca(semente + 71.3));
                     casca.position.y = 1.25;
                     casca.frustumCulled = false;
                     mats.push(casca.material);
