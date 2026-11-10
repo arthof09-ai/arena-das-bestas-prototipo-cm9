@@ -408,72 +408,81 @@
    * Contexto PREGUIÇOSO: nasce só no primeiro gesto real
    * (pointerdown/keydown) e só vale com state==='running' — até lá,
    * mudo sem erro e sem sons «em dívida» (nada se agenda para
-   * tocar depois). Chuva: GRAVAÇÃO REAL em loop
-   * (chuva-real.ogg; ver SOM-CHUVA) com 2 ganhos
-   * (Pouca/Forte) em crossfade de 2,5 s. Trovão: 3
+   * tocar depois). Chuva: DUAS FAIXAS DE JOGO em loop
+   * (chuva-fina.ogg/chuva-forte.ogg; ver SOM-CHUVA), cada
+   * uma ligada ao seu ganho (Pouca/Forte) em crossfade de
+   * 2,5 s. Trovão: 3
    * variantes PRÉ-GERADAS na criação do contexto (ruído com
    * decaimento e passa-baixos à reprodução) — nunca sintetizadas
    * na hora do raio. Volumes baixos: sempre abaixo da voz. */
   const ambAudio = { ctx: null, master: null, ganhoPouca: null, ganhoForte: null,
-    trovoes: [], desbloqueado: false, fonteChuva: null };
-  /* SOM-CHUVA-INICIO — a chuva REAL (VOLTA 2 DO SOM, 10/11).
-   * A síntese da VOLTA 3 (ambSinteseChuva) foi REPROVADA pelo
-   * ouvido do Mestre («ainda acho ruim, reprovado») e a régua
-   * dele ficou escrita: a chuva «fica muito chiado, muito
-   * poluído, muito alto — tem que ser algo que não atrapalhe
-   * nem incomode nada: é um plano de fundo, não é uma trilha
-   * principal». A síntese SAIU (apagada; não fica morta no
-   * ficheiro): o som da chuva passa a ser uma GRAVAÇÃO REAL —
-   * «Rain (1).ogg» de ezwa (arquivo PDSounds), domínio
-   * público: aguaceiro forte de campo («raining cats and
-   * dogs»), 45 s reais. Tratamento (sede t-som-chuva-volta2):
-   * troço mais estável (7–35 s), passa-alto de 90 Hz e
-   * passa-baixo de 5,6 kHz suaves (fora o ronco e o sopro do
-   * microfone, sem apagar a chuva), loop de 28 s com
-   * crossfade de 6 s em potência igual — a costura não se
-   * ouve: o salto na fronteira é igual aos saltos do próprio
-   * material e não há vale de nível na emenda. RMS do
-   * ficheiro 0,12; bandas medidas: 5–9 kHz = 2,8% (a síntese
-   * crua media 4,4% na mesma régua). Ficheiro chuva-real.ogg:
-   * Vorbis mono, 28 s exactos, 267 406 B — OGG porque repete
-   * amostra a amostra, sem o enchimento que o MP3 mete nas
-   * pontas e partiria o loop.
-   * Carregamento com o contexto preguiçoso: fetch + decode em
-   * fundo; a fonte nasce ligada aos dois ganhos quando o
-   * buffer estiver pronto. Se o ficheiro falhar (rede/404), a
-   * chuva fica MUDA — nunca regressa ao chiado sintetizado.
-   * Sem filtro de reprodução: o lowpass de 2600 Hz era a rede
-   * da síntese e saiu com ela; o que o ficheiro traz é o que
-   * se ouve. Volumes de FUNDO (a régua final dele, 10/11
-   * 17:00): ganhos Forte 0,048 e Pouca 0,016 — 40% dos
-   * tectos da volta 2 do som (0,12/0,04). Com o master a
-   * 0,9, a chuva forte sai a RMS ≈ 0,005, atrás do jogo, e
-   * a pouca é quase um sussurro. A amostra que ele ouviu
-   * (amostra-chuva-real.wav, na sede da tranche) era este
-   * loop a (0,12 × 0,9), duas voltas inteiras; ele julgou-a
-   * e mandou baixar 60% — é esse o nível que entra. */
-  function ambCarregarChuvaReal(ctx) {
+    trovoes: [], desbloqueado: false, fontesChuva: { pouca: null, forte: null } };
+  /* SOM-CHUVA-INICIO — as faixas B+C (ESCOLHA DO MESTRE, 10/11).
+   * Linha do tempo curta: a síntese da VOLTA 3 foi REPROVADA
+   * pelo ouvido dele («muito chiado, muito poluído, muito
+   * alto») e a gravação real da volta 2 do som também não
+   * fechou — na comparação de trilhas FEITAS PARA JOGO ele
+   * escolheu (10/11 17:32): «as duas ficaram muito boas; a B
+   * um pouquinho melhor». Entram as duas, do pack «Rain
+   * (loopable)» de Ylmir (OpenGameArt, CC0 1.0 — uso livre,
+   * sem crédito obrigatório):
+   *   · chuva-forte.ogg = faixa 3 («chuva sobre superfícies»),
+   *     a cama principal: loop estéreo de 45,000 s;
+   *   · chuva-fina.ogg = faixa 4 («chuva fina»), pingos leves
+   *     com ar entre eles: loop estéreo de 37,500 s.
+   * A D (tempestade com trovões assados no loop) ficou de
+   * fora: na chuva forte o trovão vem DO PRÓPRIO RAIO do
+   * jogo, por fora. A A (a gravação real) saiu da árvore.
+   * Tratamento (sede t-som-bc): os loops nasceram limpos
+   * (emendas sem clique medidas nas fontes) e foram só
+   * NORMALIZADOS a RMS 0,05 — forte: RMS final medido
+   * 0,04993, pico 0,480 · fina: RMS final 0,04968, pico
+   * 0,892; o salto na emenda fica na ordem dos saltos do
+   * próprio material. OGG Vorbis porque repete amostra a
+   * amostra, sem o enchimento que o MP3 mete nas pontas e
+   * partiria o loop.
+   * Ligação: DOIS buffers, um por intensidade — a fonte da
+   * fina liga-se SÓ ao ganho Pouca e a da forte SÓ ao ganho
+   * Forte; a troca de intensidade faz-se pelo crossfade de
+   * 2,5 s entre os dois ganhos (ambAudioSincronizarChuva),
+   * sem sobreposição suja. Carregamento com o contexto
+   * preguiçoso: fetch + decode em fundo. Se um ficheiro
+   * falhar (rede/404), esse canal fica MUDO — nunca
+   * regressa a chiado nenhum.
+   * VOLUME PRÉ-SETADO (decisão fechada dele, 10/11 17:34):
+   * «não é algo primário, de frente — é algo lá no fundo;
+   * escolher esse e deixar pré-setado um volume baixo». Os
+   * tectos são METADE do nível das amostras da comparação
+   * (RMS 0,0050): com os buffers a RMS ≈ 0,05 e o master a
+   * 0,9, Forte 0,0556 → saída ≈ RMS 0,0025 · Pouca 0,0280 →
+   * saída ≈ RMS 0,00125 (metade da Forte). Preset fixo:
+   * não é régua para andar a afinar em voltas. */
+  function ambCarregarChuvas(ctx) {
     if (typeof fetch !== 'function' || typeof ctx.decodeAudioData !== 'function') return;
-    const ligar = buf => {
-      if (!buf || ambAudio.fonteChuva) return;
+    const carregar = (ficheiro, ganho, chave) => {
+      const ligar = buf => {
+        if (!buf || ambAudio.fontesChuva[chave]) return;
+        try {
+          const fonte = ctx.createBufferSource();
+          fonte.buffer = buf; fonte.loop = true;
+          fonte.connect(ganho);
+          fonte.start();
+          ambAudio.fontesChuva[chave] = fonte;
+        } catch (_) {}
+      };
       try {
-        const fonte = ctx.createBufferSource();
-        fonte.buffer = buf; fonte.loop = true;
-        fonte.connect(ambAudio.ganhoPouca); fonte.connect(ambAudio.ganhoForte);
-        fonte.start();
-        ambAudio.fonteChuva = fonte;
+        fetch(ficheiro)
+          .then(r => (r && r.ok) ? r.arrayBuffer() : null)
+          .then(ab => {
+            if (!ab) return;
+            const p = ctx.decodeAudioData(ab, ligar);
+            if (p && typeof p.catch === 'function') p.catch(() => {});
+          })
+          .catch(() => {});
       } catch (_) {}
     };
-    try {
-      fetch('chuva-real.ogg')
-        .then(r => (r && r.ok) ? r.arrayBuffer() : null)
-        .then(ab => {
-          if (!ab) return;
-          const p = ctx.decodeAudioData(ab, ligar);
-          if (p && typeof p.catch === 'function') p.catch(() => {});
-        })
-        .catch(() => {});
-    } catch (_) {}
+    carregar('chuva-fina.ogg', ambAudio.ganhoPouca, 'pouca');
+    carregar('chuva-forte.ogg', ambAudio.ganhoForte, 'forte');
   }
   /* SOM-CHUVA-FIM */
   function ambGerarTrovao(ctx, dur, aperto) {
@@ -501,10 +510,11 @@
       ambAudio.ganhoPouca = ctx.createGain(); ambAudio.ganhoPouca.gain.value = 0;
       ambAudio.ganhoForte = ctx.createGain(); ambAudio.ganhoForte.gain.value = 0;
       ambAudio.ganhoPouca.connect(ambAudio.master); ambAudio.ganhoForte.connect(ambAudio.master);
-      /* A fonte da chuva (gravação real) carrega em fundo e
-       * liga-se aos dois ganhos quando estiver descodificada;
-       * até lá — ou se o ficheiro falhar — a chuva fica muda. */
-      ambCarregarChuvaReal(ctx);
+      /* As fontes da chuva (as duas faixas) carregam em fundo
+       * e ligam-se cada uma ao seu ganho quando estiverem
+       * descodificadas; até lá — ou se um ficheiro falhar —
+       * esse canal fica mudo. */
+      ambCarregarChuvas(ctx);
       ambAudio.trovoes = [ambGerarTrovao(ctx, 1.9, 0.05), ambGerarTrovao(ctx, 2.6, 0.03), ambGerarTrovao(ctx, 3.2, 0.02)];
     } catch (_) { ambAudio.ctx = null; }
     return ambAudio.ctx;
@@ -518,13 +528,15 @@
       /* Com neve o som da precipitação cala-se (VOLTA 3,
        * decisão de bom senso declarada: a neve é silenciosa;
        * não se inventou um som de neve). */
-      /* Tectos de FUNDO (régua final do Mestre, 10/11 17:00):
-       * Forte 0,048 e Pouca 0,016 — 40% dos tectos da volta 2
-       * do som (0,12/0,04), que já tinham descido dos 0,36/0,14
-       * da era da síntese: «se diminuir 60% o volume, fica
-       * bom». A chuva senta-se atrás do jogo. */
-      const alvoP = activo && ambientePartida.precip !== 'neve' && ambientePartida.chuva === 1 ? 0.016 : 0;
-      const alvoF = activo && ambientePartida.precip !== 'neve' && ambientePartida.chuva === 2 ? 0.048 : 0;
+      /* Tectos do PRESET (decisão fechada do Mestre, 10/11
+       * 17:34 — volume baixo PRÉ-SETADO, sem voltas de
+       * afinação): metade do nível das amostras da comparação
+       * (RMS 0,0050). Com os buffers a RMS ≈ 0,05 e o master
+       * a 0,9: Forte 0,0556 → saída ≈ RMS 0,0025 · Pouca
+       * 0,0280 → saída ≈ RMS 0,00125 (metade da Forte). A
+       * chuva senta-se atrás do jogo, lá no fundo. */
+      const alvoP = activo && ambientePartida.precip !== 'neve' && ambientePartida.chuva === 1 ? 0.0280 : 0;
+      const alvoF = activo && ambientePartida.precip !== 'neve' && ambientePartida.chuva === 2 ? 0.0556 : 0;
       const agora = ctx.currentTime;   // crossfade de 2,5 s nos dois ganhos
       for (const par of [[ambAudio.ganhoPouca, alvoP], [ambAudio.ganhoForte, alvoF]]) {
         par[0].gain.cancelScheduledValues(agora);
