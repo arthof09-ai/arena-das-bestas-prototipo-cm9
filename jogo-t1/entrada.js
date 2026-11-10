@@ -882,6 +882,13 @@
       };
       var prom = null;
       if (document.documentElement.requestFullscreen) {
+        /* Carimbo partilhado com a gestão «TELA CHEIA PERMANENTE»
+         * (fim do ficheiro): este pedido conta para o freio de
+         * ~1 s, para o toque não disparar dois pedidos ao mesmo
+         * tempo. A variável é declarada lá em baixo (var da mesma
+         * função) e só é escrita em gestos, já com o ficheiro todo
+         * avaliado. */
+        tcUltimaTentativa = Date.now();
         try { prom = document.documentElement.requestFullscreen(); } catch (_) {}
       }
       if (prom && prom.then) prom.then(travar, travar); else travar();
@@ -1019,6 +1026,100 @@
     } catch (_) {}
   }
   /* ============ FILME + LOOP + TRILHA — fim da secção ============ */
+
+  /* ================================================================
+   * TELA CHEIA PERMANENTE (pedido do Mestre, 10/11/2026 19:28:
+   * «Tem como sempre ficar tela cheia?»)
+   *
+   * A regra do navegador manda: a tela cheia só entra depois de um
+   * gesto — sem gesto, não há pedido possível (não é defeito, é a
+   * regra do Chrome). O desenho, portanto:
+   *   · o PRIMEIRO toque/clique da sessão pede a tela cheia (durante
+   *     o filme, quem pede é o caminho da REF_48, tentarPaisagem —
+   *     que carimba tcUltimaTentativa; fora do filme, é aqui);
+   *   · depois desse gesto, TODO o toque/clique volta a pedir se a
+   *     tela cheia tiver caído (um gesto do sistema — barra de
+   *     notificações, botão de voltar — pode tirá-la e a página não
+   *     pode impedir a saída; o toque seguinte repõe, sem o Mestre
+   *     ter de pensar nisso). Vale na entrada e dentro do jogo: esta
+   *     camada continua carregada depois do boot;
+   *   · freio: no máximo 1 tentativa a cada ~1 s, e um pedido em
+   *     curso bloqueia o seguinte — nunca rajadas, nem sobre erros
+   *     (a tentativa conta para o freio mesmo quando é recusada);
+   *   · quando a tela cheia entra já dentro do jogo (ou ainda
+   *     durante o filme), tenta-se a trava de paisagem em melhor
+   *     esforço; na tela do título, a paisagem continua liberta,
+   *     como a REF_48 desenhou;
+   *   · tudo embrulhado: promessas recusadas engolidas em silêncio,
+   *     e sem a API a página vive exactamente como hoje.
+   * ================================================================ */
+  var tcJaHouveGesto = false;
+  var tcUltimaTentativa = 0;
+  var tcPedidoEmCurso = false;
+
+  function tcEmTelaCheia() {
+    try {
+      return !!(document.fullscreenElement || document.webkitFullscreenElement);
+    } catch (_) { return false; }
+  }
+  function tcTravarPaisagem() {
+    try {
+      if (screen.orientation && screen.orientation.lock) {
+        var r = screen.orientation.lock('landscape');
+        if (r && r.catch) r.catch(function () {});
+      }
+    } catch (_) {}
+  }
+  function tcPedir() {
+    if (!tcJaHouveGesto) return; /* sem gesto, o navegador não deixa */
+    if (tcEmTelaCheia() || tcPedidoEmCurso) return;
+    var agora = Date.now();
+    if (agora - tcUltimaTentativa < 1000) return; /* o freio de ~1 s */
+    var alvo = document.documentElement;
+    if (!alvo || (!alvo.requestFullscreen && !alvo.webkitRequestFullscreen)) return;
+    tcUltimaTentativa = agora;
+    tcPedidoEmCurso = true;
+    var fim = function () { tcPedidoEmCurso = false; };
+    try {
+      var prom = null;
+      if (alvo.requestFullscreen) {
+        try { prom = alvo.requestFullscreen({ navigationUI: 'hide' }); }
+        catch (_) { try { prom = alvo.requestFullscreen(); } catch (_) {} }
+      } else if (alvo.webkitRequestFullscreen) {
+        try { alvo.webkitRequestFullscreen(); } catch (_) {}
+      }
+      if (prom && prom.then) {
+        prom.then(function () {
+          fim();
+          /* Dentro do jogo (ou ainda no filme): paisagem travada. */
+          if (arrancou || !filmeTerminou) tcTravarPaisagem();
+        }, fim);
+      } else fim();
+    } catch (_) { fim(); }
+  }
+  window.addEventListener('pointerdown', function () {
+    tcJaHouveGesto = true;
+    tcPedir();
+  });
+  /* Rede extra: se a tela cheia entrar dentro do jogo por outro
+   * caminho (ex.: o pedido do filme resolve já com o jogo a correr),
+   * a trava de paisagem tenta na mesma. */
+  function tcAoMudarTelaCheia() {
+    if (tcEmTelaCheia() && arrancou) tcTravarPaisagem();
+  }
+  document.addEventListener('fullscreenchange', tcAoMudarTelaCheia);
+  document.addEventListener('webkitfullscreenchange', tcAoMudarTelaCheia);
+  /* Gancho de prova (o mesmo padrão de __entradaPontoTrilha): o
+   * estado do gestor, legível pelas sondas e pela conferência. */
+  window.__tcEstado = function () {
+    return {
+      gesto: tcJaHouveGesto,
+      ultimaTentativa: tcUltimaTentativa,
+      pedidoEmCurso: tcPedidoEmCurso,
+      emTelaCheia: tcEmTelaCheia()
+    };
+  };
+  /* ============ TELA CHEIA PERMANENTE — fim da secção ============ */
 
   pintarBotaoMestre();
   pintarBotaoJogadora();
