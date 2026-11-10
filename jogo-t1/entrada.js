@@ -227,6 +227,9 @@
   function arrancarJogo(comoMestre) {
     if (arrancou) return;
     arrancou = true;
+    /* A média da entrada (filme/loop/trilha) é da tela do título:
+     * ao entrar no jogo, ela acaba — secção «FILME + LOOP + TRILHA». */
+    if (typeof pararMidiaEntrada === 'function') pararMidiaEntrada();
     if (comoMestre) {
       window.CAMPO_MESTRE = true;
     } else {
@@ -783,6 +786,239 @@
     });
   });
   /* ============ SENHA — fim da secção ============ */
+
+  /* ================================================================
+   * FILME + LOOP + TRILHA — o pacote da entrada (tranche
+   * t-entrada-filme; palavra do Mestre via chat da Entrada,
+   * 10/11/2026 ~18:10 — tudo escolhido e aprovado por ele; a regra
+   * da rotação vive em ROTACAO-TRILHA.md)
+   *
+   * A coreografia:
+   *  · A página abre e o FILME (video-entrada.mp4, só imagem, 18 s)
+   *    toca UMA vez em ecrã inteiro. Enquanto ele toca, a raiz tem a
+   *    classe «a-tocar-filme»: as placas e os painéis estão
+   *    invisíveis e sem toque — é só o filme. NÃO há toque para
+   *    saltar: o filme toca inteiro a cada abertura (fluxo da ordem).
+   *  · A MÚSICA (trilha-titulo.m4a, a faixa inteira, −12 dB já no
+   *    ficheiro) é um elemento de áudio SEPARADO e contínuo: arranca
+   *    com o filme, no ponto do bloco de 15 min (abaixo), com rampa
+   *    de volume de 4 s na reprodução, e NÃO pára nem emenda na
+   *    passagem filme→loop — na tela do título toca a faixa inteira
+   *    e repete para sempre. Se o navegador travar o som sem toque,
+   *    o arranque repete-se no primeiro toque, com o ponto do bloco
+   *    desse instante. A trilha é do filme e do título: ao entrar no
+   *    jogo (arrancarJogo), faz um fade curto e pára.
+   *  · O filme termina sobre um ciclo do loop: quando ele acaba, o
+   *    LOOP (video-loop.mp4) — já pré-carregado — começa e faz
+   *    crossfade por cima do último fotograma; as placas aparecem.
+   *    O loop é o fundo animado eterno da tela de entrada; a arte
+   *    pintada de hoje (v12/V17, no CSS) fica como poster/fallback.
+   *  · Sem filme (rede/codec): salta directo para o título. Sem
+   *    loop: fica o fundo pintado. Nada disto trava as portas.
+   *  · A abertura tenta travar a paisagem (desenho de 06/11: a
+   *    introdução trava o celular deitado; depois livre): no
+   *    primeiro toque durante o filme pede ecrã inteiro + trava de
+   *    paisagem, melhor esforço — as falhas são ignoradas em
+   *    silêncio e a trava liberta-se quando o filme acaba.
+   *
+   * A rotação (relógio partilhado, ROTACAO-TRILHA.md):
+   *    B = floor((agora_unix − 1794163200) / 900)
+   *    PONTO = [76,0 ; 0,0 ; 128,5][B mod 3]   (o pódio dele: 5·1·2)
+   * O módulo é o matemático (positivo): para B ≥ 0 é exactamente a
+   * fórmula da spec; antes da âncora (B < 0) a rotação continua a
+   * ciclar em vez de rebentar o índice.
+   * ================================================================ */
+  var ANCORA_TRILHA = 1794163200; /* 2026-11-11 00:00 America/Recife */
+  var PONTOS_TRILHA = [76.0, 0.0, 128.5];
+  function pontoDaTrilha(agoraMs) {
+    var b = Math.floor((Math.floor(agoraMs / 1000) - ANCORA_TRILHA) / 900);
+    return PONTOS_TRILHA[((b % 3) + 3) % 3];
+  }
+  window.__entradaPontoTrilha = pontoDaTrilha; /* gancho de prova */
+
+  var videoFilme = el('video', 'ent-video');
+  videoFilme.id = 'ent-video-filme';
+  videoFilme.src = 'video-entrada.mp4';
+  videoFilme.poster = 'cena-entrada-v17.webp';
+  videoFilme.muted = true; /* o filme não tem faixa de áudio: quem soa é a trilha */
+  videoFilme.setAttribute('playsinline', '');
+  videoFilme.preload = 'auto';
+
+  var videoLoop = el('video', 'ent-video');
+  videoLoop.id = 'ent-video-loop';
+  videoLoop.src = 'video-loop.mp4';
+  videoLoop.muted = true;
+  videoLoop.loop = true;
+  videoLoop.setAttribute('playsinline', '');
+  videoLoop.preload = 'auto';
+
+  var trilha = el('audio');
+  trilha.id = 'ent-trilha';
+  trilha.src = 'trilha-titulo.m4a';
+  trilha.loop = true;
+  trilha.preload = 'auto';
+  trilha.volume = 0;
+
+  raiz.insertBefore(videoFilme, raiz.firstChild);
+  raiz.insertBefore(videoLoop, raiz.firstChild);
+  raiz.classList.add('a-tocar-filme');
+
+  /* ---------- a paisagem da abertura (melhor esforço) ---------- */
+  var paisagemTentada = false;
+  function libertarPaisagem() {
+    try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (_) {}
+  }
+  function tentarPaisagem() {
+    if (paisagemTentada) return;
+    paisagemTentada = true;
+    try {
+      var travar = function () {
+        try {
+          if (screen.orientation && screen.orientation.lock) {
+            var r = screen.orientation.lock('landscape');
+            if (r && r.catch) r.catch(function () {});
+          }
+        } catch (_) {}
+      };
+      var prom = null;
+      if (document.documentElement.requestFullscreen) {
+        try { prom = document.documentElement.requestFullscreen(); } catch (_) {}
+      }
+      if (prom && prom.then) prom.then(travar, travar); else travar();
+    } catch (_) {}
+  }
+
+  /* ---------- o fim do filme: o loop assume, as placas aparecem --- */
+  var filmeTerminou = false;
+  var loopFalhou = false;
+  function terminarFilme() {
+    if (filmeTerminou) return;
+    filmeTerminou = true;
+    raiz.classList.remove('a-tocar-filme');
+    raiz.classList.add('filme-fim');
+    libertarPaisagem();
+    var comecarLoop = function () {
+      if (loopFalhou) return; /* E1: sem loop, o fundo é a arte pintada */
+      var p = videoLoop.play();
+      if (p && p.catch) p.catch(function () {});
+    };
+    if (videoLoop.readyState >= 2) comecarLoop();
+    else videoLoop.addEventListener('canplay', comecarLoop, { once: true });
+    setTimeout(function () {
+      try { videoFilme.pause(); } catch (_) {}
+      try { videoFilme.remove(); } catch (_) {}
+    }, 1200);
+  }
+  videoFilme.addEventListener('ended', terminarFilme);
+  videoFilme.addEventListener('error', function () {
+    /* Sem filme, a entrada não fica muda nem presa: título directo. */
+    try { videoFilme.style.display = 'none'; } catch (_) {}
+    terminarFilme();
+  });
+  videoLoop.addEventListener('error', function () {
+    /* Sem loop, o fundo do título NÃO fica preto: espelho do caminho
+     * do filme — o elemento esconde-se. E sai do DOM, para a regra
+     * «.filme-fim #ent-video-loop { opacity: 1 }» nunca acender um
+     * elemento partido (o .ent-video tem background: #000) sobre a
+     * arte pintada de hoje, que é o fundo declarado para este caso.
+     * Emenda E1 da conferência independente (CONFERENCIA.md §5). */
+    loopFalhou = true;
+    try { videoLoop.style.display = 'none'; } catch (_) {}
+    try { videoLoop.remove(); } catch (_) {}
+  });
+  /* Rede de segurança: se o filme estiver a tocar há 60 s sem acabar
+   * (o normal são 18 s), a tela do título não fica refém dele. */
+  setTimeout(function () {
+    if (!filmeTerminou && !videoFilme.paused && !videoFilme.ended) terminarFilme();
+  }, 60000);
+
+  var promFilme = videoFilme.play();
+  if (promFilme && promFilme.catch) {
+    promFilme.catch(function () {
+      /* Autoplay do filme travado (raro: ele é mudo e sem faixa de
+       * áudio): o primeiro toque põe-no a andar. */
+      window.addEventListener('pointerdown', function () {
+        var p2 = videoFilme.play();
+        if (p2 && p2.catch) p2.catch(function () {});
+      }, { once: true });
+    });
+  }
+
+  /* ---------- a trilha: ponto do bloco + rampa de 4 s ---------- */
+  var trilhaIniciada = false;
+  var idRampaTrilha = null;
+  function iniciarTrilha() {
+    if (trilhaIniciada) return;
+    trilhaIniciada = true;
+    var ponto = pontoDaTrilha(Date.now());
+    var tocar = function () {
+      try { trilha.currentTime = ponto; } catch (_) {}
+      trilha.volume = 0;
+      var prom = trilha.play();
+      if (prom && prom.catch) {
+        prom.catch(function () {
+          /* Som travado sem toque: o arranque repete-se no primeiro
+           * toque/clique de tecla, com o ponto do bloco desse
+           * instante (pontoDaTrilha volta a ser lido lá dentro). */
+          trilhaIniciada = false;
+          var outraVez = function () { iniciarTrilha(); };
+          window.addEventListener('pointerdown', outraVez, { once: true });
+          window.addEventListener('keydown', outraVez, { once: true });
+        });
+      }
+    };
+    /* O seek espera pelo «canplay» (não só pelos metadados): com
+     * dados a sério na mão, o ponto do bloco aterra de forma fiável
+     * nos servidores com Range — como o anfitrião da página. */
+    if (trilha.readyState >= 3) tocar();
+    else trilha.addEventListener('canplay', tocar, { once: true });
+  }
+  trilha.addEventListener('playing', function () {
+    if (idRampaTrilha) return;
+    var t0 = performance.now();
+    idRampaTrilha = setInterval(function () {
+      var v = (performance.now() - t0) / 4000;
+      if (v >= 1) {
+        v = 1;
+        clearInterval(idRampaTrilha);
+        idRampaTrilha = null;
+      }
+      try { trilha.volume = v; } catch (_) {}
+    }, 100);
+  });
+  document.body.appendChild(trilha);
+  iniciarTrilha();
+
+  /* O primeiro toque durante o filme também é o gesto que deixa a
+   * abertura tentar a paisagem travada. */
+  window.addEventListener('pointerdown', function () {
+    if (!filmeTerminou) tentarPaisagem();
+  });
+
+  /* Ao entrar no jogo (qualquer porta): a trilha do título acaba em
+   * fade curto, os vídeos páram e a paisagem liberta-se. */
+  function pararMidiaEntrada() {
+    libertarPaisagem();
+    if (idRampaTrilha) { clearInterval(idRampaTrilha); idRampaTrilha = null; }
+    try { videoFilme.pause(); } catch (_) {}
+    try { videoLoop.pause(); } catch (_) {}
+    try {
+      var a = trilha;
+      var v0 = a.volume;
+      var t0 = performance.now();
+      var idFade = setInterval(function () {
+        var k = (performance.now() - t0) / 600;
+        if (k >= 1) {
+          clearInterval(idFade);
+          try { a.pause(); } catch (_) {}
+          try { a.remove(); } catch (_) {}
+          return;
+        }
+        try { a.volume = v0 * (1 - k); } catch (_) {}
+      }, 50);
+    } catch (_) {}
+  }
+  /* ============ FILME + LOOP + TRILHA — fim da secção ============ */
 
   pintarBotaoMestre();
   pintarBotaoJogadora();

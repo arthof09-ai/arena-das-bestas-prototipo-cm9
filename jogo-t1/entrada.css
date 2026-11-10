@@ -206,3 +206,30 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   .ent-painel { left: 8%; width: 84%; top: 24%; max-height: 70%; }
   .ent-erro-entrada { left: 10%; width: 80%; bottom: calc(2.5% + 196px); }
 }
+
+/* ---------- FILME + LOOP (tranche t-entrada-filme): o filme de
+   entrada toca uma vez em ecrã inteiro sobre o palco; o loop é o
+   fundo animado eterno atrás das placas. Os vídeos vivem dentro de
+   #entrada, por cima do fundo pintado (que fica como poster/fallback)
+   e por baixo de toda a interface. Enquanto o filme toca
+   (.a-tocar-filme), a interface está invisível e sem toque; quando
+   ele acaba (.filme-fim), o loop faz crossfade por cima do último
+   fotograma e as placas aparecem. ---------- */
+.ent-video {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; background: #000;
+}
+#ent-video-loop { z-index: 0; opacity: 0; transition: opacity .9s ease; }
+#ent-video-filme { z-index: 1; opacity: 1; transition: opacity .9s ease; }
+#entrada.filme-fim #ent-video-loop { opacity: 1; }
+#entrada.filme-fim #ent-video-filme { opacity: 0; pointer-events: none; }
+.ent-placa, .ent-btn, .ent-ajuda, .ent-erro-entrada, .ent-painel {
+  z-index: 2; transition: opacity .6s ease;
+}
+#entrada.a-tocar-filme .ent-placa,
+#entrada.a-tocar-filme .ent-btn,
+#entrada.a-tocar-filme .ent-ajuda,
+#entrada.a-tocar-filme .ent-erro-entrada,
+#entrada.a-tocar-filme .ent-painel {
+  opacity: 0; pointer-events: none;
+}
