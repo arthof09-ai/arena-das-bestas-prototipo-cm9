@@ -6667,6 +6667,49 @@
       if (document.hidden) { ambLimparRelogioAutoRaio(); ambSincronizarRelogioExploracao(); }
       else { ambAgendarAutoRaio(); ambSincronizarRelogioExploracao(); }
     });
+  /* ---------- SOM-EM-FUNDO-INICIO — o ambiente cala-se fora do jogo ----------
+   * Defeito apanhado pelo Mestre ao vivo (11/11/2026 08:43): sair
+   * para a tela principal do telefone deixava a chuva a tocar cá
+   * fora, com a app aberta em segundo plano — o AudioContext
+   * ficava 'running' e os loops corriam. A guarda:
+   *   · ao ESCONDER (visibilitychange para hidden, ou pagehide):
+   *     se o contexto estiver 'running', levanta a bandeira e
+   *     suspende — o relógio do contexto congela: os loops da
+   *     chuva param onde estão e um trovão a meio cala-se;
+   *   · ao VOLTAR (visible, ou pageshow de restauro): só com a
+   *     bandeira posta (a prova de que estava a tocar — só se
+   *     suspende um contexto 'running'), retoma com resume();
+   *   · o interruptor do jogador não é tocado: quem manda no
+   *     silêncio continua a ser o ganho master (som desligado =
+   *     master a 0, suspender/retomar não lhe mexe); contexto
+   *     por desbloquear ou já suspenso fica exactamente como
+   *     estava — voltar nunca arranca som que estava parado.
+   * (A trilha do título tem a guarda dela em entrada.js.)
+   * ------------------------------------------------------------------------- */
+  let ambSuspensoPorFundo = false;
+  function ambSomEsconder() {
+    const ctx = ambAudio.ctx;
+    if (ctx && ctx.state === 'running') {
+      ambSuspensoPorFundo = true;
+      try { const p = ctx.suspend(); if (p && p.catch) p.catch(() => {}); } catch (_) {}
+    }
+  }
+  function ambSomVoltar() {
+    if (!ambSuspensoPorFundo) return;
+    ambSuspensoPorFundo = false;
+    const ctx = ambAudio.ctx;
+    if (ctx && ctx.state === 'suspended') {
+      try { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); } catch (_) {}
+    }
+  }
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) ambSomEsconder(); else ambSomVoltar();
+    });
+    window.addEventListener('pagehide', ambSomEsconder);
+    window.addEventListener('pageshow', e => { if (e && e.persisted) ambSomVoltar(); });
+  }
+  /* ---------- SOM-EM-FUNDO-FIM ---------- */
   ambAgendarAutoRaio();
   ambSincronizarRelogioExploracao();
 

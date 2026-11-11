@@ -1033,6 +1033,67 @@
       }, 50);
     } catch (_) {}
   }
+
+  /* ---------- SOM-EM-FUNDO-INICIO — a trilha cala-se fora do jogo ----------
+   * Defeito apanhado pelo Mestre ao vivo (11/11/2026 08:43): sair
+   * para a tela principal do telefone deixava o som a tocar cá
+   * fora, com a app aberta em segundo plano. A guarda é só da
+   * trilha (os vídeos são mudos; o som da batalha tem a guarda
+   * dele em jogo.js):
+   *   · ao ESCONDER (visibilitychange para hidden, ou pagehide):
+   *     se a trilha estiver a tocar, pausa e levanta a bandeira —
+   *     a bandeira é a prova de que estava a tocar;
+   *   · ao VOLTAR (visible, ou pageshow de restauro): só com a
+   *     bandeira posta, retoma com play() do ponto onde estava
+   *     (pause não faz seek) — e só se o elemento ainda estiver
+   *     no documento: depois de entrar no jogo, pararMidiaEntrada
+   *     removeu-o e ele nunca pode ressuscitar;
+   *   · sem bandeira, voltar é no-op: trilha por iniciar (antes
+   *     do primeiro toque) ou já parada não arranca — a regra
+   *     «começa mudo, o primeiro toque repõe o som» fica intacta.
+   * --------------------------------------------------------------- */
+  var trilhaPausadaPorFundo = false;
+  var trilhaVolumeAntes = null;
+  function trilhaEsconder() {
+    try {
+      if (!trilha.paused && !trilha.ended) {
+        trilhaPausadaPorFundo = true;
+        trilhaVolumeAntes = trilha.volume;
+        trilha.pause();
+      }
+    } catch (_) {}
+  }
+  function trilhaVoltar() {
+    if (!trilhaPausadaPorFundo) return;
+    trilhaPausadaPorFundo = false;
+    try {
+      if (!document.contains(trilha)) return;
+      /* O 'playing' do retomar não pode re-arrancar a rampa de
+       * 4 s da abertura: o ouvinte da rampa (secção da trilha)
+       * cria um intervalo novo quando a anterior já acabou, e o
+       * volume cairía a zero ao voltar. Se neste 'playing'
+       * surgir um intervalo novo, ele morre aqui e o volume
+       * volta ao que estava quando a página escondeu; se a
+       * rampa original ainda correr, fica intocada. */
+      var rampaAntes = idRampaTrilha;
+      var vol = trilhaVolumeAntes;
+      trilhaVolumeAntes = null;
+      trilha.addEventListener('playing', function () {
+        try {
+          if (idRampaTrilha && idRampaTrilha !== rampaAntes) { clearInterval(idRampaTrilha); idRampaTrilha = null; }
+          if (vol !== null) trilha.volume = vol;
+        } catch (_) {}
+      }, { once: true });
+      var p = trilha.play();
+      if (p && p.catch) p.catch(function () {});
+    } catch (_) {}
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) trilhaEsconder(); else trilhaVoltar();
+  });
+  window.addEventListener('pagehide', trilhaEsconder);
+  window.addEventListener('pageshow', function (e) { if (e && e.persisted) trilhaVoltar(); });
+  /* ---------- SOM-EM-FUNDO-FIM ---------- */
   /* ============ FILME + LOOP + TRILHA — fim da secção ============ */
 
   /* ================================================================
