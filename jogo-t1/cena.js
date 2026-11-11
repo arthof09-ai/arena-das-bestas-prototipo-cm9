@@ -1173,7 +1173,7 @@
                 label.className = 'nome';
                 label.textContent = data.nome;
                 labels.appendChild(label);
-                const u = { id: data.id, nome: data.nome, x: data.x, z: data.y, altitude: data.altitude ?? 0, vivo: data.vivo, root, pivot, label, size: data.alturaMetros, queue: [], step: null, clips: { idle: data.animacoes?.idle, andar: data.animacoes?.andar, ataque:data.animacoes?.ataque, reacao:data.animacoes?.reacao }, animations: [], removed: false, model };
+                const u = { id: data.id, nome: data.nome, x: data.x, z: data.y, altitude: data.altitude ?? 0, vivo: data.vivo, root, pivot, label, size: data.alturaMetros, queue: [], step: null, clips: { idle: data.animacoes?.idle, andar: data.animacoes?.andar, ataque:data.animacoes?.ataque, reacao:data.animacoes?.reacao }, animations: [], removed: false, oculto: false, model };
                 const tint = [0x87b4b0, 0xe5bb74, 0xb98b9d, 0xb5c3ce, 0xb7b77c][units.size % 5];
                 u.ring = ring(.56, tint);
                 u.contact = new T.Mesh(new T.CircleGeometry(.5, 24), material(0x080c12, .3));
@@ -1455,6 +1455,8 @@
             function hit(clientX, clientY) {
                 const rect = renderer.domElement.getBoundingClientRect(), sx = clientX - rect.left, sy = clientY - rect.top, hits = [];
                 units.forEach(u => {
+                    if (u.oculto)
+                        return;
                     const b = unitRect(u);
                     if (b && sx >= b.left && sx <= b.right && sy >= b.top && sy <= b.bottom)
                         hits.push({ id: u.id, distance: camaraActiva().position.distanceTo(u.root.position) });
@@ -1529,6 +1531,7 @@
                     u.tether.position.set(x, ground + .04, z);
                     u.tether.scale.y = Math.max(0, alt);
                     u.tether.visible = alt > .3;
+                    if (u.oculto) { u.ring.visible = u.contact.visible = u.tether.visible = false; }
                 });
                 world.update(now / 1000);
                 if (dirty && now - shadowAt > 100) {
@@ -1570,8 +1573,9 @@
                 ambTick(now);
                 renderer.render(scene, camaraActiva());
                 const boxes = [];
-                const bodies = [...units.values()].map(u => unitRect(u)).filter(Boolean);
+                const bodies = [...units.values()].filter(u => !u.oculto).map(u => unitRect(u)).filter(Boolean);
                 for (const u of [...units.values()].sort((a, b) => (b.id === selected) - (a.id === selected))) {
+                    if (u.oculto) { u.label.hidden = true; continue; }
                     const p = screen(u.root.position.clone().add(new T.Vector3(0, u.vivo ? u.size + .18 : .55, 0))), hw = Math.min(120, u.nome.length * 3.2 + 10), candidates = [];
                     for (const dx of [0, -55, 55, -95, 95])
                         for (const dy of [0, -28, 28, -56, 56])
@@ -1607,8 +1611,96 @@
             renderer.domElement.addEventListener('webglcontextlost', contextLost);
             setQualidade(options.qualidade || 'alta');
             raf = requestAnimationFrame(animate);
+            /* ---------- MODOS DE VISÃO (integração): verbos aditivos ----------
+               Porta dos verbos da página de referência dos modos de
+               imersão (construcao-modos), sem os adereços de ensaio:
+               oculto por figura (os 5 objectos), véus por casa e os
+               fantasmas da lembrança. Nada aqui decide — quem manda é
+               a casca (jogo.js), pela secção «Visão» do Mestre. */
+            const veilLayer = new T.Group();
+            scene.add(veilLayer);
+            function setCamadas(defs) {
+                release(veilLayer);
+                veilLayer.clear();
+                if (!defs)
+                    return;
+                for (const def of Object.values(defs)) {
+                    const vertices = [];
+                    for (const p of def.cells || []) {
+                        try { valid(p); } catch { continue; }
+                        const x = wx(p.x), z = wz(p.z), s = CELL * .485, y = world.height(x, z) + .06, a = [x - s, y, z - s], b = [x + s, y, z - s], c = [x + s, y, z + s], d = [x - s, y, z + s];
+                        vertices.push(...a, ...d, ...b, ...b, ...d, ...c);
+                    }
+                    if (vertices.length)
+                        veilLayer.add(new T.Mesh(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(vertices, 3)), material(def.cor, def.opacidade)));
+                }
+                renderer.shadowMap.needsUpdate = true;
+            }
+            function setOculto(id, valor) {
+                const u = requireUnit(id);
+                u.oculto = !!valor;
+                u.root.visible = !u.oculto;
+                u.ring.visible = !u.oculto;
+                u.contact.visible = !u.oculto;
+                if (u.oculto) {
+                    u.tether.visible = false;
+                    u.label.hidden = true;
+                }
+                renderer.shadowMap.needsUpdate = true;
+            }
+            const ghostMat = new T.MeshBasicMaterial({ color: 0x9aa7b4, transparent: true, opacity: .45, depthWrite: false });
+            const fantasmas = new Map();
+            function addFantasma(chaveF, idOrigem, x, z, frenteRad) {
+                valid({ x, z });
+                const origem = requireUnit(idOrigem);
+                if (fantasmas.has(chaveF))
+                    removeFantasma(chaveF);
+                origem.pivot.updateWorldMatrix(true, true);
+                const inv = new T.Matrix4().copy(origem.pivot.matrixWorld).invert(), tmp = new T.Vector3();
+                const grupo = new T.Group();
+                origem.pivot.traverse(o => {
+                    if (!o.isMesh)
+                        return;
+                    let g;
+                    if (o.isSkinnedMesh) {
+                        o.skeleton.update();
+                        const pos = o.geometry.attributes.position, arr = new Float32Array(pos.count * 3);
+                        for (let i = 0; i < pos.count; i++) {
+                            tmp.fromBufferAttribute(pos, i);
+                            o.boneTransform(i, tmp);
+                            arr[i * 3] = tmp.x; arr[i * 3 + 1] = tmp.y; arr[i * 3 + 2] = tmp.z;
+                        }
+                        g = new T.BufferGeometry();
+                        g.setAttribute('position', new T.BufferAttribute(arr, 3));
+                        if (o.geometry.index)
+                            g.setIndex(o.geometry.index.clone());
+                    }
+                    else
+                        g = o.geometry.clone();
+                    const m = new T.Mesh(g, ghostMat);
+                    m.applyMatrix4(new T.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+                    grupo.add(m);
+                });
+                grupo.position.set(wx(x), world.height(wx(x), wz(z)) + origem.altitude, wz(z));
+                grupo.rotation.y = frenteRad || 0;
+                scene.add(grupo);
+                fantasmas.set(chaveF, { grupo, x, z });
+                return true;
+            }
+            function removeFantasma(chaveF) {
+                const f = fantasmas.get(chaveF);
+                if (!f)
+                    return false;
+                scene.remove(f.grupo);
+                f.grupo.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+                fantasmas.delete(chaveF);
+                return true;
+            }
+            function limparFantasmas() {
+                [...fantasmas.keys()].forEach(removeFantasma);
+            }
             const ready = Promise.all((options.units || []).map(addUnit));
-            return Object.freeze({ ready, addUnit, removeUnit, move, select, apresentarAtaque, setCamera, setZoom, setQualidade, showMovement, livreOlhar(dx, dy) {
+            return Object.freeze({ ready, addUnit, removeUnit, move, select, apresentarAtaque, setCamera, setZoom, setQualidade, showMovement, setOculto, estaOculto: id => !!requireUnit(id).oculto, setCamadas, limparCamadas: () => setCamadas(null), addFantasma, removeFantasma, limparFantasmas, listaFantasmas: () => [...fantasmas.entries()].map(([chave, f]) => ({ chave, x: f.x, z: f.z })), livreOlhar(dx, dy) {
                     /* O arrasto de olhar da sala: 0,0045 rad/px, pitch preso
                        a ±1,45. Fora do modo 'livre', é inerte. */
                     if (mode !== 'livre') return;

@@ -68,7 +68,7 @@
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
-    'visual.js', 'levelup.js', 'vlab-completo.js', 'jogo.js'
+    'visao.js', 'visual.js', 'levelup.js', 'vlab-completo.js', 'jogo.js'
   ];
 
   /* ---------- utilidades ---------- */

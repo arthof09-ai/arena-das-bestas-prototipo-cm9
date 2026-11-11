@@ -403,6 +403,97 @@
   /* Arranque: o ambiente inicial aplica-se JÁ (imediato), sem transição. */
   ambAplicarVista(ambientePartida, true);
   ambAplicarTremulacao();
+  /* ════════════════════════════════════════════════════════════════════
+     MODOS DE VISÃO/IMERSÃO — ESTADO DA PARTIDA (integração no jogo vivo)
+     Desenho governante: o estudo ESTUDO-VISAO-IMERSAO-v2 (congelado
+     08/11/2026) + a adenda das formas e da lembrança + a sentença da
+     bancada com as emendas EM-MODOS-01..04 (~/workspace/visao-imersao/).
+     A calculadora do campo é o módulo visao.js — a porta exacta e
+     provada da página de referência (267 verificações). Quem escolhe
+     o modo é o MESTRE, no ⚙; os modos regem a vista de cada JOGADORA.
+     Invariante A6: a vista do Mestre é SEMPRE o jogo normal — nesta
+     vista, nenhuma verba da visão é invocada (visaoAplicar devolve
+     sem tocar em nada). Padrão ao nascer: Total — o comportamento
+     de hoje; nada muda para ninguém até o Mestre trocar de modo.
+     ════════════════════════════════════════════════════════════════════ */
+  const VISAO_MODOS = ['zero', 'parcial', 'total', 'ultra'];
+  const VISAO_MODO_NOMES = { zero: 'Zero', parcial: 'Parcial', total: 'Total', ultra: 'Ultra' };
+  /* Formas do desenho: nome da casa → código da calculadora
+     (larga = M3b, 180° + anel · maqueta = M2, 120° + anel ·
+     cone = M1-120, cone puro de 120°). */
+  const VISAO_FORMAS = { larga: 'M3b', maqueta: 'M2', cone: 'M1-120' };
+  const VISAO_FORMA_NOMES = { larga: 'Larga — 180° + anel', maqueta: 'Maqueta — 120° + anel', cone: 'Cone puro — 120°' };
+  const VISAO_RAD = { N: Math.PI, S: 0, E: Math.PI / 2, W: -Math.PI / 2 };
+  const VISAO_PRAZOS = ['off', '1', '2'];
+  /* Conjunto a ocultar: as figuras adversárias do elenco actual — o
+     mesmo trio da página de referência. A figura da jogadora deste
+     aparelho (PROPRIA) nunca se oculta a si própria. */
+  const VISAO_INIMIGOS = ['orc', 'capanga', 'lobo'];
+  /* SENSOR (percepção base — §5.1 do estudo v2): os valores são os
+     de ENSAIO da página de referência (Percepção Base dela 60 contra
+     Furtividade Base do Capanga 50), DECLARADOS: as fichas deste
+     aparelho ainda não têm campos de Percepção/Furtividade Base —
+     quando os tiverem, o sensor passa a lê-los. O alvo do ensaio é
+     o Capanga. O sensor nunca cria, move nem apaga lembranças:
+     sente o LADO (sectores de 90°), nunca a casa. */
+  const VISAO_SENSOR = { pb: 60, fb: 50, alvo: 'capanga' };
+  function visaoDominioValido(v) {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+    const chaves = Object.keys(v);
+    if (chaves.length !== 3 || !chaves.includes('modo') || !chaves.includes('forma') || !chaves.includes('prazo')) return false;
+    if (!VISAO_MODOS.includes(v.modo)) return false;
+    if (!Object.prototype.hasOwnProperty.call(VISAO_FORMAS, v.forma)) return false;
+    if (!VISAO_PRAZOS.includes(v.prazo)) return false;
+    return true;
+  }
+  function visaoLerPreferencia() {
+    if (!MODO_MESTRE) return null;
+    try {
+      const bruto = localStorage.getItem('hudt1-visao');
+      if (!bruto) return null;
+      const j = JSON.parse(bruto);
+      if (!j || typeof j !== 'object') return null;
+      if (!VISAO_MODOS.includes(j.modo)) return null;
+      if (!Object.prototype.hasOwnProperty.call(VISAO_FORMAS, j.forma)) return null;
+      return { modo: j.modo, forma: j.forma };
+    } catch (_) { return null; }
+  }
+  function visaoGravarPreferencia() {
+    if (!MODO_MESTRE) return;
+    try { localStorage.setItem('hudt1-visao', JSON.stringify({ modo: visaoPartida.modo, forma: visaoPartida.forma })); } catch (_) {}
+  }
+  /* Estado da partida. Nasce Total/Maqueta (o comportamento de
+     hoje); a preferência gravada do Mestre neste aparelho sobrepõe
+     o modo e a forma, como no Ambiente. O prazo da lembrança mora
+     na sua chave histórica (hudt1-lembranca-prazo, a da página de
+     referência) e lê-se em qualquer papel — é preferência do
+     aparelho onde a vista corre. */
+  let visaoPartida = { modo: 'total', forma: 'maqueta', prazo: 'off' };
+  try {
+    const p = localStorage.getItem('hudt1-lembranca-prazo');
+    if (VISAO_PRAZOS.includes(p)) visaoPartida.prazo = p;
+  } catch (_) {}
+  {
+    const prefVisao = visaoLerPreferencia();
+    if (prefVisao) { visaoPartida.modo = prefVisao.modo; visaoPartida.forma = prefVisao.forma; }
+  }
+  /* Assentar = a ÚNICA porta de mudança do estado da visão: valida
+     o domínio, grava as preferências, sincroniza o ⚙ e reaplica a
+     vista. Com limparMemoria, a memória da Ultra nasce vazia (é o
+     que fazem os saves e o «voltar» do Supervisor: uma batalha
+     carregada não herda lembranças de outra). Devolve false sem
+     tocar em nada se o estado for inválido. */
+  function visaoAssentar(novo, opcoes) {
+    const ops = opcoes || {};
+    if (!visaoDominioValido(novo)) return false;
+    visaoPartida = { modo: novo.modo, forma: novo.forma, prazo: novo.prazo };
+    try { localStorage.setItem('hudt1-lembranca-prazo', visaoPartida.prazo); } catch (_) {}
+    visaoGravarPreferencia();
+    visaoSincronizarPainel();
+    if (ops.limparMemoria) visaoLimparMemoria();
+    visaoAplicar();
+    return true;
+  }
 
   /* ---------- Sons do ambiente (WebAudio) ----------
    * Contexto PREGUIÇOSO: nasce só no primeiro gesto real
@@ -5262,6 +5353,10 @@
       /* Tranche ESCALA: a escala é estado da PARTIDA — entra no
          snapshot (o «voltar» repõe a escala daquele turno). */
       escala: CASA_M,
+      /* Tranche VISÃO: o modo/forma/prazo da visão são estado da
+         PARTIDA — entram no snapshot (o «voltar» repõe a visão
+         daquele turno; a memória da Ultra não viaja — nasce vazia). */
+      visao: { ...visaoPartida },
       /* RAIO E FOGO (desenho 05/11): casas a arder e figuras
          A Arder são estado da BATALHA — entram no snapshot do
          Supervisor como o ambiente. NÃO entram nos ficheiros de
@@ -5386,6 +5481,12 @@
        (declarado — sem default inventado por cima dela). */
     if (typeof snap.escala === 'number' && ESCALAS_CASA_M.includes(snap.escala))
       escalaAssentar(snap.escala, { silencioso: true });
+    /* Tranche VISÃO: a visão do snapshot volta com o resto, em
+       silêncio, com a memória da Ultra limpa (a batalha restaurada
+       não herda lembranças). Snapshot antigo sem o campo mantém a
+       visão actual (declarado — como a escala). */
+    if (snap.visao && visaoDominioValido(snap.visao))
+      visaoAssentar({ ...snap.visao }, { silencioso: true, limparMemoria: true });
     /* RAIO E FOGO: o fogo da batalha volta com o resto do snapshot
        (snapshot sem o campo — anterior à tranche — apaga tudo). */
     ambRestaurarFogo(snap.raioFogo);
@@ -5586,7 +5687,7 @@
        régua (save antigo sem ele é válido — mantém a escala actual
        no aplicar). Sem esta excepção, TODO o save com escala era
        rejeitado aqui, antes de qualquer outra conferência. */
-    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala')) return INV;
+    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala' && k !== 'visao')) return INV;
     const ids = ELENCO.map(u => u.id);
     const inteiro = n => Number.isInteger(n);
     const finito = n => typeof n === 'number' && Number.isFinite(n);
@@ -5699,6 +5800,9 @@
        três preços oficiais {1 · 1,5 · 2}; fora do domínio é
        SAVE_ESTADO_INVALIDO (erro nomeado), nunca clamp silencioso. */
     if ('escala' in e && !ESCALAS_CASA_M.includes(e.escala)) return INV;
+    /* VISÃO: presente, tem de trazer o domínio inteiro
+       {modo, forma, prazo} — sem chaves estranhas. */
+    if ('visao' in e && !visaoDominioValido(e.visao)) return INV;
     /* PORTA C-23: o bloco do motor confere-se com a mesma régua. */
     return validarVlabParaAplicar(e.vlab);
   }
@@ -5766,7 +5870,10 @@
         ambienteCurva: 'v1',
         /* Tranche ESCALA: a escala da partida entra na captura —
            carregar repõe-na (a escala é estado da partida). */
-        escala: CASA_M
+        escala: CASA_M,
+        /* Tranche VISÃO: a visão da partida entra na captura —
+           carregar repõe-na (a memória da Ultra não viaja). */
+        visao: { ...visaoPartida }
       };
     },
     aplicar(e) {
@@ -5812,6 +5919,7 @@
           },
           ambiente: { ...ambientePartida },   // AMBIENTE: o pré-estado cobre também o ambiente (atomicidade S-CONF-02)
           escala: CASA_M,   // ESCALA: idem — o pré-estado cobre também a escala
+          visao: { ...visaoPartida },   // VISÃO: idem — o pré-estado cobre também a visão
           reaccoes: { ...REACCOES_DECLARADAS },
           mortePropriaAdjudicada, partidaPendente, correrUsado,
           desvincular: opcoesMovimento.desvincular,
@@ -5929,6 +6037,16 @@
            campo mantém a escala actual — declarado: não se inventa
            um default por cima da definição do Mestre. */
         if ('escala' in e) escalaAssentar(e.escala, { silencioso: true });
+        /* Tranche VISÃO: a visão do save assenta com o resto, com a
+           memória da Ultra limpa. Save antigo SEM o campo: modo
+           Total declarado no registo (o comportamento de hoje); a
+           forma e o prazo correntes mantêm-se — como na escala, não
+           se inventa um default por cima da definição dele. */
+        if ('visao' in e) visaoAssentar({ ...e.visao }, { silencioso: true, limparMemoria: true });
+        else {
+          visaoAssentar({ ...visaoPartida, modo: 'total' }, { silencioso: true, limparMemoria: true });
+          supRegistar('visao', { origem: 'save', razao: 'Save sem visão — modo Total declarado' });
+        }
         /* EM-AV2-07: o fogo NÃO entra nos ficheiros de save — um
            load em sessão apaga os fogos da batalha actual, como a
            L10 anuncia (antes sobreviviam ao load, por desvio:
@@ -5985,6 +6103,7 @@
             /* ESCALA: a aplicação falhada repõe também a escala do
                pré-estado — aplicação que não aconteceu não muda o preço. */
             try { escalaAssentar(preSave.escala, { silencioso: true }); } catch (__) {}
+            if (preSave.visao) try { visaoAssentar({ ...preSave.visao }, { silencioso: true, limparMemoria: true }); } catch (__) {}
             /* EM-AV2-07: aplicação que não aconteceu também não
                apaga fogos — repõe-se o fogo do pré-estado. */
             if (preSave.raioFogo) try { ambRestaurarFogo(preSave.raioFogo); } catch (__) {}
@@ -7799,5 +7918,330 @@
       ? 'Erro nos dados das figuras — a batalha não começou.'
       : 'Não foi possível preparar as figuras. A batalha não começou. Aperte Tentar de novo.';
     renderAcoes(); say('');
+  });
+  /* ════════════════════════════════════════════════════════════════════
+     MODOS DE VISÃO/IMERSÃO — APLICAÇÃO À VISTA (integração no jogo vivo)
+     Porta fiel da aplicação da página de referência (construcao-modos,
+     blocos 1–2), com as adaptações declaradas no relatório da tranche:
+       · o papel vem da entrada (MODO_MESTRE), não de um comutador de
+         ensaio: nesta vista de Mestre, visaoAplicar devolve sem tocar
+         em nada (A6 na forma mais forte — o ramo «mestre» da
+         referência desfazia ocultações de um painel que aqui não
+         existe, porque o papel nunca muda com a página aberta);
+       · o olhar deriva da FRENTE REAL da figura (getStats), quantizado
+         ao cardinal mais próximo pela correspondência da referência
+         (VISAO_RAD) — a referência rodava a figura por um painel; aqui
+         ninguém escreve a frente, só se lê;
+       · obstáculos: visaoOpacos() devolve [] — a arena viva não tem
+         registo de cobertura total em código (as pedras/ruínas são
+         decoração fora do registo); o parâmetro da calculadora fica
+         pronto para o registo futuro. Na referência, os obstáculos
+         eram cenário DECLARADO do ensaio (parede + árvore);
+       · o sensor corre com os valores de ENSAIO da referência
+         (VISAO_SENSOR — ver o bloco de estado);
+       · a memória da Ultra morre também no fim da batalha (adenda):
+         a vigia discreta detecta a transição e limpa os três registos.
+     ════════════════════════════════════════════════════════════════════ */
+  const visaoMemoria = { jaVisto: new Set(), lembrancas: new Map(), ultimaVisao: {} };
+  const visaoCache = new Map();
+  let visaoRelogioS = 0, visaoDesvioS = 0, visaoUltimoTick = performance.now();
+  let visaoUltimoSnapshot = '', visaoMs = 0, visaoCasasVistas = 70, visaoEraFim = false;
+  const visaoAgoraS = () => visaoRelogioS + visaoDesvioS;
+
+  /* ---------- o sensor: elemento e estilo (só na vista da jogadora) ---------- */
+  let visaoSensorEl = null;
+  if (!MODO_MESTRE) {
+    const visaoEstiloSensor = document.createElement('style');
+    visaoEstiloSensor.textContent =
+      '#sensor-visao{position:fixed;z-index:30;width:26px;height:26px;display:flex;align-items:center;justify-content:center;' +
+      'color:#ffb52e;font-size:19px;text-shadow:0 0 6px rgba(255,160,20,.8);animation:sensorPisca 1.6s ease-in-out infinite;pointer-events:none}' +
+      '#sensor-visao[hidden]{display:none}' +
+      '@keyframes sensorPisca{0%,100%{opacity:.25}50%{opacity:1}}';
+    document.head.appendChild(visaoEstiloSensor);
+    visaoSensorEl = document.createElement('div');
+    visaoSensorEl.id = 'sensor-visao';
+    visaoSensorEl.hidden = true;
+    visaoSensorEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(visaoSensorEl);
+  }
+
+  /* ---------- a função de visão (com cache por evento) ---------- */
+  function visaoOpacos() { return []; }   /* DECLARADO: sem registo de cobertura na arena viva */
+  function visaoFrenteGraus(id) {
+    const m = (view.getStats().models || []).find(m => m.id === id);
+    return m ? m.frente : 0;
+  }
+  function visaoFrenteRad(id) { return visaoFrenteGraus(id) * Math.PI / 180; }
+  /* O olhar dela = o cardinal mais próximo da frente real da figura
+     (a correspondência VISAO_RAD da referência: N=180° · E=90° ·
+     S=0° · W=270° em pivot.rotation.y). */
+  function visaoOlharDerivado() {
+    const graus = ((visaoFrenteGraus(PROPRIA) % 360) + 360) % 360;
+    let melhor = 'S', melhorDist = 999;
+    for (const [g, nome] of [[0, 'S'], [90, 'E'], [180, 'N'], [270, 'W']]) {
+      const d = Math.min(Math.abs(graus - g), 360 - Math.abs(graus - g));
+      if (d < melhorDist) { melhorDist = d; melhor = nome; }
+    }
+    return melhor;
+  }
+  function visaoCampo() {
+    const ong = unidade(PROPRIA);
+    const olhar = visaoOlharDerivado();
+    const chaveCache = [ong.posicao.x, ong.posicao.y, olhar, visaoPartida.forma].join('|');
+    if (visaoCache.has(chaveCache)) return visaoCache.get(chaveCache);
+    const t0 = performance.now();
+    const s = window.Visao.campo(AREA.cols, AREA.rows, [ong.posicao.x, ong.posicao.y], olhar, visaoOpacos(), 'V2', VISAO_FORMAS[visaoPartida.forma]);
+    visaoMs = performance.now() - t0;
+    visaoCache.set(chaveCache, s);
+    return s;
+  }
+  function visaoLimparMemoria() {
+    visaoMemoria.jaVisto.clear();
+    visaoMemoria.lembrancas.clear();
+    visaoMemoria.ultimaVisao = {};
+    if (!MODO_MESTRE) view.limparFantasmas();
+  }
+
+  /* ---------- a lembrança das figuras (só Ultra — adenda B) ---------- */
+  function visaoLembrancasActualizar(campoVisto) {
+    const agora = visaoAgoraS();
+    for (const id of VISAO_INIMIGOS) {
+      const u = unidade(id);
+      if (!u) continue;
+      const chaveCasa = u.posicao.x + ',' + u.posicao.y;
+      const lem = visaoMemoria.lembrancas.get(id);
+      if (campoVisto.has(chaveCasa)) {
+        /* presença (viva ou caída à vista dela): não há lembrança —
+           a última visão fica registada e o relógio reinicia */
+        if (lem) { view.removeFantasma('lem-' + id); visaoMemoria.lembrancas.delete(id); }
+        visaoMemoria.ultimaVisao[id] = { x: u.posicao.x, y: u.posicao.y, frenteRad: visaoFrenteRad(id), em: agora };
+        continue;
+      }
+      const ult = visaoMemoria.ultimaVisao[id];
+      if (!ult) continue;
+      if (campoVisto.has(ult.x + ',' + ult.y)) {
+        /* morte por contradição: ela olha para a casa lembrada e ele
+           não está lá — a visão actual sobrepõe-se à crença */
+        if (lem) view.removeFantasma('lem-' + id);
+        visaoMemoria.lembrancas.delete(id);
+        delete visaoMemoria.ultimaVisao[id];
+        continue;
+      }
+      if (!lem || lem.x !== ult.x || lem.y !== ult.y) {
+        view.addFantasma('lem-' + id, id, ult.x, ult.y, ult.frenteRad);
+        visaoMemoria.lembrancas.set(id, { x: ult.x, y: ult.y });
+      }
+    }
+  }
+
+  /* ---------- o sensor (percepção base — §5.1 do estudo) ---------- */
+  function visaoSensorActualizar(campoVisto, olhar) {
+    if (!visaoSensorEl) return;
+    let mostra = false, seta = '';
+    if (visaoPartida.modo !== 'zero' && campoVisto) {
+      const ong = unidade(PROPRIA), alvo = unidade(VISAO_SENSOR.alvo);
+      if (ong && alvo && alvo.vivo) {
+        const vx = alvo.posicao.x - ong.posicao.x, vy = alvo.posicao.y - ong.posicao.y;
+        const dentro = Math.hypot(vx, vy) <= 6;               // círculo de 9 m
+        const visto = campoVisto.has(alvo.posicao.x + ',' + alvo.posicao.y);
+        if (dentro && VISAO_SENSOR.fb < VISAO_SENSOR.pb && !visto) {   // sentir ≠ ver
+          mostra = true;
+          const f = window.Visao.FRENTES[olhar];
+          const frente = vx * f[0] + vy * f[1];
+          const lado = f[0] * vy - f[1] * vx;                 // >0 = direita do corpo dela
+          if (Math.abs(frente) >= Math.abs(lado)) seta = frente >= 0 ? '▲' : '▼';
+          else seta = lado > 0 ? '▶' : '◀';
+        }
+      }
+    }
+    visaoSensorEl.hidden = !mostra;
+    if (mostra) {
+      visaoSensorEl.textContent = seta;
+      const r = chipEl.getBoundingClientRect();               // mora à ESQUERDA da plaquinha
+      visaoSensorEl.style.left = Math.max(0, r.left - 8) + 'px';
+      visaoSensorEl.style.top = (r.top + r.height / 2 - 13) + 'px';
+    }
+  }
+
+  /* ---------- aplicar o modo à vista ---------- */
+  function visaoAplicar() {
+    if (MODO_MESTRE) return;   /* A6: a vista do Mestre é o jogo normal — nenhuma verba da visão corre aqui */
+    const ong = unidade(PROPRIA);
+    if (!ong || !window.Visao) return;
+    const modo = visaoPartida.modo;
+    const olhar = visaoOlharDerivado();
+    const todas = [];
+    for (let y = 0; y < AREA.rows; y++) for (let x = 0; x < AREA.cols; x++) todas.push({ x, z: y });
+    if (modo === 'zero') {
+      for (const id of VISAO_INIMIGOS) if (unidade(id)) view.setOculto(id, false);
+      view.setCamadas(null);
+      view.limparFantasmas();
+      visaoMemoria.lembrancas.clear();   /* EM-MODOS-01: o registo limpa-se como nos modos parcial/total */
+      visaoCasasVistas = AREA.cols * AREA.rows;
+      visaoSensorActualizar(new Set(todas.map(c => c.x + ',' + c.z)), olhar);
+      return;
+    }
+    const campoVisto = visaoCampo();
+    visaoCasasVistas = campoVisto.size;
+    for (const id of VISAO_INIMIGOS) {
+      const u = unidade(id);
+      if (u) view.setOculto(id, !campoVisto.has(u.posicao.x + ',' + u.posicao.y));
+    }
+    const naoVistas = todas.filter(c => !campoVisto.has(c.x + ',' + c.z));
+    if (modo === 'parcial') {
+      view.setCamadas(null);
+      view.limparFantasmas();
+    } else if (modo === 'total') {
+      view.setCamadas({ total: { cells: naoVistas, cor: 0x0b0e14, opacidade: 0.55 } });
+      view.limparFantasmas();
+    } else { /* ultra */
+      for (const k of campoVisto) visaoMemoria.jaVisto.add(k);
+      const nunca = naoVistas.filter(c => !visaoMemoria.jaVisto.has(c.x + ',' + c.z));
+      const lembradas = naoVistas.filter(c => visaoMemoria.jaVisto.has(c.x + ',' + c.z));
+      view.setCamadas({
+        nunca: { cells: nunca, cor: 0x05070a, opacidade: 0.92 },
+        memoria: { cells: lembradas, cor: 0x8b93a1, opacidade: 0.30 }
+      });
+      visaoLembrancasActualizar(campoVisto);
+    }
+    if (modo !== 'ultra') visaoMemoria.lembrancas.clear();
+    visaoSensorActualizar(campoVisto, olhar);
+  }
+
+  /* ---------- o ⚙ do Mestre: secção «Visão» (só nesta vista) ---------- */
+  const visaoUI = { botoesModo: [], botoesForma: [], botoesPrazo: [], estadoEl: null };
+  function visaoSincronizarPainel() {
+    const e = visaoPartida;
+    if (visaoUI.estadoEl)
+      visaoUI.estadoEl.textContent = 'Modo ' + VISAO_MODO_NOMES[e.modo] + ' · ' + VISAO_FORMA_NOMES[e.forma] +
+        ' · lembrança ' + (e.prazo === 'off' ? 'sem prazo' : 'com prazo de ' + e.prazo + ' min');
+    for (const reg of visaoUI.botoesModo) reg.b.classList.toggle('on', e.modo === reg.v);
+    for (const reg of visaoUI.botoesForma) reg.b.classList.toggle('on', e.forma === reg.v);
+    for (const reg of visaoUI.botoesPrazo) reg.b.classList.toggle('on', e.prazo === reg.v);
+  }
+  if (MODO_MESTRE) {
+    const tituloVisao = document.createElement('h3');
+    tituloVisao.textContent = 'Visão';
+    cfgEl.insertBefore(tituloVisao, $('stats'));
+    const estadoVisaoEl = document.createElement('div');
+    estadoVisaoEl.id = 'visao-estado';
+    estadoVisaoEl.className = 'amb-estado';
+    cfgEl.insertBefore(estadoVisaoEl, $('stats'));
+    visaoUI.estadoEl = estadoVisaoEl;
+    const visaoLinha = (rotulo, aria, opcoes, registro, chave) => {
+      const linha = document.createElement('div');
+      linha.className = 'cfgrow vel';
+      const rot = document.createElement('span');
+      rot.className = 'cl';
+      rot.textContent = rotulo;
+      const grupo = document.createElement('div');
+      grupo.className = 'seg';
+      grupo.setAttribute('role', 'group');
+      grupo.setAttribute('aria-label', aria);
+      for (const [v, nome] of opcoes) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = nome;
+        b.addEventListener('click', () => {
+          const prox = { ...visaoPartida };
+          prox[chave] = v;
+          if (visaoAssentar(prox, {}))
+            say('Visão da partida: modo ' + VISAO_MODO_NOMES[visaoPartida.modo] + ', ' + VISAO_FORMA_NOMES[visaoPartida.forma] +
+              ', lembrança ' + (visaoPartida.prazo === 'off' ? 'sem prazo.' : 'com prazo de ' + visaoPartida.prazo + ' min.'));
+        });
+        grupo.appendChild(b);
+        registro.push({ v, b });
+      }
+      linha.appendChild(rot);
+      linha.appendChild(grupo);
+      cfgEl.insertBefore(linha, $('stats'));
+    };
+    visaoLinha('Modo', 'Modo de visão das jogadoras',
+      [['zero', 'Zero'], ['parcial', 'Parcial'], ['total', 'Total'], ['ultra', 'Ultra']], visaoUI.botoesModo, 'modo');
+    visaoLinha('Forma', 'Forma do campo de visão',
+      [['larga', 'Larga 180°+anel'], ['maqueta', 'Maqueta 120°+anel'], ['cone', 'Cone puro 120°']], visaoUI.botoesForma, 'forma');
+    visaoLinha('Lembrança', 'Prazo da lembrança (só Ultra)',
+      [['off', 'Desligado'], ['1', '1 min'], ['2', '2 min']], visaoUI.botoesPrazo, 'prazo');
+    visaoSincronizarPainel();
+  }
+
+  /* ---------- eventos discretos + a vigia da lembrança ---------- */
+  view.on('moveend', () => { visaoAplicar(); });
+  setInterval(() => {
+    if (MODO_MESTRE) return;
+    const agoraMs = performance.now();
+    visaoRelogioS += (agoraMs - visaoUltimoTick) / 1000;
+    visaoUltimoTick = agoraMs;
+    /* o prazo: ligado, o fantasma expira ao fim do tempo sem ser visto
+       (conta da ÚLTIMA VISÃO registada — porta exacta da referência) */
+    if (visaoPartida.prazo !== 'off' && visaoPartida.modo === 'ultra' && visaoMemoria.lembrancas.size) {
+      const limite = visaoPartida.prazo === '1' ? 60 : 120, agora = visaoAgoraS();
+      for (const id of [...visaoMemoria.lembrancas.keys()]) {
+        const ult = visaoMemoria.ultimaVisao[id];
+        if (ult && agora - ult.em > limite) {
+          view.removeFantasma('lem-' + id);
+          visaoMemoria.lembrancas.delete(id);
+          delete visaoMemoria.ultimaVisao[id];
+        }
+      }
+    }
+    /* a lembrança morre no fim da batalha (adenda do desenho) */
+    if (batalhaFim && !visaoEraFim) {
+      visaoEraFim = true;
+      visaoLimparMemoria();
+    } else if (!batalhaFim) visaoEraFim = false;
+    /* mudanças fora dos eventos (vezes da IA, rotações, o fim) — a
+       vigia é por fotografia discreta, nunca por fotograma */
+    const snap = ELENCO.map(e => {
+      const u = unidade(e.id);
+      return u ? e.id + ':' + u.posicao.x + ',' + u.posicao.y + ':' + (u.vivo ? 1 : 0) : e.id + ':?';
+    }).join('|') + '|f' + Math.round(visaoFrenteGraus(PROPRIA)) + '|fim' + (batalhaFim ? 1 : 0) +
+      '|' + visaoPartida.modo + '/' + visaoPartida.forma + '/' + visaoPartida.prazo;
+    if (snap !== visaoUltimoSnapshot) {
+      visaoUltimoSnapshot = snap;
+      visaoAplicar();
+    }
+  }, 400);
+
+  /* ---------- gancho de prova da bateria (não é mecânica) ---------- */
+  window.__visao = Object.freeze({
+    estado: () => ({
+      papel: MODO_MESTRE ? 'mestre' : 'jogadora',
+      modo: visaoPartida.modo, forma: visaoPartida.forma, prazo: visaoPartida.prazo,
+      olhar: MODO_MESTRE ? null : visaoOlharDerivado(),
+      casasVistas: visaoCasasVistas, ms: visaoMs,
+      fantasmas: view.listaFantasmas(),
+      memoriaCasas: visaoMemoria.jaVisto.size,
+      relogioS: visaoAgoraS(),
+      ocultos: MODO_MESTRE ? [] : VISAO_INIMIGOS.filter(id => view.estaOculto(id)),
+      sensorVisivel: visaoSensorEl ? !visaoSensorEl.hidden : false,
+      sensorSeta: visaoSensorEl ? visaoSensorEl.textContent : ''
+    }),
+    definir: (parcial) => {
+      const prox = { ...visaoPartida };
+      if (parcial && typeof parcial === 'object') {
+        if ('modo' in parcial) prox.modo = parcial.modo;
+        if ('forma' in parcial) prox.forma = parcial.forma;
+        if ('prazo' in parcial) prox.prazo = parcial.prazo;
+      }
+      return visaoAssentar(prox, {});
+    },
+    avancarSegundos: (s) => { visaoDesvioS += Number(s) || 0; },
+    campo: () => {
+      if (MODO_MESTRE || !window.Visao) return null;
+      const ong = unidade(PROPRIA);
+      if (!ong) return null;
+      return [...window.Visao.campo(AREA.cols, AREA.rows, [ong.posicao.x, ong.posicao.y], visaoOlharDerivado(), visaoOpacos(), 'V2', VISAO_FORMAS[visaoPartida.forma])];
+    }
+  });
+
+  /* ---------- arranque ---------- */
+  view.ready.then(() => {
+    visaoUltimoSnapshot = ELENCO.map(e => {
+      const u = unidade(e.id);
+      return u ? e.id + ':' + u.posicao.x + ',' + u.posicao.y + ':' + (u.vivo ? 1 : 0) : e.id + ':?';
+    }).join('|') + '|f' + Math.round(visaoFrenteGraus(PROPRIA)) + '|fim' + (batalhaFim ? 1 : 0) +
+      '|' + visaoPartida.modo + '/' + visaoPartida.forma + '/' + visaoPartida.prazo;
+    visaoAplicar();
   });
 })();
