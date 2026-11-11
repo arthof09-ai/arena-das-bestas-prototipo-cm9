@@ -8013,11 +8013,12 @@
          ao cardinal mais próximo pela correspondência da referência
          (VISAO_RAD) — a referência rodava a figura por um painel; aqui
          ninguém escreve a frente, só se lê;
-       · obstáculos: visaoOpacos() devolve [] — a arena viva não tem
-         registo de cobertura total em código (as pedras/ruínas são
-         decoração fora do registo); o parâmetro da calculadora fica
-         pronto para o registo futuro. Na referência, os obstáculos
-         eram cenário DECLARADO do ensaio (parede + árvore);
+       · obstáculos: visaoOpacos() devolve o registo de cobertura da
+         arena viva — as 4 casas centrais do anel da fogueira, tapa-vista
+         por palavra do Mestre (2026-11-11; DEFEITO-CIRCULO-PEDRAS §6-A);
+         as pedras/ruínas restantes são decoração fora do registo. Na
+         referência, os obstáculos eram cenário DECLARADO do ensaio
+         (parede + árvore);
        · o sensor corre com os valores de ENSAIO da referência
          (VISAO_SENSOR — ver o bloco de estado);
        · a memória da Ultra morre também no fim da batalha (adenda):
@@ -8047,7 +8048,16 @@
   }
 
   /* ---------- a função de visão (com cache por evento) ---------- */
-  function visaoOpacos() { return []; }   /* DECLARADO: sem registo de cobertura na arena viva */
+  /* Registo de cobertura da arena viva: as 4 casas centrais — (4,2),
+     (5,2), (4,3), (5,3) — onde assentam as 26 pedras do anel da fogueira
+     (mundo.js:86-89, raio 1,35–1,65 m à volta do (0,0)). O anel é
+     tapa-vista por palavra do Mestre (2026-11-11 11:46: «essa área na
+     teoria ela não deveria tá vendo não?») — defeito medido e correcção
+     custada em t-veu-suave/DEFEITO-CIRCULO-PEDRAS.md §6-A. As pedras e
+     ruínas restantes continuam decoração fora do registo. Resíduo
+     declarado: a LOS V2 permissiva vaza 1 casa longe do miolo em
+     geometrias a olhar E (fechar esse resíduo é a opção C, por decidir). */
+  function visaoOpacos() { return [[4, 2], [5, 2], [4, 3], [5, 3]]; }
   function visaoFrenteGraus(id) {
     const m = (view.getStats().models || []).find(m => m.id === id);
     return m ? m.frente : 0;
