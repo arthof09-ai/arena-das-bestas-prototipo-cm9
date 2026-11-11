@@ -1619,20 +1619,114 @@
                a casca (jogo.js), pela secção «Visão» do Mestre. */
             const veilLayer = new T.Group();
             scene.add(veilLayer);
+            /* ---------- VÉU SUAVE (tranche «fora os quadrados») ----------
+               Até à REF_61 o véu era um quad plano por casa: o mosaico de
+               quadrados duros que o Mestre reprovou a 2026-11-11 («tira
+               completamente a imersão»). Cada camada passa a ser UMA
+               folha contínua sobre a arena, com uma máscara em canvas à
+               escala da casa: branca nas casas da camada, desfocada
+               (caixa separável, 2 passagens, bordas presas) e re-mapeada
+               para o ponto de 50% ficar sobre a fronteira entre casas e
+               o interior escondido voltar à intensidade cheia. Os
+               conjuntos de casas, as cores e as opacidades são os de
+               sempre — quem decide é a casca; aqui só se desenha. */
+            const VEU_PX = 16;        /* px de máscara por casa */
+            const VEU_RAIO = 6;       /* raio do desfoque ≈ 0,38 casa */
+            function veuDesfoque(src, w, h) {
+                /* uma passagem de caixa separável sobre valores 0..255,
+                   com as bordas presas (índices apertados à margem) */
+                const r = VEU_RAIO, n = 2 * r + 1;
+                const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+                const cx = v => v < 0 ? 0 : v >= w ? w - 1 : v;
+                const cy = v => v < 0 ? 0 : v >= h ? h - 1 : v;
+                for (let y = 0; y < h; y++) {
+                    const lin = y * w;
+                    let s = 0;
+                    for (let k = -r; k <= r; k++) s += src[lin + cx(k)];
+                    for (let x = 0; x < w; x++) {
+                        tmp[lin + x] = s / n;
+                        s += src[lin + cx(x + r + 1)] - src[lin + cx(x - r)];
+                    }
+                }
+                for (let x = 0; x < w; x++) {
+                    let s = 0;
+                    for (let k = -r; k <= r; k++) s += tmp[cy(k) * w + x];
+                    for (let y = 0; y < h; y++) {
+                        out[y * w + x] = s / n;
+                        s += tmp[cy(y + r + 1) * w + x] - tmp[cy(y - r) * w + x];
+                    }
+                }
+                return out;
+            }
+            function veuMascara(cells) {
+                const W = area.cols, H = area.rows, S = VEU_PX, w = W * S, h = H * S;
+                const cv = document.createElement('canvas');
+                cv.width = w;
+                cv.height = h;
+                const ctx = cv.getContext('2d');
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, w, h);
+                ctx.fillStyle = '#fff';
+                let alguma = false;
+                for (const p of cells || []) {
+                    try { valid(p); } catch { continue; }
+                    alguma = true;
+                    ctx.fillRect((p.x - area.origin.x) * S, (p.z - area.origin.y) * S, S, S);
+                }
+                if (!alguma)
+                    return null;
+                const img = ctx.getImageData(0, 0, w, h);
+                let m = new Float32Array(w * h);
+                for (let i = 0; i < w * h; i++) m[i] = img.data[i * 4];
+                m = veuDesfoque(veuDesfoque(m, w, h), w, h);
+                const d = img.data;
+                for (let i = 0; i < w * h; i++) {
+                    let v = (m[i] / 255 - .15) / .70;
+                    v = v < 0 ? 0 : v > 1 ? 1 : v;
+                    const b = Math.round(v * 255);
+                    d[i * 4] = b;
+                    d[i * 4 + 1] = b;
+                    d[i * 4 + 2] = b;
+                    d[i * 4 + 3] = 255;
+                }
+                ctx.putImageData(img, 0, 0);
+                const tex = new T.CanvasTexture(cv);
+                tex.generateMipmaps = false;
+                tex.minFilter = T.LinearFilter;
+                tex.magFilter = T.LinearFilter;
+                return tex;
+            }
+            function veuFolha() {
+                /* malha em grelha sobre a arena inteira, cada vértice à
+                   altura real do terreno: segue o relevo sem degraus */
+                const cols = area.cols, rows = area.rows, pos = [], uv = [], idx = [];
+                const x0 = wx(area.origin.x) - CELL / 2, z0 = wz(area.origin.y) - CELL / 2;
+                for (let iz = 0; iz <= rows; iz++) for (let ix = 0; ix <= cols; ix++) {
+                    const X = x0 + ix * CELL, Z = z0 + iz * CELL;
+                    pos.push(X, world.height(X, Z) + .06, Z);
+                    uv.push(ix / cols, 1 - iz / rows);
+                }
+                for (let iz = 0; iz < rows; iz++) for (let ix = 0; ix < cols; ix++) {
+                    const a = iz * (cols + 1) + ix, b = a + 1, c = a + cols + 1, dd = c + 1;
+                    idx.push(a, c, b, b, c, dd);
+                }
+                const g = new T.BufferGeometry();
+                g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+                g.setAttribute('uv', new T.Float32BufferAttribute(uv, 2));
+                g.setIndex(idx);
+                return g;
+            }
             function setCamadas(defs) {
                 release(veilLayer);
                 veilLayer.clear();
                 if (!defs)
                     return;
                 for (const def of Object.values(defs)) {
-                    const vertices = [];
-                    for (const p of def.cells || []) {
-                        try { valid(p); } catch { continue; }
-                        const x = wx(p.x), z = wz(p.z), s = CELL * .485, y = world.height(x, z) + .06, a = [x - s, y, z - s], b = [x + s, y, z - s], c = [x + s, y, z + s], d = [x - s, y, z + s];
-                        vertices.push(...a, ...d, ...b, ...b, ...d, ...c);
-                    }
-                    if (vertices.length)
-                        veilLayer.add(new T.Mesh(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(vertices, 3)), material(def.cor, def.opacidade)));
+                    const tex = veuMascara(def.cells);
+                    if (!tex)
+                        continue;
+                    const mat = new T.MeshBasicMaterial({ color: def.cor, transparent: true, opacity: def.opacidade, alphaMap: tex, depthWrite: false, side: T.DoubleSide });
+                    veilLayer.add(new T.Mesh(veuFolha(), mat));
                 }
                 renderer.shadowMap.needsUpdate = true;
             }
