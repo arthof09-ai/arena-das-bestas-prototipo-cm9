@@ -277,10 +277,19 @@
      em voo termina ao ritmo antigo; sem re-agendamentos). */
   const VELOCIDADES = [1, 1.5, 2, 2.5, 3];
   let velocidade = 1;
-  try {
-    const v = localStorage.getItem('hudt1-velocidade');
-    if (['1', '1.5', '2', '2.5', '3'].includes(v)) velocidade = Number(v);
-  } catch (_) {}
+  /* A PORTA DA VELOCIDADE (tranche t-config-entrada, sentença J2 —
+   * palavra do Mestre, 11/11 10:26: a velocidade muda a partida, é
+   * definição DELE): a chave hudt1-velocidade só se LÊ em
+   * MODO_MESTRE. Na vista da jogadora, a velocidade nasce 1 e a
+   * chave guardada é IGNORADA — sem ser apagada nem sobrescrita:
+   * num aparelho partilhado, o valor do Mestre sobrevive intacto à
+   * sessão dela e volta a ser lido quando ele entrar. */
+  if (MODO_MESTRE) {
+    try {
+      const v = localStorage.getItem('hudt1-velocidade');
+      if (['1', '1.5', '2', '2.5', '3'].includes(v)) velocidade = Number(v);
+    } catch (_) {}
+  }
   const ritmo = ms => ms / velocidade;
 
   let view;
@@ -506,6 +515,36 @@
    * variantes PRÉ-GERADAS na criação do contexto (ruído com
    * decaimento e passa-baixos à reprodução) — nunca sintetizadas
    * na hora do raio. Volumes baixos: sempre abaixo da voz. */
+  /* ---------- SOM PESSOAL (tranche t-config-entrada, sentença J1/J3/J5) ----------
+   * Os volumes DESTA pessoa, NESTE aparelho — as MESMAS chaves e a
+   * MESMA tabela de leitura defensiva da entrada (entrada.js): são
+   * factores sobre os níveis aprovados pelo Mestre (100 = o som de
+   * hoje; a gama 0–100 só atenua). O ganho do ambiente calcula-se
+   * NUM SÍTIO SÓ: master = 0,9 × G × E × (mudo?0:1) ×
+   * (somDoAmbiente?1:0). Cada controlo é dono de UM factor nomeado;
+   * nenhum escreve no ganho fora desta fórmula — por isso nenhum
+   * factor ressuscita o som que outro pôs a zero. Os tectos da
+   * chuva (0,0280/0,0556) e o ganho do trovão (0,85) ficam
+   * INTOCADOS, a montante do master: o factor vive só no master. */
+  function lerVolumeSom(chave) {
+    try {
+      const v = localStorage.getItem(chave);
+      if (v === null || !/^[0-9]+$/.test(v)) return 100;
+      const n = Number(v);
+      return (n >= 0 && n <= 100) ? n : 100;
+    } catch (_) { return 100; }
+  }
+  let somGeral = lerVolumeSom('hudt1-som-geral');
+  let somMusica = lerVolumeSom('hudt1-som-musica');
+  let somEfeitos = lerVolumeSom('hudt1-som-efeitos');
+  let somMudo = false;
+  try { somMudo = localStorage.getItem('hudt1-som-mudo') === 'ligado'; } catch (_) {}
+  function somFatorAmbiente() {
+    return (somGeral / 100) * (somEfeitos / 100) * (somMudo ? 0 : 1);
+  }
+  function somGravar(chave, valor) {
+    try { localStorage.setItem(chave, String(valor)); } catch (_) {}
+  }
   const ambAudio = { ctx: null, master: null, ganhoPouca: null, ganhoForte: null,
     trovoes: [], desbloqueado: false, fontesChuva: { pouca: null, forte: null } };
   /* SOM-CHUVA-INICIO — as faixas B+C (ESCOLHA DO MESTRE, 10/11).
@@ -596,7 +635,7 @@
       const ctx = new AC();
       ambAudio.ctx = ctx;
       ambAudio.master = ctx.createGain();
-      ambAudio.master.gain.value = ambSomLigado ? 0.9 : 0;
+      ambAudio.master.gain.value = ambSomLigado ? 0.9 * somFatorAmbiente() : 0;
       ambAudio.master.connect(ctx.destination);
       ambAudio.ganhoPouca = ctx.createGain(); ambAudio.ganhoPouca.gain.value = 0;
       ambAudio.ganhoForte = ctx.createGain(); ambAudio.ganhoForte.gain.value = 0;
@@ -614,7 +653,7 @@
     const ctx = ambAudio.ctx;
     if (!ctx || !ambAudio.ganhoPouca || !ambAudio.ganhoForte) return;
     try {
-      if (ambAudio.master) ambAudio.master.gain.setTargetAtTime(ambSomLigado ? 0.9 : 0, ctx.currentTime, 0.1);
+      if (ambAudio.master) ambAudio.master.gain.setTargetAtTime(ambSomLigado ? 0.9 * somFatorAmbiente() : 0, ctx.currentTime, 0.1);
       const activo = ambAudio.desbloqueado && ambSomLigado;
       /* Com neve o som da precipitação cala-se (VOLTA 3,
        * decisão de bom senso declarada: a neve é silenciosa;
@@ -663,6 +702,21 @@
       s.connect(f); f.connect(g); g.connect(ambAudio.master); s.start();
     } catch (_) {}
   }
+  /* Gancho de prova SÓ-LEITURA do som pessoal (t-config-entrada,
+   * sentença J10.4 — o precedente da casa é o __tcEstado): devolve
+   * apenas números e booleanos já calculados — os factores lidos
+   * das chaves e os ganhos vivos do grafo do ambiente. Sem setters,
+   * sem funções, sem referências ao grafo: quem o lê não pode
+   * mudar estado nenhum por ele. */
+  window.__somEstado = function () {
+    return {
+      geral: somGeral, musica: somMusica, efeitos: somEfeitos, mudo: somMudo,
+      somAmbiente: ambSomLigado,
+      master: ambAudio.master ? ambAudio.master.gain.value : null,
+      ganhoPouca: ambAudio.ganhoPouca ? ambAudio.ganhoPouca.gain.value : null,
+      ganhoForte: ambAudio.ganhoForte ? ambAudio.ganhoForte.gain.value : null
+    };
+  };
 
   /* ---------- Relâmpago cosmético: relógio e janela de protecção ----------
    * O relógio automático (30–90 s sorteados) e o disparo da vista
@@ -4726,6 +4780,57 @@
     $('btn-config').classList.toggle('on', abrir);
     $('btn-config').setAttribute('aria-expanded', String(abrir));
   });
+  /* ---------- SAIR DAS CONFIGURAÇÕES (lei do Mestre, 11/11 10:36;
+   * desenho J8) ----------
+   * Três saídas para o MESMO fecho (fecharCfg): a engrenagem
+   * alterna; o ✕ fecha; apertar fora fecha. 
+   * O ✕ vive numa faixa de cabeçalho PEGAJOSA (position: sticky,
+   * em jogo.css): é o primeiro filho do pop-up e fica visível no
+   * topo mesmo com a lista rolada até ao fundo — nunca é preciso
+   * descer (nem subir) à procura da saída. O título «Apresentação»
+   * que já cá vivia muda-se para dentro da faixa. */
+  const bandaCfg = document.createElement('div');
+  bandaCfg.className = 'cfg-cabecalho';
+  const tituloCfgOriginal = cfgEl.querySelector('h3');
+  if (tituloCfgOriginal) bandaCfg.appendChild(tituloCfgOriginal);
+  const btnFecharCfg = document.createElement('button');
+  btnFecharCfg.type = 'button';
+  btnFecharCfg.id = 'cfg-fechar';
+  btnFecharCfg.className = 'cfg-fechar';
+  btnFecharCfg.textContent = '✕';
+  btnFecharCfg.setAttribute('aria-label', 'Fechar configurações');
+  btnFecharCfg.addEventListener('click', () => fecharCfg());
+  bandaCfg.appendChild(btnFecharCfg);
+  cfgEl.insertBefore(bandaCfg, cfgEl.firstChild);
+  /* Apertar FORA fecha — e o toque é CONSUMIDO por inteiro
+   * (fecha-e-não-passa): um ouvinte em CAPTURA sobre document
+   * corre antes de os gestos do mapa nascerem (selecção, arrasto
+   * de câmera), fecha pelo verbo existente e engole o resto da
+   * mesma pressão (pointerup e click), para o toque de fechar não
+   * vazar para o mapa atrás do painel. Alvo dentro do painel é uso
+   * normal; a engrenagem fica de fora da regra porque já alterna
+   * pelo seu próprio ouvinte. */
+  let pressaoDeFechoCfg = false;
+  document.addEventListener('pointerdown', e => {
+    if (cfgEl.hidden) return;
+    if (cfgEl.contains(e.target)) return;
+    if ($('btn-config').contains(e.target)) return;
+    pressaoDeFechoCfg = true;
+    fecharCfg();
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
+  document.addEventListener('pointerup', e => {
+    if (!pressaoDeFechoCfg) return;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
+  document.addEventListener('click', e => {
+    if (!pressaoDeFechoCfg) return;
+    pressaoDeFechoCfg = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
   $('btn-cheia').addEventListener('click', async () => {
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
@@ -4884,32 +4989,39 @@
    * com .on. NUNCA na barra de baixo. Sem frase say() nova: o
    * único texto novo é o rótulo e os passos, nas configurações.
    * Trocar grava a preferência (hudt1-velocidade) e marca o .on;
-   * o ritmo em si lê-se em `ritmo`, no momento de cada uso. */
-  const linhaVelocidade = document.createElement('div');
-  linhaVelocidade.className = 'cfgrow vel';
-  const rotuloVelocidade = document.createElement('span');
-  rotuloVelocidade.className = 'cl';
-  rotuloVelocidade.textContent = 'Velocidade';
-  const grupoVelocidade = document.createElement('div');
-  grupoVelocidade.className = 'seg';
-  grupoVelocidade.setAttribute('role', 'group');
-  grupoVelocidade.setAttribute('aria-label', 'Velocidade');
+   * o ritmo em si lê-se em `ritmo`, no momento de cada uso.
+   * A PORTA (t-config-entrada, sentença J2): a linha só NASCE em
+   * MODO_MESTRE — como a do Modo automático — e definirVelocidade
+   * fecha também na função. Na vista da jogadora não há linha, não
+   * há botões e não há caminho alcançável que grave a chave. */
   const botoesVelocidade = [];
-  for (const v of VELOCIDADES) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = String(v).replace('.', ',') + '×';
-    b.addEventListener('click', () => definirVelocidade(v));
-    grupoVelocidade.appendChild(b);
-    botoesVelocidade.push({ v, b });
+  if (MODO_MESTRE) {
+    const linhaVelocidade = document.createElement('div');
+    linhaVelocidade.className = 'cfgrow vel';
+    const rotuloVelocidade = document.createElement('span');
+    rotuloVelocidade.className = 'cl';
+    rotuloVelocidade.textContent = 'Velocidade';
+    const grupoVelocidade = document.createElement('div');
+    grupoVelocidade.className = 'seg';
+    grupoVelocidade.setAttribute('role', 'group');
+    grupoVelocidade.setAttribute('aria-label', 'Velocidade');
+    for (const v of VELOCIDADES) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = String(v).replace('.', ',') + '×';
+      b.addEventListener('click', () => definirVelocidade(v));
+      grupoVelocidade.appendChild(b);
+      botoesVelocidade.push({ v, b });
+    }
+    linhaVelocidade.appendChild(rotuloVelocidade);
+    linhaVelocidade.appendChild(grupoVelocidade);
+    cfgEl.insertBefore(linhaVelocidade, $('stats'));
   }
-  linhaVelocidade.appendChild(rotuloVelocidade);
-  linhaVelocidade.appendChild(grupoVelocidade);
-  cfgEl.insertBefore(linhaVelocidade, $('stats'));
   function marcarVelocidade() {
     for (const { v, b } of botoesVelocidade) b.classList.toggle('on', v === velocidade);
   }
   function definirVelocidade(v) {
+    if (!MODO_MESTRE) return;
     if (!VELOCIDADES.includes(v)) return;
     velocidade = v;
     try { localStorage.setItem('hudt1-velocidade', String(velocidade)); } catch (_) {}
@@ -4982,6 +5094,128 @@
       : 'Piscar <b>desligado</b> — o vermelho das bordas fica parado.');
   });
   marcarPiscar();
+
+  /* ---------- Secção SOM pessoal (tranche t-config-entrada) ----------
+   * Os volumes desta pessoa, neste aparelho — as mesmas chaves, os
+   * mesmos rótulos e a mesma nota do painel da entrada (a entrada
+   * edita o que o jogo lê; aqui edita-se o mesmo, a valer na hora
+   * no que estiver a soar). Na batalha soa o ambiente (chuva e
+   * trovão): Geral, Efeitos e Mudo aplicam já no master; a Música
+   * não tem nada a tocar aqui — guarda-se para o título e DECLARA-O
+   * no sub-rótulo (sentença J6: sem sub-rótulo, o reguador saía
+   * desta superfície). Os factores e a fórmula vivem junto ao
+   * ambAudio («SOM PESSOAL»): master = 0,9 × G × E × mudo ×
+   * somDoAmbiente. */
+  const NOTA_SOM = 'Música: só a do título — na batalha não há música. Efeitos: hoje, a chuva e o trovão; os sons da batalha usarão este volume quando existirem.';
+  const tituloSom = document.createElement('h3');
+  tituloSom.textContent = 'Som';
+  cfgEl.insertBefore(tituloSom, $('stats'));
+  const somUI = {};
+  function linhaVolumeSom(chaveCfg, rotulo, sub, ler, aoMudar) {
+    const linha = document.createElement('div');
+    linha.className = 'cfgrow';
+    const rot = document.createElement('span');
+    rot.className = 'cl';
+    rot.innerHTML = sub ? `${rotulo}<small>${sub}</small>` : rotulo;
+    const volctl = document.createElement('div');
+    volctl.className = 'volctl';
+    const reg = document.createElement('input');
+    reg.type = 'range';
+    reg.className = 'vol-range';
+    reg.min = '0'; reg.max = '100'; reg.step = '1';
+    reg.value = String(ler());
+    reg.setAttribute('aria-label', rotulo);
+    const saida = document.createElement('span');
+    saida.className = 'vol-valor';
+    saida.textContent = ler() + '%';
+    reg.addEventListener('input', () => {
+      saida.textContent = reg.value + '%';
+      somGravar(chaveCfg, reg.value);
+      aoMudar(Number(reg.value));
+    });
+    volctl.appendChild(reg);
+    volctl.appendChild(saida);
+    linha.appendChild(rot);
+    linha.appendChild(volctl);
+    cfgEl.insertBefore(linha, $('stats'));
+    return { reg, saida };
+  }
+  somUI.geral = linhaVolumeSom('hudt1-som-geral', 'Volume geral', null,
+    () => somGeral, v => { somGeral = v; ambAudioSincronizarChuva(); });
+  somUI.musica = linhaVolumeSom('hudt1-som-musica', 'Música', 'só a do título',
+    () => somMusica, v => { somMusica = v; });
+  somUI.efeitos = linhaVolumeSom('hudt1-som-efeitos', 'Efeitos', 'chuva, trovão e sons da batalha',
+    () => somEfeitos, v => { somEfeitos = v; ambAudioSincronizarChuva(); });
+  const linhaMudo = document.createElement('div');
+  linhaMudo.className = 'cfgrow';
+  const rotuloMudo = document.createElement('span');
+  rotuloMudo.className = 'cl';
+  rotuloMudo.innerHTML = 'Mudo<small>Nenhum som, sem perder os volumes.</small>';
+  const togMudo = document.createElement('button');
+  togMudo.type = 'button';
+  togMudo.id = 'tog-som-mudo';
+  togMudo.className = 'tog';
+  linhaMudo.appendChild(rotuloMudo);
+  linhaMudo.appendChild(togMudo);
+  cfgEl.insertBefore(linhaMudo, $('stats'));
+  function marcarMudo() {
+    togMudo.classList.toggle('on', somMudo);
+    togMudo.textContent = somMudo ? 'Ligado' : 'Desligado';
+    togMudo.setAttribute('aria-pressed', String(somMudo));
+  }
+  togMudo.addEventListener('click', () => {
+    somMudo = !somMudo;
+    somGravar('hudt1-som-mudo', somMudo ? 'ligado' : 'desligado');
+    marcarMudo();
+    ambAudioSincronizarChuva();
+  });
+  marcarMudo();
+  somUI.mudo = { tog: togMudo, marcar: marcarMudo };
+  const notaSomEl = document.createElement('p');
+  notaSomEl.className = 'cfg-nota';
+  notaSomEl.textContent = NOTA_SOM;
+  cfgEl.insertBefore(notaSomEl, $('stats'));
+  /* Restaurar o padrão (sentença J4): lista branca EXPLÍCITA, a
+   * mesma da entrada — chave a chave, valores gravados à vista.
+   * Proibido repor por prefixo/enumeração/clear(): as chaves do
+   * Mestre que vivam neste aparelho ficam byte-idênticas. */
+  const linhaRestaurarSom = document.createElement('div');
+  linhaRestaurarSom.className = 'cfgrow';
+  const btnRestaurarCfg = document.createElement('button');
+  btnRestaurarCfg.type = 'button';
+  btnRestaurarCfg.id = 'cfg-restaurar';
+  btnRestaurarCfg.className = 'cfg-restaurar';
+  btnRestaurarCfg.textContent = 'Restaurar o padrão';
+  linhaRestaurarSom.appendChild(btnRestaurarCfg);
+  cfgEl.insertBefore(linhaRestaurarSom, $('stats'));
+  btnRestaurarCfg.addEventListener('click', () => {
+    somGravar('hudt1-qualidade', 'alta');
+    somGravar('hudt1-numeros-dano', 'ligado');
+    somGravar('hudt1-tela-vermelha', 'ligado');
+    somGravar('hudt1-tela-vermelha-piscar', 'ligado');
+    somGravar('hudt1-som-geral', '100');
+    somGravar('hudt1-som-musica', '100');
+    somGravar('hudt1-som-efeitos', '100');
+    somGravar('hudt1-som-mudo', 'desligado');
+    if (qualidade !== 'alta') {
+      qualidade = 'alta';
+      try { view.setQualidade('alta'); } catch (_) {}
+    }
+    marcarQualidade();
+    try { ambSincronizarPainel(); } catch (_) {}
+    numerosDano = true; marcarDanos();
+    telaVermelha = true; marcarVermelha();
+    telaVermelhaPiscar = true; marcarPiscar();
+    aplicarTelaVermelha();
+    somGeral = 100; somMusica = 100; somEfeitos = 100; somMudo = false;
+    for (const par of [[somUI.geral, 100], [somUI.musica, 100], [somUI.efeitos, 100]]) {
+      par[0].reg.value = '100';
+      par[0].saida.textContent = '100%';
+    }
+    marcarMudo();
+    ambAudioSincronizarChuva();
+    say('Configurações repostas no <b>padrão</b> — neste aparelho.');
+  });
 
   function definirModoAutomatico(ligado) {
     modoAutomatico = !!ligado;

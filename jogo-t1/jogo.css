@@ -49,6 +49,26 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 #cfgpop[hidden]{display:none}
 #cfgpop h3{font-family:Georgia,'DejaVu Serif',serif;font-size:10px;letter-spacing:.18em;
   color:var(--ouro);text-transform:uppercase;margin-bottom:5px}
+/* Faixa de cabeçalho PEGAJOSA do pop-up (t-config-entrada, lei
+   11/11 10:36): primeiro filho, colada ao topo quando a lista
+   rola — o ✕ está sempre visível, sem descer a lista. O fundo é o
+   do próprio painel: as linhas passam POR BAIXO dela. */
+.cfg-cabecalho{position:sticky;top:-9px;z-index:3;display:flex;justify-content:space-between;
+  align-items:flex-start;margin:-9px -12px 6px;padding:9px 12px 3px;
+  background:var(--painel-denso);border-radius:12px 12px 0 0}
+.cfg-fechar{flex:none;width:32px;height:32px;margin-left:8px;border:1px solid rgba(201,162,39,.8);
+  border-radius:8px;background:rgba(28,21,12,.85);color:var(--ouro-claro);
+  font-size:13px;font-weight:700;cursor:pointer;line-height:1}
+/* Reguadores de volume % (secção Som pessoal; a entrada usa as
+   mesmas classes — as folhas carregam juntas na página única) */
+.volctl{display:flex;align-items:center;gap:8px;flex:1;min-width:0;justify-content:flex-end}
+.vol-range{flex:1;min-width:56px;min-height:44px;accent-color:var(--ouro)}
+.vol-valor{font-size:11px;color:var(--pergaminho);font-variant-numeric:tabular-nums;
+  min-width:36px;text-align:right}
+.cfg-nota{font-size:10.5px;line-height:1.45;color:var(--pergaminho-fraco);
+  border:1px dashed rgba(201,162,39,.35);border-radius:8px;padding:7px 9px;margin:7px 0}
+.cfg-restaurar{width:100%;height:40px;border:1px solid rgba(201,162,39,.8);border-radius:8px;
+  background:rgba(28,21,12,.85);color:var(--ouro-claro);font-size:12px;font-weight:700;cursor:pointer}
 .cfgrow{display:flex;align-items:center;justify-content:space-between;gap:8px;
   padding:5px 0;border-top:1px dashed rgba(201,162,39,.25)}
 .cfgrow:first-of-type{border-top:0}
@@ -134,7 +154,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
     left:calc(max(10px,env(safe-area-inset-left)) + 52px);
     width:524px;max-width:calc(100vw - 72px);
     display:grid;grid-template-columns:1fr 1fr;column-gap:14px;align-content:start}
-  #cfgpop h3,#cfgpop .stats{grid-column:1 / -1}
+  #cfgpop h3,#cfgpop .stats,#cfgpop .cfg-cabecalho{grid-column:1 / -1}
   #cfgpop .cfgrow:nth-of-type(-n+2){border-top:0}
   #sup-alertas,#sup-json,#sup-ultimo,#sup-dicas{grid-column:1 / -1}
 }

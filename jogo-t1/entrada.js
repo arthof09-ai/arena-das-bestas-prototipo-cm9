@@ -251,18 +251,60 @@
     }
   }
 
+  /* ---------- SOM PESSOAL (tranche t-config-entrada, sentença J1/J3/J5) ----------
+   * Os volumes DESTA pessoa, NESTE aparelho: três reguadores (Geral,
+   * Música, Efeitos) e o Mudo. São FACTORES sobre os níveis aprovados
+   * pelo Mestre: 100 = exactamente o som de hoje; a gama é 0–100 e só
+   * atenua. A leitura defensiva é UMA tabela, igual aqui e no jogo.js:
+   * ausente → 100 · inteiro em [0,100] → o valor · qualquer outra
+   * coisa → 100, sem clamp nem truncar (um valor corrupto nunca pode
+   * impor silêncio). O Mudo só cala com o literal 'ligado'.
+   * A trilha do título é a única coisa que soa nesta tela: o volume
+   * físico dela escreve-se por UMA função na secção da trilha
+   * (aplicarVolumeTrilha), que multiplica o progresso da rampa pelo
+   * factor daqui: G × M × (mudo ? 0 : 1). */
+  function lerVolumeSom(chave) {
+    try {
+      var v = localStorage.getItem(chave);
+      if (v === null || !/^[0-9]+$/.test(v)) return 100;
+      var n = Number(v);
+      return (n >= 0 && n <= 100) ? n : 100;
+    } catch (_) { return 100; }
+  }
+  function lerSomMudo() {
+    try { return localStorage.getItem('hudt1-som-mudo') === 'ligado'; } catch (_) { return false; }
+  }
+  var somGeral = lerVolumeSom('hudt1-som-geral');
+  var somMusica = lerVolumeSom('hudt1-som-musica');
+  var somEfeitos = lerVolumeSom('hudt1-som-efeitos');
+  var somMudo = lerSomMudo();
+  function somFatorTrilha() {
+    return (somGeral / 100) * (somMusica / 100) * (somMudo ? 0 : 1);
+  }
+
   /* ---------- as definições da entrada = as do ⚙ que persistem ----------
    * Mesmas chaves, mesmos valores, mesmos rótulos do painel do jogo:
    * o painel da entrada edita o que o jogo lê ao arrancar. Câmera, Zoom
    * e Ajuda do grid não persistem no jogo (são só da sessão) — por isso
-   * não estão aqui: prometer guardá-las seria mentir. */
+   * não estão aqui: prometer guardá-las seria mentir.
+   * A Velocidade SAIU daqui (palavra do Mestre, 11/11 10:26): muda a
+   * partida, é definição DELE — vive só na vista do Mestre, no ⚙,
+   * lida da mesma chave. A secção Som abre o painel: os volumes são
+   * da pessoa e do aparelho, como as outras linhas. */
+  var NOTA_SOM = 'Música: só a do título — na batalha não há música. Efeitos: hoje, a chuva e o trovão; os sons da batalha usarão este volume quando existirem.';
   var DEFINICOES = [
+    { chave: 'hudt1-som-geral', rotulo: 'Volume geral', tipo: 'vol', padrao: '100', seccao: 'Som' },
+    { chave: 'hudt1-som-musica', rotulo: 'Música', tipo: 'vol', padrao: '100' },
+    { chave: 'hudt1-som-efeitos', rotulo: 'Efeitos', tipo: 'vol', padrao: '100',
+      sub: 'chuva e trovão — na batalha' },
+    { chave: 'hudt1-som-mudo', rotulo: 'Mudo', tipo: 'tog',
+      padrao: 'desligado', ligado: 'Ligado', desligado: 'Desligado',
+      sub: 'Nenhum som, sem perder os volumes.' },
+    { tipo: 'nota', texto: NOTA_SOM },
     { chave: 'hudt1-qualidade', rotulo: 'Qualidade', tipo: 'seg', padrao: 'alta',
       opcoes: [['baixa', 'Baixa'], ['media', 'Média'], ['alta', 'Alta']] },
     { chave: 'hudt1-numeros-dano', rotulo: 'Números de dano', tipo: 'tog',
       padrao: 'ligado', ligado: 'Ligados', desligado: 'Desligados' },
-    { chave: 'hudt1-velocidade', rotulo: 'Velocidade', tipo: 'seg', padrao: '1',
-      opcoes: [['1', '1×'], ['1.5', '1,5×'], ['2', '2×'], ['2.5', '2,5×'], ['3', '3×']] },
     { chave: 'hudt1-tela-vermelha', rotulo: 'Tela vermelha', tipo: 'tog',
       padrao: 'ligado', ligado: 'Ligada', desligado: 'Desligada' },
     { chave: 'hudt1-tela-vermelha-piscar', rotulo: 'Piscar da tela vermelha', tipo: 'tog',
@@ -270,11 +312,16 @@
   ];
   function lerDefinicao(def) {
     try {
+      if (def.tipo === 'vol') return String(lerVolumeSom(def.chave));
       var v = localStorage.getItem(def.chave);
       if (def.tipo === 'seg') {
         for (var i = 0; i < def.opcoes.length; i++) if (def.opcoes[i][0] === v) return v;
         return def.padrao;
       }
+      /* tog: o lado do omisso manda na leitura — quem nasce desligado
+       * (o Mudo) só liga com o literal 'ligado'; quem nasce ligado só
+       * desliga com o literal 'desligado'. */
+      if (def.padrao === 'desligado') return v === 'ligado' ? 'ligado' : 'desligado';
       return v === 'desligado' ? 'desligado' : 'ligado';
     } catch (_) { return def.padrao; }
   }
@@ -359,9 +406,23 @@
   var vistaConfig = el('section', 'ent-painel');
   vistaConfig.hidden = true;
   vistaConfig.setAttribute('aria-label', 'Configurações');
-  vistaConfig.appendChild(el('h2', null, 'Configurações'));
+  /* Cabeçalho PEGAJOSO (lei do Mestre, 11/11 10:36): a faixa é o
+   * primeiro filho e fica colada ao topo quando a lista rola — o ✕
+   * está sempre visível, sem descer à procura dele. O clique no ✕ é
+   * o mesmo destino a que o antigo «Voltar» levava. */
+  var cabecalhoConfig = el('div', 'ent-cabecalho');
+  cabecalhoConfig.appendChild(el('h2', null, 'Configurações'));
+  var btnFecharConfig = el('button', 'ent-fechar', '✕');
+  btnFecharConfig.id = 'ent-fechar-config'; btnFecharConfig.type = 'button';
+  btnFecharConfig.setAttribute('aria-label', 'Fechar configurações');
+  btnFecharConfig.addEventListener('click', function () { mostrar('botoes'); });
+  cabecalhoConfig.appendChild(btnFecharConfig);
+  vistaConfig.appendChild(cabecalhoConfig);
   var linhasDef = el('div');
   vistaConfig.appendChild(linhasDef);
+  var btnRestaurar = el('button', 'ent-esquecer', 'Restaurar o padrão');
+  btnRestaurar.id = 'ent-restaurar'; btnRestaurar.type = 'button';
+  vistaConfig.appendChild(btnRestaurar);
   var notaAparelho = el('p', 'ent-nota');
   vistaConfig.appendChild(notaAparelho);
   var btnOutraConta = el('button', 'ent-esquecer', 'Usar outra conta do Google');
@@ -373,19 +434,96 @@
   var btnEsquecer = el('button', 'ent-esquecer', 'Esquecer este aparelho');
   btnEsquecer.type = 'button';
   vistaConfig.appendChild(btnEsquecer);
-  var linhaConfig = el('div', 'ent-linha-botoes');
-  linhaConfig.style.marginTop = '10px';
-  var btnVoltarConfig = el('button', 'ent-accao sec', 'Voltar');
-  btnVoltarConfig.type = 'button';
-  linhaConfig.appendChild(btnVoltarConfig);
-  vistaConfig.appendChild(linhaConfig);
+  /* O «Voltar» no fundo SAIU (lei do Mestre, 11/11 10:36: «Não
+   * precisa ter essa opção Voltar»): sai-se apertando fora do painel
+   * (o ouvinte de captura junto a esta vista) ou no ✕ do cabeçalho. */
   raiz.appendChild(vistaConfig);
 
+  /* ---------- RESTAURAR O PADRÃO (sentença J4) ----------
+   * Lista branca EXPLÍCITA, chave a chave — a mesma do ⚙ do jogo.
+   * Proibido repor por prefixo, por enumeração do armazenamento ou
+   * por clear(): num aparelho partilhado, isso destruiria as chaves
+   * do Mestre (velocidade, ambiente, visão, escala). Só entra o que
+   * este painel mostra como definição pessoal persistida. */
+  var RESTAURAR_ENTRADA = [
+    ['hudt1-qualidade', 'alta'],
+    ['hudt1-numeros-dano', 'ligado'],
+    ['hudt1-tela-vermelha', 'ligado'],
+    ['hudt1-tela-vermelha-piscar', 'ligado'],
+    ['hudt1-som-geral', '100'],
+    ['hudt1-som-musica', '100'],
+    ['hudt1-som-efeitos', '100'],
+    ['hudt1-som-mudo', 'desligado']
+  ];
+  btnRestaurar.addEventListener('click', function () {
+    try {
+      for (var i = 0; i < RESTAURAR_ENTRADA.length; i++)
+        localStorage.setItem(RESTAURAR_ENTRADA[i][0], RESTAURAR_ENTRADA[i][1]);
+    } catch (_) {}
+    somGeral = 100; somMusica = 100; somEfeitos = 100; somMudo = false;
+    if (typeof aplicarVolumeTrilha === 'function') aplicarVolumeTrilha();
+    pintarConfig();
+  });
+
+  /* ---------- SAIR DAS CONFIGURAÇÕES: apertar fora fecha ----------
+   * (lei do Mestre, 11/11 10:36; desenho J8.1) Ouvinte em CAPTURA
+   * sobre document: com a vista de configurações aberta, um toque
+   * fora do painel volta à vista de botões e é CONSUMIDO por inteiro
+   * (a pressão inteira: pointerdown + o pointerup e o click dela),
+   * para não activar nada atrás do painel. Alvo dentro do painel é
+   * uso normal; as outras vistas da entrada não ganham este gesto. */
+  var pressaoDeFechoEntrada = false;
+  document.addEventListener('pointerdown', function (e) {
+    if (vistaConfig.hidden) return;
+    if (vistaConfig.contains(e.target)) return;
+    pressaoDeFechoEntrada = true;
+    mostrar('botoes');
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
+  document.addEventListener('pointerup', function (e) {
+    if (!pressaoDeFechoEntrada) return;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
+  document.addEventListener('click', function (e) {
+    if (!pressaoDeFechoEntrada) return;
+    pressaoDeFechoEntrada = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
+
+  /* Mexer num controlo de som actualiza o ESTADO partilhado com a
+   * secção da trilha e aplica já: a fórmula única (aplicarVolumeTrilha)
+   * lê o estado, nunca uma cópia. */
+  function sincronizarEstadoSom(def) {
+    if (def.chave === 'hudt1-som-geral') somGeral = lerVolumeSom(def.chave);
+    else if (def.chave === 'hudt1-som-musica') somMusica = lerVolumeSom(def.chave);
+    else if (def.chave === 'hudt1-som-efeitos') somEfeitos = lerVolumeSom(def.chave);
+    else if (def.chave === 'hudt1-som-mudo') somMudo = lerSomMudo();
+    else return;
+    if (typeof aplicarVolumeTrilha === 'function') aplicarVolumeTrilha();
+  }
   function pintarConfig() {
     linhasDef.textContent = '';
+    var seccaoActual = null;
     DEFINICOES.forEach(function (def) {
+      if (def.seccao && def.seccao !== seccaoActual) {
+        seccaoActual = def.seccao;
+        linhasDef.appendChild(el('h3', 'ent-subtitulo', def.seccao));
+      }
+      if (def.tipo === 'nota') {
+        linhasDef.appendChild(el('p', 'ent-nota som-nota', def.texto));
+        return;
+      }
       var linha = el('div', 'cfgrow');
-      linha.appendChild(el('span', 'cl', def.rotulo));
+      var rot = el('span', 'cl');
+      rot.appendChild(document.createTextNode(def.rotulo));
+      if (def.sub) {
+        var pequeno = el('small', null, def.sub);
+        rot.appendChild(pequeno);
+      }
+      linha.appendChild(rot);
       var valor = lerDefinicao(def);
       if (def.tipo === 'seg') {
         var seg = el('div', 'seg');
@@ -401,6 +539,23 @@
           seg.appendChild(b);
         });
         linha.appendChild(seg);
+      } else if (def.tipo === 'vol') {
+        var volctl = el('div', 'volctl');
+        var reg = document.createElement('input');
+        reg.type = 'range';
+        reg.className = 'vol-range';
+        reg.min = '0'; reg.max = '100'; reg.step = '1';
+        reg.value = valor;
+        reg.setAttribute('aria-label', def.rotulo);
+        var saida = el('span', 'vol-valor', valor + '%');
+        reg.addEventListener('input', function () {
+          saida.textContent = reg.value + '%';
+          gravarDefinicao(def, reg.value);
+          sincronizarEstadoSom(def);
+        });
+        volctl.appendChild(reg);
+        volctl.appendChild(saida);
+        linha.appendChild(volctl);
       } else {
         var tog = el('button', 'tog' + (valor === 'ligado' ? ' on' : ''),
           valor === 'ligado' ? def.ligado : def.desligado);
@@ -408,6 +563,7 @@
         tog.setAttribute('aria-pressed', valor === 'ligado' ? 'true' : 'false');
         tog.addEventListener('click', function () {
           gravarDefinicao(def, valor === 'ligado' ? 'desligado' : 'ligado');
+          sincronizarEstadoSom(def);
           pintarConfig();
         });
         linha.appendChild(tog);
@@ -505,7 +661,6 @@
   });
   btnConfig.addEventListener('click', function () { mostrar('config'); });
   btnVoltarMestre.addEventListener('click', function () { mostrar('botoes'); });
-  btnVoltarConfig.addEventListener('click', function () { mostrar('botoes'); });
   btnOutraConta.addEventListener('click', function () {
     mostrar('botoes');
     erroEntrada.textContent = '';
@@ -910,6 +1065,41 @@
   videoLoop.setAttribute('playsinline', '');
   videoLoop.preload = 'auto';
 
+  /* ---------- a logo como tela de carregamento (t-logo-carregamento;
+   * palavra do Mestre, 11/11/2026 09:20: «deixe esse vídeo como a
+   * primeira parte, com tela de carregamento, enquanto o filme tá
+   * carregando; esse vídeo não é obrigado a ser visto todo —
+   * carregou, já pode ir para o filme») ----------
+   * A logo (logo-proverbio.mp4: o vídeo do provérbio, ciclo perfeito
+   * de 13,8 s, mudo) é a PRIMEIRA camada visível da abertura: toca em
+   * ciclo por cima de tudo (CSS: z-index 4, object-fit contain sobre
+   * o fundo escuro dela) enquanto o filme carrega. Quando o filme
+   * está pronto a tocar (readyState ≥ 3 — ver o bloco do arranque,
+   * abaixo), a logo desbota em ~350 ms e o filme arranca do
+   * fotograma 0, como hoje. A logo NÃO é o filme: não conta como
+   * «filme visto», não grava marca nenhuma (a marca da tranche
+   * t-pular-filme só nasce no «ended» do filme) e o botão PULAR
+   * nunca aparece durante ela — fica-lhe por baixo, sem toque.
+   * Se a própria logo falhar, ela sai e o filme arranca já pelo
+   * caminho de hoje: a entrada nunca fica refém da tela de
+   * carregamento. */
+  var TECTO_LOGO_MS = 45000; /* o tecto anti-armadilha: ver o bloco do arranque */
+  var videoLogo = el('video', 'ent-video-logo');
+  videoLogo.id = 'ent-video-logo';
+  videoLogo.src = 'logo-proverbio.mp4';
+  videoLogo.poster = 'logo-quadro0.webp'; /* o fotograma 0 da própria logo: a espera da espera também é a imagem que começa a mexer */
+  videoLogo.muted = true; /* a logo não tem faixa de áudio: quem soa é a trilha */
+  videoLogo.loop = true;
+  videoLogo.setAttribute('playsinline', '');
+  videoLogo.preload = 'auto';
+  raiz.appendChild(videoLogo);
+  var promLogo = videoLogo.play();
+  if (promLogo && promLogo.catch) promLogo.catch(function () {});
+  /* Se a logo falhar, o filme arranca já sem ela (a declaração de
+   * arrancarFilme está no bloco do arranque, abaixo — as declarações
+   * de função sobem no âmbito, e o erro nunca dispara em síncrono). */
+  videoLogo.addEventListener('error', function () { arrancarFilme(); });
+
   var trilha = el('audio');
   trilha.id = 'ent-trilha';
   trilha.src = 'trilha-titulo.m4a';
@@ -1010,27 +1200,91 @@
     try { videoLoop.remove(); } catch (_) {}
   });
   /* Rede de segurança: se o filme estiver a tocar há 60 s sem acabar
-   * (o normal são 18 s), a tela do título não fica refém dele. */
-  setTimeout(function () {
-    if (!filmeTerminou && !videoFilme.paused && !videoFilme.ended) terminarFilme();
-  }, 60000);
+   * (o normal são 18 s), a tela do título não fica refém dele. A
+   * rede arma-se no bloco do arranque (abaixo), no «playing» do
+   * filme, e conta desde o arranque REAL — com a logo a segurar a
+   * espera (t-logo-carregamento), o arranque pode ser tardio e a
+   * contagem desde a abertura cortaria um filme acabado de começar. */
+  var filmeInicioMs = 0;
 
-  var promFilme = videoFilme.play();
-  if (promFilme && promFilme.catch) {
-    promFilme.catch(function () {
-      /* Autoplay do filme travado (raro: ele é mudo e sem faixa de
-       * áudio): o primeiro toque põe-no a andar. */
-      window.addEventListener('pointerdown', function () {
-        var p2 = videoFilme.play();
-        if (p2 && p2.catch) p2.catch(function () {});
-      }, { once: true });
-    });
+  /* ---------- o arranque do filme, com a logo a segurar a espera ----
+   * (t-logo-carregamento) O filme NÃO arranca às cegas ao abrir:
+   * arranca quando está pronto a tocar (readyState ≥ 3, o «canplay»),
+   * com a logo a desbotar por cima dele. Até lá, quem carrega é o
+   * preload='auto' de hoje — medido antes de desenhar: só com o
+   * preload, o canplay chegou em 9,0 s a 500 kB/s, 18,9 s a
+   * 125 kB/s e 9,8 s a 60 kB/s. Os caminhos de recurso:
+   *  · tecto de 45 s sem sinal → arranca na mesma e o fluxo segue
+   *    pelo caminho de hoje (poster REF_53 → filme); 45 s é ≥ 2,3×
+   *    o pior canplay medido, cabe mais de 3 ciclos inteiros da
+   *    logo (3 × 13,8 s) e fica abaixo da rede dos 60 s;
+   *  · a logo falhar → o erro dela chama o arranque já;
+   *  · o filme falhar → o ouvinte de erro dele (acima) já chamou
+   *    terminarFilme: um gémeo aqui só tira a logo do caminho.
+   * O gesto de recurso do autoplay travado é o mesmo de hoje. */
+  var filmeArrancou = false;
+  var tectoLogo = null;
+  function tocarFilme() {
+    var promFilme = videoFilme.play();
+    if (promFilme && promFilme.catch) {
+      promFilme.catch(function () {
+        /* Autoplay do filme travado (raro: ele é mudo e sem faixa de
+         * áudio): o primeiro toque põe-no a andar. */
+        window.addEventListener('pointerdown', function () {
+          var p2 = videoFilme.play();
+          if (p2 && p2.catch) p2.catch(function () {});
+        }, { once: true });
+      });
+    }
   }
+  function tirarLogo() {
+    if (!videoLogo) return;
+    var lg = videoLogo;
+    videoLogo = null;
+    raiz.classList.add('logo-fora');
+    setTimeout(function () {
+      try { lg.pause(); } catch (_) {}
+      try { lg.remove(); } catch (_) {}
+    }, 600);
+  }
+  function arrancarFilme() {
+    if (filmeArrancou) return;
+    filmeArrancou = true;
+    if (tectoLogo) { clearTimeout(tectoLogo); tectoLogo = null; }
+    tirarLogo();
+    tocarFilme();
+  }
+  videoFilme.addEventListener('playing', function () {
+    /* A rede de segurança dos 60 s, armada no arranque real. */
+    if (filmeInicioMs) return;
+    filmeInicioMs = Date.now();
+    setTimeout(function () {
+      if (!filmeTerminou && !videoFilme.paused && !videoFilme.ended) terminarFilme();
+    }, 60000);
+  });
+  if (videoFilme.readyState >= 3) arrancarFilme();
+  else videoFilme.addEventListener('canplay', arrancarFilme, { once: true });
+  tectoLogo = setTimeout(arrancarFilme, TECTO_LOGO_MS);
+  videoFilme.addEventListener('error', tirarLogo);
 
   /* ---------- a trilha: ponto do bloco + rampa de 4 s ---------- */
   var trilhaIniciada = false;
   var idRampaTrilha = null;
   var trilhaRampaFeita = false; /* trinco: a rampa é da abertura — uma vez por vida da trilha (emenda TRILHA-RELOGIO) */
+  /* O VOLUME DA TRILHA TEM UM SÓ DONO (t-config-entrada, sentença
+   * J3): aplicarVolumeTrilha é a ÚNICA função que escreve
+   * trilha.volume depois da criação do elemento. A rampa é dona do
+   * PROGRESSO (0→1 em 4 s), o fade de saída é dono do seu factor
+   * (1→0 em 0,6 s) e os volumes pessoais são donos dos factores
+   * deles (somFatorTrilha, na secção SOM PESSOAL) — o volume físico
+   * é sempre o produto dos três, recalculado no instante da escrita.
+   * É isto que faz o Mudo e os reguadores valerem na hora, mesmo a
+   * meio da rampa, sem saltos nem ressurreições. */
+  var trilhaProgressoRampa = 0;
+  var trilhaFatorFade = 1;
+  function aplicarVolumeTrilha() {
+    try { trilha.volume = trilhaProgressoRampa * trilhaFatorFade * somFatorTrilha(); } catch (_) {}
+  }
   function iniciarTrilha() {
     if (trilhaIniciada) return;
     trilhaIniciada = true;
@@ -1038,7 +1292,7 @@
       /* O seek lê o relógio NESTE instante (o do canplay): a
        * posição mandada é a do relógio, não a do carregamento. */
       try { trilha.currentTime = posicaoDaTrilha(Date.now()); } catch (_) {}
-      trilha.volume = 0;
+      aplicarVolumeTrilha();
       var prom = trilha.play();
       if (prom && prom.catch) {
         prom.catch(function () {
@@ -1069,7 +1323,8 @@
         idRampaTrilha = null;
         trilhaRampaFeita = true;
       }
-      try { trilha.volume = v; } catch (_) {}
+      trilhaProgressoRampa = v;
+      aplicarVolumeTrilha();
     }, 100);
   });
   document.body.appendChild(trilha);
@@ -1090,7 +1345,6 @@
     try { videoLoop.pause(); } catch (_) {}
     try {
       var a = trilha;
-      var v0 = a.volume;
       var t0 = performance.now();
       var idFade = setInterval(function () {
         var k = (performance.now() - t0) / 600;
@@ -1100,7 +1354,11 @@
           try { a.remove(); } catch (_) {}
           return;
         }
-        try { a.volume = v0 * (1 - k); } catch (_) {}
+        /* O fade é dono só do seu factor (1→0): o volume físico
+         * continua a ser o produto da fórmula única, por isso o
+         * fade desce do nível EFECTIVO (rampa × volumes pessoais). */
+        trilhaFatorFade = 1 - k;
+        aplicarVolumeTrilha();
       }, 50);
     } catch (_) {}
   }
@@ -1125,12 +1383,10 @@
    *     «começa mudo, o primeiro toque repõe o som» fica intacta.
    * --------------------------------------------------------------- */
   var trilhaPausadaPorFundo = false;
-  var trilhaVolumeAntes = null;
   function trilhaEsconder() {
     try {
       if (!trilha.paused && !trilha.ended) {
         trilhaPausadaPorFundo = true;
-        trilhaVolumeAntes = trilha.volume;
         trilha.pause();
       }
     } catch (_) {}
@@ -1143,17 +1399,21 @@
       /* O 'playing' do retomar não pode re-arrancar a rampa de
        * 4 s da abertura: o ouvinte da rampa (secção da trilha)
        * cria um intervalo novo quando a anterior já acabou, e o
-       * volume cairía a zero ao voltar. Se neste 'playing'
-       * surgir um intervalo novo, ele morre aqui e o volume
-       * volta ao que estava quando a página escondeu; se a
-       * rampa original ainda correr, fica intocada. */
+       * progresso cairía a zero ao voltar. Se neste 'playing'
+       * surgir um intervalo novo, ele morre aqui; se a rampa
+       * original ainda correr, fica intocada.
+       * O VOLUME não se guarda nem se repõe à letra (guardar o
+       * volume físico era a porta por onde um Mudo ligado ao
+       * esconder era desfeito ao voltar): ao retomar, a fórmula
+       * única recalcula o volume do instante — progresso da rampa
+       * × factores actuais. Com o Mudo ligado, o regresso é a 0;
+       * ao desligar o Mudo depois, o som volta ao valor da fórmula
+       * desse instante, não a um fantasma guardado. */
       var rampaAntes = idRampaTrilha;
-      var vol = trilhaVolumeAntes;
-      trilhaVolumeAntes = null;
       trilha.addEventListener('playing', function () {
         try {
           if (idRampaTrilha && idRampaTrilha !== rampaAntes) { clearInterval(idRampaTrilha); idRampaTrilha = null; }
-          if (vol !== null) trilha.volume = vol;
+          aplicarVolumeTrilha();
         } catch (_) {}
       }, { once: true });
       /* Ao voltar, a trilha NÃO retoma do ponto congelado: salta

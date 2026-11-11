@@ -132,6 +132,35 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
 }
 .ent-painel .cfgrow { margin: 7px 0; }
 
+/* ---------- cabeçalho pegajoso + ✕ do painel (t-config-entrada,
+   lei 11/11 10:36): a faixa é o primeiro filho e fica colada ao
+   topo quando a lista rola; fundo opaco da cor do painel para as
+   linhas passarem por baixo dela ---------- */
+.ent-cabecalho {
+  position: sticky; top: -16px; z-index: 3;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin: -16px -18px 10px; padding: 16px 18px 4px;
+  background: rgba(16, 12, 7, .97); border-radius: 10px 10px 0 0;
+}
+.ent-cabecalho h2 { margin: 0; text-align: left; }
+.ent-fechar {
+  flex: none; width: 32px; height: 32px; margin-left: 8px; cursor: pointer;
+  border: 1px solid rgba(201, 162, 39, .8); border-radius: 8px;
+  background: rgba(28, 21, 12, .85); color: var(--ouro-claro, #e8c877);
+  font-size: 13px; font-weight: 700; line-height: 1;
+}
+.ent-subtitulo {
+  font-family: Georgia, 'DejaVu Serif', serif; font-size: 11px;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--ouro);
+  margin: 12px 0 4px;
+}
+.ent-painel .vol-range { max-width: 170px; }
+.ent-painel .vol-valor { font-size: 12px; }
+.ent-nota.som-nota {
+  border: 1px dashed rgba(201, 162, 39, .35); border-radius: 8px;
+  padding: 7px 9px; margin: 8px 0 4px;
+}
+
 /* ---------- a porta do Google: o fluxo vive DENTRO dos botões de
    entrar; não há botão do Google na vista 1 ---------- */
 .ent-google {
@@ -194,6 +223,7 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
      fina dourada visível */
   .ent-painel { left: 30%; width: 40%; top: 25%; max-height: 73.5%; padding: 13px 16px 12px; }
   .ent-painel .cfgrow { margin: 4px 0; }
+  .ent-cabecalho { top: -13px; margin: -13px -16px 8px; padding: 13px 16px 4px; }
 }
 
 /* ---------- RETRATO (conserto t-titulo-retrato, 10/11 + EMENDA DE
@@ -303,16 +333,46 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
      44 px mínimos de toque. Substitui o canto inferior da REF_58. */
   top: calc(2.76% + env(safe-area-inset-top, 0px));
   right: calc(2.69% + env(safe-area-inset-right, 0px));
-  min-height: 44px; padding: 10px 20px 10px 24px;
-  background: rgba(10, 8, 5, .55);
-  border: 1px solid rgba(201, 162, 39, .55); border-radius: 8px;
-  color: var(--ouro-claro, #f3d98b);
+  /* ESTILO IDÊNTICO À REFERÊNCIA (palavra do Mestre, 11/11 09:53 —
+     tranche t-pular-estilo; ficha medida em DESENHO.md da sede): a
+     placa simples anterior (fundo translúcido + filete + radius)
+     sai; entra a MESMA língua das placas .ent-btn e do «PULAR»
+     pintado do v12 — placa de pontas em losango desenhada num SVG
+     de fundo: moldura dourada dupla (#d9b45f fora, #a37f33 dentro),
+     fundo escuro quente em gradiente, brilho dourado no topo,
+     losangos #e8c877 nas pontas e o símbolo «» (dois triângulos
+     cheios, #fdf3c4) à esquerda, como o pintado. A caixa é a área
+     de toque (172×52); a placa VISÍVEL mede 172×30 (aspecto 5,73:1
+     ≈ os 5,75:1 medidos na pintura), centrada — os 11 px acima e
+     abaixo são toque transparente. A sombra (drop-shadow) segue a
+     silhueta da placa. A letra não leva a condensação scaleX das
+     .ent-btn (exige um <span> e o botão nasce com texto simples no
+     entrada.js, fora do âmbito) — compensa o letter-spacing.
+     AJUSTE DA LETRA (11/11, tranche t-pular-estilo-ajuste; veredicto
+     do Mestre ao lado-a-lado: «tá muito grande e não tá centralizado
+     — a moldura em si tá legal»): a moldura NÃO muda; a letra foi
+     medida contra a pintura (protocolo de componentes, limiar 200 —
+     ficha em MEDIDAS da sede do ajuste) e corrigida ao píxel:
+     maiúsculas 47,8% → 34,4% da altura da placa (pintura: 35,7%);
+     bloco «PULAR» centro 64,2% → 52,9% e largura 48,1% → 31,6%
+     (pintura: 52,5% / 29,8%); símbolo » centro 19,5% → 16,9% e
+     altura 31,1% → 28,9% (pintura: 16,8% / 28,6%) — só os dois
+     polígonos dos chevrons mexeram dentro do SVG; a folga »→P fica
+     16,1% como na pintura. Resultado: font-size 14px,
+     letter-spacing 0, padding-left 23px. */
+  box-sizing: border-box; width: 172px; height: 52px;
+  padding: 0 14px 0 23px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 344 60' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='gp' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23241a0e'/%3E%3Cstop offset='.45' stop-color='%23100a04'/%3E%3Cstop offset='1' stop-color='%231a1108'/%3E%3C/linearGradient%3E%3CradialGradient id='rp' cx='.5' cy='.5' r='.5'%3E%3Cstop offset='0' stop-color='%23ffbe5a' stop-opacity='.07'/%3E%3Cstop offset='1' stop-color='%23ffbe5a' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cpolygon points='30,3 314,3 341,30 314,57 30,57 3,30' fill='url(%23gp)' stroke='%23b8933f' stroke-width='3'/%3E%3Cpolygon points='38,10 306,10 326,30 306,50 38,50 18,30' fill='url(%23rp)' stroke='%23a37f33' stroke-width='2'/%3E%3Cellipse cx='172' cy='3' rx='110' ry='3' fill='%23ffe9b0' opacity='.34'/%3E%3Cellipse cx='172' cy='57' rx='110' ry='3' fill='%23ffdf9a' opacity='.12'/%3E%3Cpolygon points='6,30 12,24 18,30 12,36' fill='%23e8c877'/%3E%3Cpolygon points='338,30 332,24 326,30 332,36' fill='%23e8c877'/%3E%3Cpolygon points='42.7,20.8 54.5,30 42.7,39.2' fill='%23eee0ae'/%3E%3Cpolygon points='61,20.8 72.6,30 61,39.2' fill='%23eee0ae'/%3E%3C/svg%3E") center / 100% 30px no-repeat;
+  border: none; border-radius: 0;
+  color: #f6e3ac;
   font-family: Georgia, 'DejaVu Serif', serif; font-weight: 700;
-  font-size: 14px; letter-spacing: .22em; text-transform: uppercase;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, .9);
+  font-size: 14px; letter-spacing: 0; text-transform: uppercase;
+  text-align: center; line-height: 52px; white-space: nowrap;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, .9), 0 0 12px rgba(201, 162, 39, .30);
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .55));
   cursor: pointer;
 }
-.ent-pular:active { background: rgba(28, 21, 12, .8); }
+.ent-pular:active { filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .55)) brightness(1.28); }
 #entrada.a-tocar-filme.tem-marca-filme .ent-pular { display: block; }
 #entrada.a-tocar-filme .ent-placa,
 #entrada.a-tocar-filme .ent-btn,
@@ -321,3 +381,21 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
 #entrada.a-tocar-filme .ent-painel {
   opacity: 0; pointer-events: none;
 }
+
+/* ---------- a logo como tela de carregamento (tranche
+   t-logo-carregamento): a PRIMEIRA camada da abertura — o vídeo do
+   provérbio em ciclo (mudo), inteiro e centrado sobre o fundo
+   escuro dele (object-fit: contain — o emblema e o letreiro
+   lêem-se completos, sem cortes; a cor do fundo é a medida nos
+   cantos do próprio vídeo). Vive por cima de tudo (z-index 4 —
+   acima do filme, do loop, da interface e do botão PULAR, que
+   nunca aparece durante ela) e sai em desbote curto (~350 ms)
+   quando o filme está pronto: a classe «logo-fora» na raiz
+   apaga-a e tira-lhe o toque no mesmo instante, e o JS remove o
+   elemento logo a seguir. ---------- */
+#ent-video-logo {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; background: #17181d;
+  z-index: 4; opacity: 1; transition: opacity .35s ease;
+}
+#entrada.logo-fora #ent-video-logo { opacity: 0; pointer-events: none; }
