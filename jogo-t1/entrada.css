@@ -280,6 +280,31 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
 .ent-placa, .ent-btn, .ent-ajuda, .ent-erro-entrada, .ent-painel {
   z-index: 2; transition: opacity .6s ease;
 }
+
+/* ---------- o botão PULAR (tranche t-pular-filme): elemento real,
+   discreto, no canto inferior direito — letras douradas serifadas
+   sobre fundo escuro translúcido com filete dourado fino, na
+   linguagem das placas. Escondido por omissão; a ÚNICA regra que o
+   mostra exige as duas classes na raiz: a tocar o filme E a marca
+   deste aparelho («tem-marca-filme», posta pelo entrada.js quando
+   o aparelho já viu o filme inteiro numa visita anterior). Quando
+   o filme acaba ou é pulado, «a-tocar-filme» sai e o botão some
+   no mesmo instante — nunca coexiste com as placas do título. -- */
+.ent-pular {
+  position: absolute; z-index: 3; display: none;
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  min-height: 44px; padding: 10px 20px 10px 24px;
+  background: rgba(10, 8, 5, .55);
+  border: 1px solid rgba(201, 162, 39, .55); border-radius: 8px;
+  color: var(--ouro-claro, #f3d98b);
+  font-family: Georgia, 'DejaVu Serif', serif; font-weight: 700;
+  font-size: 14px; letter-spacing: .22em; text-transform: uppercase;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, .9);
+  cursor: pointer;
+}
+.ent-pular:active { background: rgba(28, 21, 12, .8); }
+#entrada.a-tocar-filme.tem-marca-filme .ent-pular { display: block; }
 #entrada.a-tocar-filme .ent-placa,
 #entrada.a-tocar-filme .ent-btn,
 #entrada.a-tocar-filme .ent-ajuda,

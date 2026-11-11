@@ -797,8 +797,10 @@
    *  · A página abre e o FILME (video-entrada.mp4, só imagem, 18 s)
    *    toca UMA vez em ecrã inteiro. Enquanto ele toca, a raiz tem a
    *    classe «a-tocar-filme»: as placas e os painéis estão
-   *    invisíveis e sem toque — é só o filme. NÃO há toque para
-   *    saltar: o filme toca inteiro a cada abertura (fluxo da ordem).
+   *    invisíveis e sem toque — é só o filme. Saltar, só com a
+   *    marca deste aparelho (secção «PULAR O FILME» abaixo,
+   *    t-pular-filme): na primeira vez não há botão nenhum e o
+   *    filme toca inteiro.
    *  · A MÚSICA (trilha-titulo.m4a, a faixa inteira, −12 dB já no
    *    ficheiro) é um elemento de áudio SEPARADO e contínuo: arranca
    *    com o filme, no ponto do bloco de 15 min (abaixo), com rampa
@@ -843,6 +845,42 @@
   }
   window.__entradaPontoTrilha = pontoDaTrilha; /* gancho de prova */
 
+  /* ---------- PULAR O FILME — só da segunda vez (t-pular-filme;
+   * palavra do Mestre, 11/11/2026 09:04: «a primeira vez que a
+   * pessoa entra no jogo não aparece esse botão de pular; depois
+   * que ela fez o login e tudo mais, a segunda vez que ela entrou,
+   * aí pode aparecer a opção de pular; mas a primeira vez, naquele
+   * aparelho, não pode pular — é obrigado a assistir o filme»).
+   *
+   * A marca «este aparelho já viu o filme inteiro»:
+   *  · chave localStorage «entrada-filme-visto» = '1' — a família
+   *    das chaves da própria entrada; o âmbito é O APARELHO (a
+   *    origem neste navegador), não a conta: trocar de conta no
+   *    mesmo aparelho mantém a marca, outro aparelho não a tem, e
+   *    apagar os dados do site apaga a marca (a obrigação renasce);
+   *  · escreve-se SÓ no «ended» do filme — o filme acabou por si.
+   *    O clique em PULAR não escreve (o botão só existe com a marca
+   *    já gravada); o erro do filme (fallback) não escreve — o
+   *    filme não foi visto, a entrada segue para o título como
+   *    hoje e ninguém fica preso por uma falha técnica; a rede
+   *    dos 60 s não escreve; fechar a meio não escreve;
+   *  · leitura e escrita sempre em try/catch, como o resto da
+   *    casa: armazenamento morto lê «sem marca» e a escrita é sem
+   *    efeito — esse navegador nunca ganha o botão, e nunca fica
+   *    preso por causa disso.
+   * O botão é um elemento real (#ent-pular), visível só durante o
+   * filme E com a marca (a raiz ganha «tem-marca-filme»); o clique
+   * chama terminarFilme() — o MESMO caminho do fim natural: loop,
+   * placas e a trilha contínua, sem atalho paralelo. ---------- */
+  var CHAVE_FILME_VISTO = 'entrada-filme-visto';
+  function filmeJaVistoNesteAparelho() {
+    try { return localStorage.getItem(CHAVE_FILME_VISTO) === '1'; } catch (_) { return false; }
+  }
+  function gravarFilmeVisto() {
+    try { localStorage.setItem(CHAVE_FILME_VISTO, '1'); } catch (_) {}
+  }
+  var filmeJaVisto = filmeJaVistoNesteAparelho();
+
   var videoFilme = el('video', 'ent-video');
   videoFilme.id = 'ent-video-filme';
   videoFilme.src = 'video-entrada.mp4';
@@ -870,6 +908,18 @@
   raiz.insertBefore(videoFilme, raiz.firstChild);
   raiz.insertBefore(videoLoop, raiz.firstChild);
   raiz.classList.add('a-tocar-filme');
+
+  /* O botão PULAR: nasce sempre no DOM mas escondido — quem o
+   * mostra é a regra do CSS (só com «a-tocar-filme» E
+   * «tem-marca-filme» na raiz). Sem a marca, nenhum fotograma do
+   * filme o tem visível. */
+  var btnPular = el('button', 'ent-pular', 'PULAR');
+  btnPular.type = 'button';
+  btnPular.id = 'ent-pular';
+  btnPular.setAttribute('aria-label', 'Pular o filme de entrada');
+  raiz.appendChild(btnPular);
+  if (filmeJaVisto) raiz.classList.add('tem-marca-filme');
+  btnPular.addEventListener('click', function () { terminarFilme(); });
 
   /* ---------- a paisagem da abertura (melhor esforço) ---------- */
   var paisagemTentada = false;
@@ -924,7 +974,13 @@
       try { videoFilme.remove(); } catch (_) {}
     }, 1200);
   }
-  videoFilme.addEventListener('ended', terminarFilme);
+  videoFilme.addEventListener('ended', function () {
+    /* O filme acabou por si: este aparelho já o viu inteiro —
+     * a marca grava-se ANTES de o título assumir (t-pular-filme).
+     * É o ÚNICO sítio que escreve a marca. */
+    gravarFilmeVisto();
+    terminarFilme();
+  });
   videoFilme.addEventListener('error', function () {
     /* Sem filme, a entrada não fica muda nem presa: título directo. */
     try { videoFilme.style.display = 'none'; } catch (_) {}
