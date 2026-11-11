@@ -854,6 +854,7 @@
   var videoLoop = el('video', 'ent-video');
   videoLoop.id = 'ent-video-loop';
   videoLoop.src = 'video-loop.mp4';
+  videoLoop.poster = 'loop-quadro0.webp'; /* o fotograma 0 do próprio loop: o que desbota por cima do filme é sempre um fotograma do loop, nunca o fundo pintado (t-piscada-layout) */
   videoLoop.muted = true;
   videoLoop.loop = true;
   videoLoop.setAttribute('playsinline', '');
