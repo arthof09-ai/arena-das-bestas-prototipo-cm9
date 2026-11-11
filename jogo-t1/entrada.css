@@ -7,10 +7,15 @@
    placas ornamentadas que cobrem por completo os botões pintados, nas
    caixas medidas em MEDICAO-V12.md. A entrada vira um PALCO com a
    proporção da referência (1672:941), centrado; fora do palco, a mesma
-   cena desfocada e escurecida. RETRATO: sem referência — mantém-se a
-   composição anterior (cena limpa V17 em cover, título em texto,
-   placas empilhadas centradas em baixo), com o mesmo estilo de placa.
-   Enquanto a entrada está pendente, o DOM do jogo nasce escondido. */
+   cena desfocada e escurecida. RETRATO: o título é também o PINTADO
+   (o do filme/loop; no fallback sem vídeo, a arte v12) — a placa de
+   texto nunca é visível (conserto t-titulo-retrato, 10/11: a foto do
+   Mestre mostrou os DOIS títulos sobrepostos em retrato) — e as placas
+   empilham centradas em baixo NA ESCADA DO VIVO (emenda de âmbito do
+   mesmo dia: âncoras e alturas naturais de antes do conserto; só a
+   frase de ajuda e a linha de erro ganham posições fixas calculadas
+   pelo pior caso, para nunca ficarem tapadas). Enquanto a entrada
+   está pendente, o DOM do jogo nasce escondido. */
 
 html.entrada-pendente body > *:not(#entrada) { display: none !important; }
 
@@ -23,8 +28,10 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
-/* ---------- placa do título (só retrato: em paisagem o título é o
-   pintado do fundo v12) ---------- */
+/* ---------- placa do título em texto: NUNCA visível — em paisagem
+   o título é o pintado do fundo v12 e em retrato o pintado do
+   filme/loop; a placa fica só para leitores de ecrã nas duas
+   orientações (nas regras de cada orientação, abaixo) ---------- */
 .ent-placa {
   position: absolute; left: 25%; width: 50%; top: 3.5%; height: 17%;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -189,22 +196,60 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   .ent-painel .cfgrow { margin: 4px 0; }
 }
 
-/* ---------- RETRATO: composição anterior (sem referência v12):
-   a cena limpa em cover (o centro fica: eclipse, Zhu Feng e a Wang);
-   as placas empilham centradas em baixo, sempre alcançáveis -------- */
+/* ---------- RETRATO (conserto t-titulo-retrato, 10/11 + EMENDA DE
+   ÂMBITO do mesmo dia): o título é o PINTADO — o mesmo do filme/loop
+   e da arte v12 — e a placa de texto sai da composição (fica só para
+   leitores de ecrã, como em paisagem): acabaram-se os dois títulos
+   sobrepostos da foto dele. Sem vídeo (fallback), o fundo passa a ser
+   a arte v12, que também traz o título pintado.
+   A EMENDA repõe a ESCADA DO VIVO: as três placas ficam nas âncoras
+   e alturas naturais de antes do conserto (Configurações a 2.5% ·
+   Jogadora a +56 · Mestre a +112 — a ordem de cima para baixo é
+   Mestre, Jogadora, Configurações, como na foto dele das 20:23).
+   A primeira versão do conserto tinha re-ancorado a pilha inteira
+   com alturas reservadas de 90 px e os botões «mudaram de sítio» —
+   fora do pedido. O que fica do conserto, além do título: (1) a
+   linha .sub com fonte contida (≤12,5 px), que limita a placa com
+   linha a 2 linhas de texto; (2) a frase de ajuda e a linha de erro
+   em posições FIXAS acima do pior caso (placa do Mestre com a
+   linha = 80 px medidos no pior viewport da bateria), para nunca
+   ficarem tapadas — era o segundo defeito da foto: a placa do
+   Mestre crescia por cima da frase; (3) a regra da combinação: com
+   a linha na placa da Jogadora, é ela que cresce para cima e o
+   Mestre sobe o crescimento + 10 px de folga — único movimento da
+   pilha, declarado; em todos os outros casos nada se mexe quando a
+   linha aparece ou some. Folgas ≥10 px em todas as combinações. -- */
 @media (orientation: portrait) {
-  .ent-placa { left: 5%; width: 90%; top: 4%; height: 11.5%; }
-  .ent-titulo { font-size: clamp(22px, 8.4vw, 40px); letter-spacing: .08em; }
-  .ent-faixa { font-size: clamp(9px, 3.2vw, 13px); letter-spacing: .26em; }
+  #entrada {
+    background:
+      linear-gradient(rgba(4, 3, 2, .30), rgba(4, 3, 2, 0) 26%, rgba(4, 3, 2, 0) 68%, rgba(4, 3, 2, .42)),
+      url('fundo-v12.webp') center / cover no-repeat #0a0505;
+  }
+  /* o título é o pintado: a placa HTML fica para leitores de ecrã */
+  .ent-placa {
+    left: 0; top: 0; width: 1px; height: 1px; overflow: hidden;
+    clip-path: inset(50%); white-space: nowrap;
+  }
   .ent-btn { min-height: 46px; }
+  .ent-btn .sub { font-size: clamp(10px, 1.6vh, 12.5px); line-height: 1.15; }
   /* left E width vêm por ID (a regra base é por ID) — repetir por ID */
   #ent-mestre, #ent-jogadora, #ent-config { left: 15%; width: 70%; }
+  /* a escada do vivo: âncoras e alturas naturais de antes do conserto */
   #ent-config { bottom: 2.5%; }
   #ent-jogadora { bottom: calc(2.5% + 56px); }
   #ent-mestre { bottom: calc(2.5% + 112px); }
-  .ent-ajuda { left: 10%; width: 80%; bottom: calc(2.5% + 168px); }
+  /* combinação Jogadora-com-linha: a placa dela cresce para cima a
+     partir da sua âncora (56 + 80 do pior caso) e o Mestre sobe para
+     cima dela com 10 px de folga — as placas nunca se tocam */
+  #entrada:has(#ent-jogadora > .sub) #ent-mestre { bottom: calc(2.5% + 146px); }
+  /* frase e erro FIXOS acima do pior caso: Mestre com linha chega a
+     112 + 80 = 192; Mestre subido pela combinação chega a 146 + 46
+     (sem linha) = 192 — a frase a 204 deixa 12 px aos dois */
+  .ent-ajuda { left: 10%; width: 80%; bottom: calc(2.5% + 204px); }
   .ent-painel { left: 8%; width: 84%; top: 24%; max-height: 70%; }
-  .ent-erro-entrada { left: 10%; width: 80%; bottom: calc(2.5% + 196px); }
+  /* a frase reserva 44 px (2 linhas a 14 px, com margem): o erro
+     fica-lhe acima com 10 px de folga */
+  .ent-erro-entrada { left: 10%; width: 80%; bottom: calc(2.5% + 258px); }
 }
 
 /* ---------- FILME + LOOP (tranche t-entrada-filme): o filme de
