@@ -844,6 +844,18 @@
     return PONTOS_TRILHA[((b % 3) + 3) % 3];
   }
   window.__entradaPontoTrilha = pontoDaTrilha; /* gancho de prova */
+  /* A posição que o relógio manda AGORA (palavra do Mestre,
+   * 11/11/2026 09:15–09:18: o som sincronizado em todos os
+   * aparelhos): o ponto do bloco MAIS o que já decorreu dentro
+   * dele, no módulo da duração da faixa. Quem (re)arranca, volta
+   * de fundo ou é corrigido aterra aqui — nunca num ponto
+   * congelado. A duração é a da faixa inteira (194,581 s). */
+  var DURACAO_TRILHA = 194.581;
+  function posicaoDaTrilha(agoraMs) {
+    var decorrido = (((agoraMs / 1000) - ANCORA_TRILHA) % 900 + 900) % 900;
+    return (pontoDaTrilha(agoraMs) + decorrido) % DURACAO_TRILHA;
+  }
+  window.__entradaPosicaoTrilha = posicaoDaTrilha; /* gancho de prova */
 
   /* ---------- PULAR O FILME — só da segunda vez (t-pular-filme;
    * palavra do Mestre, 11/11/2026 09:04: «a primeira vez que a
@@ -1018,19 +1030,21 @@
   /* ---------- a trilha: ponto do bloco + rampa de 4 s ---------- */
   var trilhaIniciada = false;
   var idRampaTrilha = null;
+  var trilhaRampaFeita = false; /* trinco: a rampa é da abertura — uma vez por vida da trilha (emenda TRILHA-RELOGIO) */
   function iniciarTrilha() {
     if (trilhaIniciada) return;
     trilhaIniciada = true;
-    var ponto = pontoDaTrilha(Date.now());
     var tocar = function () {
-      try { trilha.currentTime = ponto; } catch (_) {}
+      /* O seek lê o relógio NESTE instante (o do canplay): a
+       * posição mandada é a do relógio, não a do carregamento. */
+      try { trilha.currentTime = posicaoDaTrilha(Date.now()); } catch (_) {}
       trilha.volume = 0;
       var prom = trilha.play();
       if (prom && prom.catch) {
         prom.catch(function () {
           /* Som travado sem toque: o arranque repete-se no primeiro
-           * toque/clique de tecla, com o ponto do bloco desse
-           * instante (pontoDaTrilha volta a ser lido lá dentro). */
+           * toque/clique de tecla, com a posição do relógio desse
+           * instante (posicaoDaTrilha volta a ser lida lá dentro). */
           trilhaIniciada = false;
           var outraVez = function () { iniciarTrilha(); };
           window.addEventListener('pointerdown', outraVez, { once: true });
@@ -1045,7 +1059,7 @@
     else trilha.addEventListener('canplay', tocar, { once: true });
   }
   trilha.addEventListener('playing', function () {
-    if (idRampaTrilha) return;
+    if (idRampaTrilha || trilhaRampaFeita) return;
     var t0 = performance.now();
     idRampaTrilha = setInterval(function () {
       var v = (performance.now() - t0) / 4000;
@@ -1053,6 +1067,7 @@
         v = 1;
         clearInterval(idRampaTrilha);
         idRampaTrilha = null;
+        trilhaRampaFeita = true;
       }
       try { trilha.volume = v; } catch (_) {}
     }, 100);
@@ -1100,8 +1115,9 @@
    *     se a trilha estiver a tocar, pausa e levanta a bandeira —
    *     a bandeira é a prova de que estava a tocar;
    *   · ao VOLTAR (visible, ou pageshow de restauro): só com a
-   *     bandeira posta, retoma com play() do ponto onde estava
-   *     (pause não faz seek) — e só se o elemento ainda estiver
+   *     bandeira posta, retoma com play() — saltando para a
+   *     posição que o relógio manda nesse instante — e só se o
+   *     elemento ainda estiver
    *     no documento: depois de entrar no jogo, pararMidiaEntrada
    *     removeu-o e ele nunca pode ressuscitar;
    *   · sem bandeira, voltar é no-op: trilha por iniciar (antes
@@ -1140,6 +1156,12 @@
           if (vol !== null) trilha.volume = vol;
         } catch (_) {}
       }, { once: true });
+      /* Ao voltar, a trilha NÃO retoma do ponto congelado: salta
+       * para onde o relógio manda agora — o mesmo ponto onde
+       * estão os outros aparelhos (palavra do Mestre, 11/11/2026
+       * 09:15–09:18; fora do jogo fica calada — a pausa acima
+       * fica —, mas o relógio nunca parou). */
+      try { trilha.currentTime = posicaoDaTrilha(Date.now()); } catch (_) {}
       var p = trilha.play();
       if (p && p.catch) p.catch(function () {});
     } catch (_) {}
@@ -1150,6 +1172,33 @@
   window.addEventListener('pagehide', trilhaEsconder);
   window.addEventListener('pageshow', function (e) { if (e && e.persisted) trilhaVoltar(); });
   /* ---------- SOM-EM-FUNDO-FIM ---------- */
+  /* ---------- TRILHA-RELOGIO-INICIO — a deriva corrige-se ----------
+   * A posição mandada (posicaoDaTrilha) é função do relógio;
+   * quem toca sem interrupção atravessa a fronteira do bloco
+   * (15 min) sem saltar, e relógios de média imperfeitos derivam.
+   * De 5 em 5 s, SÓ com a página visível e a trilha a tocar: se a
+   * distância circular à posição do relógio passar de 2 s, um
+   * seek repõe a posição. Dentro da tolerância, nada se toca —
+   * no máximo uma correcção por verificação, sem espasmos.
+   * Emenda medida na 1.ª bateria desta tranche: cada seek (o do
+   * regresso e os do corrector) pode fazer o elemento disparar
+   * outro 'playing' (re-buffer na posição nova), e o ouvinte da
+   * rampa da abertura — que só olhava para idRampaTrilha —
+   * re-arrancava a rampa: o volume mergulhava e re-subia em 4 s
+   * a cada correcção. O trinco trilhaRampaFeita (secção da
+   * trilha) fecha isso: a rampa corre uma única vez, na abertura;
+   * a emenda da REF_57 em trilhaVoltar fica como segunda rede.
+   * --------------------------------------------------------------- */
+  setInterval(function () {
+    try {
+      if (document.hidden) return;
+      if (!document.contains(trilha) || trilha.paused || trilha.ended) return;
+      var manda = posicaoDaTrilha(Date.now());
+      var desvio = ((trilha.currentTime - manda + DURACAO_TRILHA / 2) % DURACAO_TRILHA + DURACAO_TRILHA) % DURACAO_TRILHA - DURACAO_TRILHA / 2;
+      if (Math.abs(desvio) > 2) trilha.currentTime = manda;
+    } catch (_) {}
+  }, 5000);
+  /* ---------- TRILHA-RELOGIO-FIM ---------- */
   /* ============ FILME + LOOP + TRILHA — fim da secção ============ */
 
   /* ================================================================
