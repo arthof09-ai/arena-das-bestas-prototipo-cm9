@@ -292,8 +292,17 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
    no mesmo instante — nunca coexiste com as placas do título. -- */
 .ent-pular {
   position: absolute; z-index: 3; display: none;
-  right: calc(16px + env(safe-area-inset-right, 0px));
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  /* CANTO SUPERIOR DIREITO (palavra do Mestre, 11/11 09:35 —
+     tranche t-pular-canto): como o «PULAR» pintado do layout de
+     referência v12. Medido em fundo-v12.webp (1672×941): a placa
+     pintada ocupa x 87,68–97,25% · y 2,76–5,63% → margem do topo
+     2,76% da altura, margem da direita 2,69% da largura. O botão
+     real ancora o seu canto superior direito nesse mesmo ponto e
+     cresce para baixo/esquerda — a placa pintada tem só ~28 px de
+     altura na pintura (≈11 px num ecrã de 360) e o botão mantém os
+     44 px mínimos de toque. Substitui o canto inferior da REF_58. */
+  top: calc(2.76% + env(safe-area-inset-top, 0px));
+  right: calc(2.69% + env(safe-area-inset-right, 0px));
   min-height: 44px; padding: 10px 20px 10px 24px;
   background: rgba(10, 8, 5, .55);
   border: 1px solid rgba(201, 162, 39, .55); border-radius: 8px;
