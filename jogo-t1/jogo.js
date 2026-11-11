@@ -833,6 +833,24 @@
    * de sempre (1d6) continua a mandar na duração e a idade só
    * pinta o estágio. O fogo da PESSOA (A Arder) não entra nesta
    * regra: continua o de sempre.
+   * Emenda pela palavra dele de 10/11/2026 (21:12), que
+   * SUBSTITUI a metade seca da emenda das 17:45: «Sem chuva dura
+   * 9 turnos, aí pode por 3 turnos para cada estágio da
+   * animação». SEM CHUVA, a casa dura NOVE TURNOS fixos e os
+   * estágios lêem-se três turnos de cada vez — idade 1–3 forte ·
+   * 4–6 médio · 7–9 fraco — e apaga-se quando a idade passa
+   * de 9. O combustível ao acaso (1d6) deixa de mandar na
+   * duração das casas do fogo do raio, na chuva e a seco: fica
+   * no estado e nos saves como campo legado (nasce 1d6 e viaja
+   * nos snapshots como até aqui, para os saves lerem igual) e
+   * já não é descontado em momento nenhum. A duração é SÓ a
+   * idade, com o tecto do tempo que faz em cada momento: na
+   * chuva 3, a seco 9 — o tempo que faz AGORA decide o tecto e
+   * o estágio a partir da idade da casa (casa velha que apanhe
+   * chuva apaga-se no momento seguinte, como já acontecia;
+   * casa nascida na chuva que fique a seco continua até aos 9,
+   * com o estágio pela régua seca). O dano continua o mesmo em
+   * qualquer idade e em qualquer estágio.
    * O evento de regras chama-se raioArena e vive no relógio das
    * RONDAS (momento de ambiente, início da ronda) — distinto do
    * relâmpago cosmético acima, que nunca cai nem fere.
@@ -855,7 +873,7 @@
   const RF_CHUVA_APAGA_PARADO = true;      // §5: quem está A Arder fora de casa em chamas, com chuva, apaga no início do próprio turno (antes do tick)
   const RF_FIM_SECO = 'acao-movimento';    // §5 lacuna do fim sem chuva: proposta 1 da bancada — apagar-se custa a Acção de Movimento (botão na vez dela; a IA dos monstros não o faz nesta casca)
   const RF_CRUZ_FOGO = true;   // palavra dele (09/11): onde o raio cai, arde uma CRUZ — 3×3 sem os cantos (5 casas); delta nomeado sobre o desenho de 05/11, ver rfAcenderCruz
-  const rfCasas = new Map();        // 'x,y' -> { x, y, combustivel, idade } — casas a arder (estado de terreno); idade = turnos de existência (emenda 10/11: na chuva manda a idade, tecto 3; sem chuva manda o combustível e a idade só pinta o estágio)
+  const rfCasas = new Map();        // 'x,y' -> { x, y, combustivel, idade } — casas a arder (estado de terreno); idade = turnos de existência e manda na duração (emendas 10/11: na chuva tecto 3, estágio = idade; sem chuva tecto 9, estágios de 3 em 3); combustivel = campo legado dos saves (nasce 1d6), já não decide duração nem é descontado
   const rfAArder = new Set();       // ids com o estado «A Arder» (registo próprio da casca: NÃO entra no array de estados do motor)
   const rfUltimoTick = new Map();   // id -> ronda do último tick (anti-duplicação: 1 tick por figura e ronda)
   let rfRodadaResolvida = 1;        // última ronda cujo momento de ambiente correu (a ronda 1 abre a batalha: sem momento — declarado)
@@ -866,6 +884,13 @@
   function rfDizer(frase) { rfFrasePendente = rfFrasePendente ? rfFrasePendente + ' ' + frase : frase; }
   function rfTomarFrasePendente() { const f = rfFrasePendente; rfFrasePendente = ''; return f ? f + ' ' : ''; }
   function rfChave(x, y) { return x + ',' + y; }
+  function rfEstagioDaIdade(idade, chuva) {
+    /* O estágio lê-se da idade com a régua do tempo que faz
+     * (emendas 10/11): na chuva, um turno por estágio (a idade
+     * 1, 2 e 3 lê-se forte, médio e fraco); a seco, três turnos
+     * por estágio (idade 1–3 forte · 4–6 médio · 7–9 fraco). */
+    return chuva > 0 ? Math.min(idade, 3) : Math.min(3, Math.ceil(idade / 3));
+  }
   function rfOcupante(x, y) {
     for (const e of ELENCO) {
       const u = unidade(e.id);
@@ -1030,28 +1055,32 @@
     rfResolverImpacto(x, y);
   }
   function ambienteMomentoRodada() {
-    /* O momento de ambiente (desenho §1/§4 + emenda 10/11):
+    /* O momento de ambiente (desenho §1/§4 + emendas 10/11):
      * início da ronda, antes da primeira vez. Ordem escrita, item
      * a item: (1) a IDADE de cada casa a arder avança um turno;
      * (2) a duração resolve-se com a chuva lida NESTE instante —
-     * COM CHUVA, manda a contagem da emenda: sem rolagem de
-     * extinção e sem desconto de combustível, a casa apaga-se
-     * quando a idade passa de 3 (viveu os turnos 1, 2 e 3) e a
-     * pessoa ocupante apaga-se com ela, como na antiga morte por
-     * rolagem com chuva; SEM CHUVA, manda o combustível de
-     * sempre (−1 por momento, apaga a 0); (3) a vista recebe o
-     * estágio da idade nova (1 forte · 2 médio · 3 fraco); (4)
-     * raios novos da ronda — pendente do botão primeiro, depois
-     * o automático da frequência (Pouca 1/6 · Forte 2/6). Casa
-     * acesa nesta ronda não envelhece nem desconta nesta ronda
-     * (acende depois deste momento, no passo 4, ou a meio da
-     * ronda pelo botão/relógio de exploração).
-     * Fronteiras da emenda, declaradas: chuva que pára a meio da
-     * vida devolve a casa ao combustível — que nunca foi
-     * descontado debaixo de chuva; casa já velha (idade ≥3) que
-     * apanhe chuva apaga-se no momento seguinte, porque na
-     * chuva a vida conta-se em turnos de existência e a idade
-     * não se perdoa. */
+     * a idade manda nos dois regimes e o tempo que faz AGORA
+     * fixa o tecto: COM CHUVA, a casa apaga-se quando a idade
+     * passa de 3 (viveu os turnos 1, 2 e 3) e a pessoa ocupante
+     * apaga-se com ela, como na antiga morte por rolagem com
+     * chuva; SEM CHUVA, a casa dura NOVE turnos e apaga-se
+     * quando a idade passa de 9 (palavra dele de 10/11 21:12),
+     * sem tocar na pessoa — a seco, o fogo da pessoa é o regime
+     * de sempre e a casa apagar-se não apaga ninguém; (3) a
+     * vista recebe o estágio da idade nova pela régua do
+     * instante (rfEstagioDaIdade: na chuva, um turno por
+     * estágio; a seco, três turnos por estágio); (4) raios
+     * novos da ronda — pendente do botão primeiro, depois o
+     * automático da frequência (Pouca 1/6 · Forte 2/6). Casa
+     * acesa nesta ronda não envelhece nesta ronda (acende
+     * depois deste momento, no passo 4, ou a meio da ronda pelo
+     * botão/relógio de exploração).
+     * Fronteiras das emendas, declaradas: o combustível já não
+     * é descontado em momento nenhum (campo legado dos saves);
+     * casa já velha (idade ≥4) que apanhe chuva apaga-se no
+     * momento seguinte, porque na chuva o tecto é 3 e a idade
+     * não se perdoa; casa nascida na chuva que fique a seco
+     * continua até aos 9, com o estágio pela régua seca. */
     if (batalhaFim || supCongelado) return;
     const chuva = ambientePartida.chuva;
     for (const [chave, c] of [...rfCasas]) {
@@ -1072,14 +1101,19 @@
           continue;
         }
       } else {
-        c.combustivel -= 1;
-        if (c.combustivel <= 0) {
+        /* A SECO manda a contagem longa (emenda 10/11 21:12):
+         * nove turnos de existência e apaga — o combustível já
+         * não é descontado (campo legado dos saves) e a pessoa
+         * ocupante NÃO se apaga com a casa: a seco, o fogo da
+         * pessoa é o regime de sempre (sair não apaga;
+         * apagar-se é a acção dela na sua vez). */
+        if (c.idade > 9) {
           rfCasas.delete(chave);
           try { view.apagarFogoCasa(c.x, c.y); } catch (_) {}
           continue;
         }
       }
-      try { view.definirEstagioFogoCasa(c.x, c.y, Math.min(c.idade, 3)); } catch (_) {}
+      try { view.definirEstagioFogoCasa(c.x, c.y, rfEstagioDaIdade(c.idade, chuva)); } catch (_) {}
     }
     if (batalhaFim) return;
     if (ambPodeTerRaios()) {
@@ -1147,12 +1181,16 @@
     try { view.limparFogos(); } catch (_) {}
     if (!rf) return;
     for (const c of rf.casas || []) {
-      /* Emenda 10/11: a idade volta com o snapshot e a vista
-       * recebe o estágio dela; snapshots antigos (sem o campo)
-       * nascem com idade 1 — declarado. */
+      /* Emendas 10/11: a idade volta com o snapshot e a vista
+       * recebe o estágio dela pela régua do tempo que faz ao
+       * restaurar (rfEstagioDaIdade: na chuva, um turno por
+       * estágio; a seco, três turnos por estágio — uma casa
+       * restaurada a seco com idade 5 lê-se médio, estágio 2);
+       * snapshots antigos (sem o campo) nascem com idade 1 —
+       * declarado. */
       const idade = (c.idade >= 1 ? c.idade : 1);
       rfCasas.set(rfChave(c.x, c.y), { x: c.x, y: c.y, combustivel: c.combustivel, idade });
-      try { view.acenderFogoCasa(c.x, c.y); view.definirEstagioFogoCasa(c.x, c.y, Math.min(idade, 3)); } catch (_) {}
+      try { view.acenderFogoCasa(c.x, c.y); view.definirEstagioFogoCasa(c.x, c.y, rfEstagioDaIdade(idade, ambientePartida.chuva)); } catch (_) {}
     }
     for (const id of rf.aArder || []) rfIncendiarPessoa(id);
     /* EM-AV2-06: a memória do último tick volta com o snapshot.
