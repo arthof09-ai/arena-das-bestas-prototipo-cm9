@@ -811,8 +811,15 @@
    *  · O filme termina sobre um ciclo do loop: quando ele acaba, o
    *    LOOP (video-loop.mp4) — já pré-carregado — começa e faz
    *    crossfade por cima do último fotograma; as placas aparecem.
-   *    O loop é o fundo animado eterno da tela de entrada; a arte
-   *    pintada de hoje (v12/V17, no CSS) fica como poster/fallback.
+   *    O loop é o fundo animado eterno da tela de entrada. Enquanto
+   *    o filme carrega, a espera mostra SÓ o fotograma 0 do próprio
+   *    filme (o poster do elemento): quando o filme arranca, a
+   *    imagem parada é a imagem que começa a mexer — sem corte e
+   *    sem sinal, emblema ou texto nenhum por cima (palavra dele,
+   *    10/11 22:16; conserto t-poster-filme: antes o poster era a
+   *    cena final V17 e o começo cortava para o fim — o «relâmpago»
+   *    que ele apanhou). A arte pintada (v12, no CSS) fica como
+   *    fallback sem vídeo.
    *  · Sem filme (rede/codec): salta directo para o título. Sem
    *    loop: fica o fundo pintado. Nada disto trava as portas.
    *  · A abertura tenta travar a paisagem (desenho de 06/11: a
@@ -839,7 +846,7 @@
   var videoFilme = el('video', 'ent-video');
   videoFilme.id = 'ent-video-filme';
   videoFilme.src = 'video-entrada.mp4';
-  videoFilme.poster = 'cena-entrada-v17.webp';
+  videoFilme.poster = 'filme-quadro0.webp'; /* o fotograma 0 do próprio filme: a espera mostra o começo, não o fim (t-poster-filme) */
   videoFilme.muted = true; /* o filme não tem faixa de áudio: quem soa é a trilha */
   videoFilme.setAttribute('playsinline', '');
   videoFilme.preload = 'auto';
