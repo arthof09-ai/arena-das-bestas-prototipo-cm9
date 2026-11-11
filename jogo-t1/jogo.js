@@ -8056,8 +8056,8 @@
   /* O olhar dela = o cardinal mais próximo da frente real da figura
      (a correspondência VISAO_RAD da referência: N=180° · E=90° ·
      S=0° · W=270° em pivot.rotation.y). */
-  function visaoOlharDerivado() {
-    const graus = ((visaoFrenteGraus(PROPRIA) % 360) + 360) % 360;
+  function visaoOlharDerivadoDe(id) {
+    const graus = ((visaoFrenteGraus(id) % 360) + 360) % 360;
     let melhor = 'S', melhorDist = 999;
     for (const [g, nome] of [[0, 'S'], [90, 'E'], [180, 'N'], [270, 'W']]) {
       const d = Math.min(Math.abs(graus - g), 360 - Math.abs(graus - g));
@@ -8065,6 +8065,7 @@
     }
     return melhor;
   }
+  function visaoOlharDerivado() { return visaoOlharDerivadoDe(PROPRIA); }
   function visaoCampo() {
     const ong = unidade(PROPRIA);
     const olhar = visaoOlharDerivado();
@@ -8081,6 +8082,7 @@
     visaoMemoria.lembrancas.clear();
     visaoMemoria.ultimaVisao = {};
     if (!MODO_MESTRE) view.limparFantasmas();
+    else visaoPreviaLimparMemoria();   /* no Mestre, a mesma porta limpa também a memória da pré-vista */
   }
 
   /* ---------- a lembrança das figuras (só Ultra — adenda B) ---------- */
@@ -8146,7 +8148,10 @@
 
   /* ---------- aplicar o modo à vista ---------- */
   function visaoAplicar() {
-    if (MODO_MESTRE) return;   /* A6: a vista do Mestre é o jogo normal — nenhuma verba da visão corre aqui */
+    if (MODO_MESTRE) {   /* A6: a vista do Mestre é o jogo normal — nenhuma verba da visão corre aqui; com a pré-vista ligada por ele, aplica-se a pré-vista (bloco seguinte) */
+      if (visaoPreviaMestre) visaoPreviaAplicar();
+      return;
+    }
     const ong = unidade(PROPRIA);
     if (!ong || !window.Visao) return;
     const modo = visaoPartida.modo;
@@ -8189,16 +8194,181 @@
     visaoSensorActualizar(campoVisto, olhar);
   }
 
+  /* ════════════════════════════════════════════════════════════════════
+     PRÉ-VISTA DO MESTRE — «Ver como as jogadoras» (pedido dele,
+     11/11/2026 08:44). Interruptor do ⚙ dele, DESLIGADO por omissão:
+     a regra A6 fica intacta — só com o interruptor ligado é que o
+     ecrã DESTE aparelho mostra o mundo como as jogadoras o veem
+     (modo/forma/prazo em vigor), calculado sobre a UNIÃO dos campos
+     das heroínas: o que qualquer uma vê, ele vê na pré-vista; o que
+     nenhuma vê, fica escondido dele na pré-vista. É só a vista deste
+     aparelho: não toca no estado da partida, não entra em saves nem
+     snapshots, não muda o que as jogadoras veem nos aparelhos delas.
+     A memória é PRÓPRIA (visaoPrevMemoria) — a memória da jogadora e
+     a da partida nunca são tocadas pela pré-vista. O sensor fica de
+     fora (declarado): é a marca de percepção privada do ecrã dela,
+     não é campo de visão.
+     Persistência (o padrão da casa dos outros interruptores do ⚙ —
+     qualidade, velocidade, tela vermelha): preferência DESTE
+     aparelho em localStorage 'hudt1-visao-previa' = 'ligado' |
+     'desligado'; nasce desligado, lê-se ao arranque nos dois papéis
+     e só se consome na vista do Mestre (a única onde o interruptor
+     existe). NUNCA entra em visaoPartida: o domínio dela é fechado
+     (modo/forma/prazo) e viaja na partida — isto é do ecrã, não dela.
+     ════════════════════════════════════════════════════════════════════ */
+  let visaoPreviaMestre = false;
+  try { visaoPreviaMestre = localStorage.getItem('hudt1-visao-previa') === 'ligado'; } catch (_) {}
+  const visaoPrevMemoria = { jaVisto: new Set(), lembrancas: new Map(), ultimaVisao: {} };
+  const visaoPrevCache = new Map();
+  let visaoPrevCasasVistas = AREA.cols * AREA.rows;
+  let visaoPrevUltimoSnapshot = null, visaoPrevEraFim = false;
+
+  /* os olhos das jogadoras: as unidades do lado das heroínas (todas
+     as do ELENCO fora de VISAO_INIMIGOS), cada uma com posição e
+     olhar seus — hoje a Ong; no elenco real, as três heroínas */
+  function visaoOlhosJogadoras() {
+    const olhos = [];
+    for (const e of ELENCO) {
+      if (VISAO_INIMIGOS.includes(e.id)) continue;
+      const u = unidade(e.id);
+      if (u) olhos.push({ id: e.id, x: u.posicao.x, y: u.posicao.y, olhar: visaoOlharDerivadoDe(e.id) });
+    }
+    return olhos;
+  }
+  /* o campo de UM olho, pela mesma chamada que a vista dela usa,
+     com cache por posição/olhar/forma (paralela à cache dela) */
+  function visaoCampoOlho(x, y, olhar) {
+    const chaveCache = [x, y, olhar, visaoPartida.forma].join('|');
+    if (visaoPrevCache.has(chaveCache)) return visaoPrevCache.get(chaveCache);
+    const s = window.Visao.campo(AREA.cols, AREA.rows, [x, y], olhar, visaoOpacos(), 'V2', VISAO_FORMAS[visaoPartida.forma]);
+    visaoPrevCache.set(chaveCache, s);
+    return s;
+  }
+  /* a UNIÃO dos campos: o que qualquer heroína vê. Sem argumento,
+     lê os olhos vivos; com olhos dados, é a mesma operação sobre
+     eles (é por aqui que a bateria a prova com dois olhos) — um só
+     sítio de consumo: visaoPreviaAplicar chama-a sem argumentos */
+  function visaoCampoUniao(olhos) {
+    const uniao = new Set();
+    for (const o of (olhos || visaoOlhosJogadoras()))
+      for (const k of visaoCampoOlho(o.x, o.y, o.olhar)) uniao.add(k);
+    return uniao;
+  }
+  function visaoPreviaLimparMemoria() {
+    /* os fantasmas da vista só se varrem quando o registo diz que
+       existem (fantasma no ecrã ⇔ entrada em lembrancas — nascem e
+       morrem sempre aos pares): com a pré-vista desligada ou sem
+       fantasmas, limpar a memória não toca na vista, como a A6 manda */
+    const tinhaFantasmas = visaoPrevMemoria.lembrancas.size > 0;
+    visaoPrevMemoria.jaVisto.clear();
+    visaoPrevMemoria.lembrancas.clear();
+    visaoPrevMemoria.ultimaVisao = {};
+    if (tinhaFantasmas) view.limparFantasmas();
+  }
+  /* gémea de visaoLembrancasActualizar sobre a memória da pré-vista */
+  function visaoPreviaLembrancasActualizar(campoVisto) {
+    const agora = visaoAgoraS();
+    for (const id of VISAO_INIMIGOS) {
+      const u = unidade(id);
+      if (!u) continue;
+      const chaveCasa = u.posicao.x + ',' + u.posicao.y;
+      const lem = visaoPrevMemoria.lembrancas.get(id);
+      if (campoVisto.has(chaveCasa)) {
+        if (lem) { view.removeFantasma('lem-' + id); visaoPrevMemoria.lembrancas.delete(id); }
+        visaoPrevMemoria.ultimaVisao[id] = { x: u.posicao.x, y: u.posicao.y, frenteRad: visaoFrenteRad(id), em: agora };
+        continue;
+      }
+      const ult = visaoPrevMemoria.ultimaVisao[id];
+      if (!ult) continue;
+      if (campoVisto.has(ult.x + ',' + ult.y)) {
+        if (lem) view.removeFantasma('lem-' + id);
+        visaoPrevMemoria.lembrancas.delete(id);
+        delete visaoPrevMemoria.ultimaVisao[id];
+        continue;
+      }
+      if (!lem || lem.x !== ult.x || lem.y !== ult.y) {
+        view.addFantasma('lem-' + id, id, ult.x, ult.y, ult.frenteRad);
+        visaoPrevMemoria.lembrancas.set(id, { x: ult.x, y: ult.y });
+      }
+    }
+  }
+  /* aplicar a pré-vista: o espelho de visaoAplicar, movido pela união */
+  function visaoPreviaAplicar() {
+    if (!MODO_MESTRE || !visaoPreviaMestre || !window.Visao) return;
+    const olhos = visaoOlhosJogadoras();
+    if (!olhos.length) return;   /* sem heroína no estado, nada a pré-ver */
+    const modo = visaoPartida.modo;
+    const todas = [];
+    for (let y = 0; y < AREA.rows; y++) for (let x = 0; x < AREA.cols; x++) todas.push({ x, z: y });
+    if (modo === 'zero') {
+      for (const id of VISAO_INIMIGOS) if (unidade(id)) view.setOculto(id, false);
+      view.setCamadas(null);
+      view.limparFantasmas();
+      visaoPrevMemoria.lembrancas.clear();   /* como no modo zero dela: o registo de fantasmas limpa-se */
+      visaoPrevCasasVistas = AREA.cols * AREA.rows;
+      return;
+    }
+    const campoVisto = visaoCampoUniao(olhos);
+    visaoPrevCasasVistas = campoVisto.size;
+    for (const id of VISAO_INIMIGOS) {
+      const u = unidade(id);
+      if (u) view.setOculto(id, !campoVisto.has(u.posicao.x + ',' + u.posicao.y));
+    }
+    const naoVistas = todas.filter(c => !campoVisto.has(c.x + ',' + c.z));
+    if (modo === 'parcial') {
+      view.setCamadas(null);
+      view.limparFantasmas();
+    } else if (modo === 'total') {
+      view.setCamadas({ total: { cells: naoVistas, cor: 0x0b0e14, opacidade: 0.55 } });
+      view.limparFantasmas();
+    } else { /* ultra */
+      for (const k of campoVisto) visaoPrevMemoria.jaVisto.add(k);
+      const nunca = naoVistas.filter(c => !visaoPrevMemoria.jaVisto.has(c.x + ',' + c.z));
+      const lembradas = naoVistas.filter(c => visaoPrevMemoria.jaVisto.has(c.x + ',' + c.z));
+      view.setCamadas({
+        nunca: { cells: nunca, cor: 0x05070a, opacidade: 0.92 },
+        memoria: { cells: lembradas, cor: 0x8b93a1, opacidade: 0.30 }
+      });
+      visaoPreviaLembrancasActualizar(campoVisto);
+    }
+    if (modo !== 'ultra') visaoPrevMemoria.lembrancas.clear();
+  }
+  /* desligar: a vista completa do Mestre volta no mesmo clique —
+     desoculta tudo, tira os véus e os fantasmas. O jaVisto
+     conserva-se entre ligar/desligar (espelho da vista dela, onde
+     trocar de modo não o limpa); limpa-se pelas portas da casa
+     (visaoLimparMemoria) e no fim da batalha */
+  function visaoPreviaRepor() {
+    for (const id of VISAO_INIMIGOS) if (unidade(id)) view.setOculto(id, false);
+    view.setCamadas(null);
+    view.limparFantasmas();
+    visaoPrevMemoria.lembrancas.clear();
+    visaoPrevCasasVistas = AREA.cols * AREA.rows;
+  }
+  function visaoPreviaDefinir(v) {
+    const novo = !!v;
+    if (novo !== visaoPreviaMestre) {
+      visaoPreviaMestre = novo;
+      try { localStorage.setItem('hudt1-visao-previa', novo ? 'ligado' : 'desligado'); } catch (_) {}
+      if (novo) { visaoPrevUltimoSnapshot = null; visaoPreviaAplicar(); }
+      else visaoPreviaRepor();
+    }
+    visaoSincronizarPainel();
+    return true;
+  }
+
   /* ---------- o ⚙ do Mestre: secção «Visão» (só nesta vista) ---------- */
-  const visaoUI = { botoesModo: [], botoesForma: [], botoesPrazo: [], estadoEl: null };
+  const visaoUI = { botoesModo: [], botoesForma: [], botoesPrazo: [], botoesPrevia: [], estadoEl: null };
   function visaoSincronizarPainel() {
     const e = visaoPartida;
     if (visaoUI.estadoEl)
       visaoUI.estadoEl.textContent = 'Modo ' + VISAO_MODO_NOMES[e.modo] + ' · ' + VISAO_FORMA_NOMES[e.forma] +
-        ' · lembrança ' + (e.prazo === 'off' ? 'sem prazo' : 'com prazo de ' + e.prazo + ' min');
+        ' · lembrança ' + (e.prazo === 'off' ? 'sem prazo' : 'com prazo de ' + e.prazo + ' min') +
+        (visaoPreviaMestre ? ' · pré-vista ligada' : '');
     for (const reg of visaoUI.botoesModo) reg.b.classList.toggle('on', e.modo === reg.v);
     for (const reg of visaoUI.botoesForma) reg.b.classList.toggle('on', e.forma === reg.v);
     for (const reg of visaoUI.botoesPrazo) reg.b.classList.toggle('on', e.prazo === reg.v);
+    for (const reg of visaoUI.botoesPrevia) reg.b.classList.toggle('on', visaoPreviaMestre === reg.v);
   }
   if (MODO_MESTRE) {
     const tituloVisao = document.createElement('h3');
@@ -8243,13 +8413,74 @@
       [['larga', 'Larga 180°+anel'], ['maqueta', 'Maqueta 120°+anel'], ['cone', 'Cone puro 120°']], visaoUI.botoesForma, 'forma');
     visaoLinha('Lembrança', 'Prazo da lembrança (só Ultra)',
       [['off', 'Desligado'], ['1', '1 min'], ['2', '2 min']], visaoUI.botoesPrazo, 'prazo');
+    const linhaPrevia = document.createElement('div');
+    linhaPrevia.className = 'cfgrow vel';
+    const rotPrevia = document.createElement('span');
+    rotPrevia.className = 'cl';
+    rotPrevia.textContent = 'Ver como as jogadoras';
+    const grupoPrevia = document.createElement('div');
+    grupoPrevia.className = 'seg';
+    grupoPrevia.setAttribute('role', 'group');
+    grupoPrevia.setAttribute('aria-label', 'Ver como as jogadoras');
+    for (const [v, nome] of [[false, 'Desligado'], [true, 'Ligado']]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = nome;
+      b.addEventListener('click', () => {
+        if (visaoPreviaDefinir(v))
+          say(v ? 'Pré-vista ligada: vês o campo como as jogadoras.'
+                : 'Pré-vista desligada: vista completa do Mestre.');
+      });
+      grupoPrevia.appendChild(b);
+      visaoUI.botoesPrevia.push({ v, b });
+    }
+    linhaPrevia.appendChild(rotPrevia);
+    linhaPrevia.appendChild(grupoPrevia);
+    cfgEl.insertBefore(linhaPrevia, $('stats'));
     visaoSincronizarPainel();
   }
 
   /* ---------- eventos discretos + a vigia da lembrança ---------- */
   view.on('moveend', () => { visaoAplicar(); });
   setInterval(() => {
-    if (MODO_MESTRE) return;
+    if (MODO_MESTRE) {
+      /* a vigia do Mestre só corre com a pré-vista ligada (desligada,
+         custa uma leitura de bandeira e não muda nada — A6): o mesmo
+         esqueleto da vigia dela, sobre a memória da pré-vista —
+         relógio da visão, prazo dos fantasmas dela, a morte da
+         lembrança no fim da batalha e a fotografia discreta */
+      if (!visaoPreviaMestre) { visaoUltimoTick = performance.now(); return; }
+      const agoraMsP = performance.now();
+      visaoRelogioS += (agoraMsP - visaoUltimoTick) / 1000;
+      visaoUltimoTick = agoraMsP;
+      if (visaoPartida.prazo !== 'off' && visaoPartida.modo === 'ultra' && visaoPrevMemoria.lembrancas.size) {
+        const limiteP = visaoPartida.prazo === '1' ? 60 : 120, agoraP = visaoAgoraS();
+        for (const id of [...visaoPrevMemoria.lembrancas.keys()]) {
+          const ult = visaoPrevMemoria.ultimaVisao[id];
+          if (ult && agoraP - ult.em > limiteP) {
+            view.removeFantasma('lem-' + id);
+            visaoPrevMemoria.lembrancas.delete(id);
+            delete visaoPrevMemoria.ultimaVisao[id];
+          }
+        }
+      }
+      if (batalhaFim && !visaoPrevEraFim) {
+        visaoPrevEraFim = true;
+        visaoPreviaLimparMemoria();
+      } else if (!batalhaFim) visaoPrevEraFim = false;
+      const snapP = ELENCO.map(e => {
+        const u = unidade(e.id);
+        return u ? e.id + ':' + u.posicao.x + ',' + u.posicao.y + ':' + (u.vivo ? 1 : 0) : e.id + ':?';
+      }).join('|') + '|f' + visaoOlhosJogadoras().map(o => Math.round(visaoFrenteGraus(o.id))).join(',') +
+        '|fim' + (batalhaFim ? 1 : 0) +
+        '|' + visaoPartida.modo + '/' + visaoPartida.forma + '/' + visaoPartida.prazo;
+      if (visaoPrevUltimoSnapshot === null) visaoPrevUltimoSnapshot = snapP;
+      else if (snapP !== visaoPrevUltimoSnapshot) {
+        visaoPrevUltimoSnapshot = snapP;
+        visaoPreviaAplicar();
+      }
+      return;
+    }
     const agoraMs = performance.now();
     visaoRelogioS += (agoraMs - visaoUltimoTick) / 1000;
     visaoUltimoTick = agoraMs;
@@ -8294,7 +8525,8 @@
       fantasmas: view.listaFantasmas(),
       memoriaCasas: visaoMemoria.jaVisto.size,
       relogioS: visaoAgoraS(),
-      ocultos: MODO_MESTRE ? [] : VISAO_INIMIGOS.filter(id => view.estaOculto(id)),
+      previa: MODO_MESTRE ? { activa: visaoPreviaMestre, casasVistas: visaoPrevCasasVistas, memoriaCasas: visaoPrevMemoria.jaVisto.size } : null,
+      ocultos: VISAO_INIMIGOS.filter(id => view.estaOculto(id)),
       sensorVisivel: visaoSensorEl ? !visaoSensorEl.hidden : false,
       sensorSeta: visaoSensorEl ? visaoSensorEl.textContent : ''
     }),
@@ -8313,7 +8545,16 @@
       const ong = unidade(PROPRIA);
       if (!ong) return null;
       return [...window.Visao.campo(AREA.cols, AREA.rows, [ong.posicao.x, ong.posicao.y], visaoOlharDerivado(), visaoOpacos(), 'V2', VISAO_FORMAS[visaoPartida.forma])];
-    }
+    },
+    campoPrevia: () => {
+      if (!MODO_MESTRE || !window.Visao) return null;
+      return [...visaoCampoUniao()];
+    },
+    uniao: (olhos) => {
+      if (!window.Visao) return null;
+      return [...visaoCampoUniao(Array.isArray(olhos) ? olhos : undefined)];
+    },
+    previaDefinir: (v) => visaoPreviaDefinir(v)
   });
 
   /* ---------- arranque ---------- */
