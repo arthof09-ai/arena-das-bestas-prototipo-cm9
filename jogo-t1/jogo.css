@@ -381,7 +381,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
      indicador de vez sai e a mensagem volta a ≥120 px (na base ela
      já diz de quem é a vez; o 5.º botão não rouba área à mensagem).
      Sem isto, a frase de abertura e o prompt de confirmação cortam. */
-  #faixa[data-estado="base"] .turn,#faixa[data-estado="atacar"] .turn,#faixa[data-estado="rolagem"] .turn,#faixa[data-estado="confirmar-fim"] .turn,#faixa[data-estado="desgraca-lista"] .turn{display:none}
+  #faixa[data-estado="base"] .turn,#faixa[data-estado="atacar"] .turn,#faixa[data-estado="rolagem"] .turn,#faixa[data-estado="previa"] .turn,#faixa[data-estado="confirmar-fim"] .turn,#faixa[data-estado="desgraca-lista"] .turn{display:none}
   #fichachip{width:162px;left:10px;bottom:66px}
   #ficha{width:25%;min-width:0;max-width:none;padding:8px 7px}
   #ficha h1{font-size:14px}

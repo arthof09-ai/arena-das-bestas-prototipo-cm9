@@ -1364,6 +1364,79 @@
                 moveLayer.add(new T.Mesh(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(vertices, 3)), material(0xcab577, .5)));
                 moveLayer.add(new T.LineSegments(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(lines, 3)), new T.LineBasicMaterial({ color: 0xf5d59b, transparent: true, opacity: .85 })));
             }
+            /* ═══ Tranche PRÉVIA v2, passo ④: a primitiva mínima da
+               prévia. NECESSIDADE MEDIDA: showMovement pinta todas as
+               células com o mesmo preenchimento e o mesmo contorno
+               (0xcab577) — não distingue caminho, contorno de
+               obstáculo, nem marca de alvo, e não desenha segmento
+               nenhum; setCamadas é o substrato dos modos de visão.
+               A prévia precisa das três coisas distintas ao mesmo
+               tempo, logo uma camada própria, no molde de moveLayer:
+                 caminho    — as casas da travessia em azul-água
+                              translúcido (a família da técnica de
+                              água dela; distinto do amarelo do Mover);
+                 segmento   — a linha centro-a-centro atacante→alvo,
+                              inteira, nunca truncada;
+                 obstaculos — SÓ os médios: contorno âmbar no chão,
+                              sem preenchimento (a cobertura total
+                              nunca chega aqui — EM-S-21: sem sinal);
+                 alvo       — anel duplo vermelho, maior que o anel
+                              de selecção: sinal próprio.
+               showPrevia(null) limpa. É overlay de desenho: quem
+               decide pintá-lo é a casca (quem mira, localmente; o
+               Mestre, quando a prévia alheia lhe chega pela ponte
+               de saves — EMENDA Q-02/REF_79); às outras jogadoras
+               a casca nunca o entrega. As células chegam em
+               coordenadas de vista ({x, z}), como em showMovement. */
+            const previaLayer = new T.Group();
+            scene.add(previaLayer);
+            function showPrevia(spec) {
+                release(previaLayer);
+                previaLayer.clear();
+                if (!spec) return;
+                const quad = (p, dy) => {
+                    const x = wx(p.x), z = wz(p.z), s = CELL * .47, y = world.height(x, z) + dy;
+                    return { v: [x - s, y, z - s, x - s, y, z + s, x + s, y, z - s, x + s, y, z - s, x - s, y, z + s, x + s, y, z + s],
+                             l: [x - s, y, z - s, x + s, y, z - s, x + s, y, z - s, x + s, y, z + s, x + s, y, z + s, x - s, y, z + s, x - s, y, z + s, x - s, y, z - s] };
+                };
+                const vertices = [], linhasCaminho = [];
+                for (const p of spec.caminho || []) { const q = quad(p, .04); vertices.push(...q.v); linhasCaminho.push(...q.l); }
+                if (vertices.length) previaLayer.add(new T.Mesh(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(vertices, 3)), material(0x2e7fb8, .30)));
+                if (linhasCaminho.length) previaLayer.add(new T.LineSegments(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(linhasCaminho, 3)), new T.LineBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: .9 })));
+                const linhasObst = [];
+                for (const p of spec.obstaculos || []) { const q = quad(p, .055); linhasObst.push(...q.l); }
+                if (linhasObst.length) previaLayer.add(new T.LineSegments(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(linhasObst, 3)), new T.LineBasicMaterial({ color: 0xffb52e, transparent: true, opacity: .95 })));
+                if (spec.de && spec.alvo) {
+                    const ax = wx(spec.de.x), az = wz(spec.de.z), bx = wx(spec.alvo.x), bz = wz(spec.alvo.z);
+                    const seg = new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(
+                        [ax, world.height(ax, az) + .07, az, bx, world.height(bx, bz) + .07, bz], 3));
+                    previaLayer.add(new T.Line(seg, new T.LineBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: .95 })));
+                    for (const r of [.60, .44]) {
+                        const anel = ring(r, 0xff4747);
+                        anel.position.set(bx, world.height(bx, bz) + .05, bz);
+                        previaLayer.add(anel);
+                    }
+                }
+            }
+            /* EMENDA Q-02/REF_79 (R-Q02-1) — primitiva de FRENTE:
+               a frente de uma figura (pivot.rotation.y, a mesma que
+               getStats().models[].frente lê em graus e que move/
+               apresentarAtaque escrevem ao andar/confrontar) ganha
+               escritor/leitor directos, para a casca poder virar a
+               personagem para o alvo durante a prévia e repor a
+               frente — sem inventar movimento nem apresentação.
+               setFrente exige ângulo finito (radianos); getFrente
+               devolve o ângulo cru actual. Figura desconhecida:
+               requireUnit lança, como nas outras primitivas. */
+            function setFrente(id, frenteRad) {
+                if (!Number.isFinite(frenteRad))
+                    throw new RangeError('Frente: ângulo finito obrigatório (radianos).');
+                const u = requireUnit(id);
+                u.pivot.rotation.y = frenteRad;
+                renderer.shadowMap.needsUpdate = true;
+                return u.pivot.rotation.y;
+            }
+            function getFrente(id) { return requireUnit(id).pivot.rotation.y; }
             function animation(u, walking) {
                 playClip(u, walking ? u.clips.andar : u.clips.idle);
             }
@@ -2253,7 +2326,7 @@
                 [...fantasmas.keys()].forEach(removeFantasma);
             }
             const ready = Promise.all((options.units || []).map(addUnit));
-            return Object.freeze({ ready, addUnit, removeUnit, move, select, apresentarAtaque, setCamera, setZoom, setQualidade, showMovement, setOculto, estaOculto: id => !!requireUnit(id).oculto, setCamadas, limparCamadas: () => setCamadas(null), addFantasma, removeFantasma, limparFantasmas, listaFantasmas: () => [...fantasmas.entries()].map(([chave, f]) => ({ chave, x: f.x, z: f.z })), livreOlhar(dx, dy) {
+            return Object.freeze({ ready, addUnit, removeUnit, move, select, apresentarAtaque, setCamera, setZoom, setQualidade, showMovement, showPrevia, setFrente, getFrente, setOculto, estaOculto: id => !!requireUnit(id).oculto, setCamadas, limparCamadas: () => setCamadas(null), addFantasma, removeFantasma, limparFantasmas, listaFantasmas: () => [...fantasmas.entries()].map(([chave, f]) => ({ chave, x: f.x, z: f.z })), livreOlhar(dx, dy) {
                     /* O arrasto de olhar da sala: 0,0045 rad/px, pitch preso
                        a ±1,45. Fora do modo 'livre', é inerte. */
                     if (mode !== 'livre') return;

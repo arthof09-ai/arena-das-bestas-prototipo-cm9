@@ -1487,6 +1487,10 @@
     try { localStorage.setItem('hudt1-escala', String(nova)); } catch (_) {}
     escSincronizarPainel();
     if (mudou && estado === 'mover') desenharAlcance();
+    /* PRÉVIA v2 (R-07): com uma prévia aberta, a troca de escala
+       re-deriva banda, livro e geometria na hora (a prévia nunca
+       mostra geometria congelada de outra escala). */
+    if (mudou && estado === 'previa') renderAcoes();
     if (mudou && !(opcoes && opcoes.silencioso)) {
       let frase = `Escala: cada casa passa a valer <b>${fmtM(CASA_M)}</b>. As posições não mudam; o movimento já gasto continua gasto.`;
       if (estado === 'mover') {
@@ -1971,6 +1975,59 @@
         && v.posicao.x - t.posicao.x === -dx && v.posicao.y - t.posicao.y === -dy;
     });
   }
+  /* ═══ Tranche PRÉVIA v2, passo ① (EM-S-06): a função ÚNICA de
+     contexto montado. A montagem que vivia inline no adaptador
+     extrai-se para aqui: devolve { tecnica, contexto,
+     fichaAtacante, fichaAlvo } SEM chamar o motor e SEM tirar
+     semente — a semente e a verificação só entram por injecção
+     via opts; quando opts as omite, os campos ficam por preencher
+     no contexto devolvido e é quem resolve (o adaptador, abaixo)
+     que os preenche no instante da chamada, como antes. A prévia
+     do ataque lê ESTE objecto montado: é o mesmo que o Confirmar
+     entregará ao motor. Efeitos colaterais NÃO vivem aqui: a
+     limpeza de armaCaida de monstro, a fotografia pré-golpe e o
+     consumo da Reacção declarada ficam no adaptador, na ordem e
+     no instante relativo de sempre. */
+  function vlabMontarContextoAtaque(atacanteId, alvoId, opts) {
+    opts = opts || {};
+    const c = DADOS_COMBATE[atacanteId];
+    const tecnica = atacanteId === PROPRIA
+      ? { nome: c.arma, custoPA: 8, expressaoAtaque: vlabExprAtaque(atacanteId),
+          expressaoDano: vlabExprDanoStr(atacanteId), tipo: 'agua', magia: false, usaArma: true }
+      : { nome: c.arma, custoPA: 0, expressaoAtaque: vlabExprAtaque(atacanteId),
+          expressaoDano: vlabExprDanoStr(atacanteId), usaArma: true };
+    const fichaAlvo = (alvoId === PROPRIA && atacanteId !== PROPRIA)
+      ? vlabFichaAlvoDela(opts.ataqueDeOportunidade === true) : vlabFichaAlvo(alvoId);
+    const contexto = {
+      semente: opts.semente != null ? opts.semente : undefined,
+      verificacaoCritico: opts.verificacao || undefined,
+      modoDesgraca: opts.modoDesgraca || 'sorte',
+      aliadosAoAlcance: [],   // batalha a solo: sem aliados de nenhum dos lados nesta casca
+      niveisDesvantagem: ESTADO_VLAB[atacanteId].desvantagemAtaque || 0
+    };
+    if (opts.ataqueDeOportunidade) {
+      contexto.ataqueDeOportunidade = true;
+      contexto.niveisVantagem = 1;   // Regra 3: ataque de oportunidade = ataque normal com Vantagem
+    }
+    if (atacanteId !== PROPRIA && alvoId === PROPRIA && vlabFlanqueandoSobre(PROPRIA, atacanteId))
+      contexto.flanqueando = true;
+    if (opts.desgracaEscolhida) contexto.desgracaEscolhida = opts.desgracaEscolhida;
+    if (opts.confirmacaoDeProposta) contexto.confirmacaoDeProposta = opts.confirmacaoDeProposta;
+    /* DÍVIDA E1: as bandeiras de exclusão da fronteira T1 do motor
+       (vlab-completo.js: dano em área/reflectido/periódico/ambiental
+       sobre quem está 'aMorrer' NÃO soma falha de morte) repassam-se
+       TAL E QUAL o motor as lê — só o valor ===true conta, como lá.
+       A exclusão governa SÓ o +1 da corrida aberta: o dano em si
+       aplica-se na mesma; o nascimento da corrida e a reentrada da
+       estabilizada NÃO são suprimidos (fronteira do motor, medida
+       no arnês da tranche). O dano-0 não é bandeira: já está
+       excluído no motor pela condição totalEfectivo > 0 do T1. */
+    if (opts.danoEmArea === true) contexto.danoEmArea = true;
+    if (opts.danoReflectido === true) contexto.danoReflectido = true;
+    if (opts.danoPeriodico === true) contexto.danoPeriodico = true;
+    if (opts.danoAmbiental === true) contexto.danoAmbiental = true;
+    return { tecnica, contexto, fichaAtacante: vlabFichaAtacante(atacanteId), fichaAlvo };
+  }
   /* A chamada única ao motor. opts: { modoDesgraca, semente,
      verificacao, ataqueDeOportunidade, desgracaEscolhida,
      confirmacaoDeProposta, danoEmArea, danoReflectido,
@@ -1980,7 +2037,11 @@
      silêncio (dívida E1 da REF_35). Bandeira com valor definido
      não booleano é erro nomeado ADAPTADOR_BANDEIRA_INVALIDA
      (Emenda n.º 1 da sentença da bancada E1): true repassa-se,
-     false explícito vale como ausência, undefined é ausência. */
+     false explícito vale como ausência, undefined é ausência.
+     Estrutura (passo ① da PRÉVIA v2): montar (função única,
+     acima) → preencher a semente/verificação que a montagem não
+     tirou → efeitos colaterais pré-golpe → chamar o motor →
+     efeitos colaterais pós-golpe, na mesma ordem de sempre. */
   function vlabResolverAtaqueCompleto(atacanteId, alvoId, opts) {
     opts = opts || {};
     if (!VLAB_MOTOR) return { erro: { codigo: 'MOTOR_VLAB_INDISPONIVEL', detalhe: 'vlab-completo.js não carregou' } };
@@ -2017,47 +2078,22 @@
         && opts[k] !== undefined && typeof opts[k] !== 'boolean');
     if (bandeirasInvalidas.length) return { erro: { codigo: 'ADAPTADOR_BANDEIRA_INVALIDA',
       detalhe: 'bandeira(s) com valor definido não booleano: ' + bandeirasInvalidas.join(', ') } };
-    const c = DADOS_COMBATE[atacanteId];
-    const tecnica = atacanteId === PROPRIA
-      ? { nome: c.arma, custoPA: 8, expressaoAtaque: vlabExprAtaque(atacanteId),
-          expressaoDano: vlabExprDanoStr(atacanteId), tipo: 'agua', magia: false, usaArma: true }
-      : { nome: c.arma, custoPA: 0, expressaoAtaque: vlabExprAtaque(atacanteId),
-          expressaoDano: vlabExprDanoStr(atacanteId), usaArma: true };
-    const alvoFicha = (alvoId === PROPRIA && atacanteId !== PROPRIA)
-      ? vlabFichaAlvoDela(opts.ataqueDeOportunidade === true) : vlabFichaAlvo(alvoId);
-    const contexto = {
-      semente: opts.semente != null ? opts.semente : vlabSemente(),
-      verificacaoCritico: opts.verificacao || vlabVerificacao(),
-      modoDesgraca: opts.modoDesgraca || 'sorte',
-      aliadosAoAlcance: [],   // batalha a solo: sem aliados de nenhum dos lados nesta casca
-      niveisDesvantagem: ESTADO_VLAB[atacanteId].desvantagemAtaque || 0
-    };
-    if (opts.ataqueDeOportunidade) {
-      contexto.ataqueDeOportunidade = true;
-      contexto.niveisVantagem = 1;   // Regra 3: ataque de oportunidade = ataque normal com Vantagem
-    }
-    if (atacanteId !== PROPRIA && alvoId === PROPRIA && vlabFlanqueandoSobre(PROPRIA, atacanteId))
-      contexto.flanqueando = true;
-    if (opts.desgracaEscolhida) contexto.desgracaEscolhida = opts.desgracaEscolhida;
-    if (opts.confirmacaoDeProposta) contexto.confirmacaoDeProposta = opts.confirmacaoDeProposta;
-    /* DÍVIDA E1: as bandeiras de exclusão da fronteira T1 do motor
-       (vlab-completo.js: dano em área/reflectido/periódico/ambiental
-       sobre quem está 'aMorrer' NÃO soma falha de morte) repassam-se
-       TAL E QUAL o motor as lê — só o valor ===true conta, como lá.
-       A exclusão governa SÓ o +1 da corrida aberta: o dano em si
-       aplica-se na mesma; o nascimento da corrida e a reentrada da
-       estabilizada NÃO são suprimidos (fronteira do motor, medida
-       no arnês da tranche). O dano-0 não é bandeira: já está
-       excluído no motor pela condição totalEfectivo > 0 do T1. */
-    if (opts.danoEmArea === true) contexto.danoEmArea = true;
-    if (opts.danoReflectido === true) contexto.danoReflectido = true;
-    if (opts.danoPeriodico === true) contexto.danoPeriodico = true;
-    if (opts.danoAmbiental === true) contexto.danoAmbiental = true;
+    const montado = vlabMontarContextoAtaque(atacanteId, alvoId, opts);
+    const tecnica = montado.tecnica, contexto = montado.contexto;
+    const alvoFicha = montado.fichaAlvo;
+    if (contexto.semente == null) contexto.semente = vlabSemente();
+    if (!contexto.verificacaoCritico) contexto.verificacaoCritico = vlabVerificacao();
     /* Arma caída de um monstro: apanhá-la gasta o movimento dele —
-       quem chama declara a recuperação e a bandeira limpa-se aqui. */
+       quem chama declara a recuperação e a bandeira limpa-se aqui.
+       A ficha do atacante sincroniza-se com a bandeira limpa:
+       na forma inline antiga ela construía-se DEPOIS desta
+       limpeza (na chamada ao motor), logo o motor lia sempre
+       armaCaida:false + contexto.armaRecuperada:true — é esse
+       par que se reproduz, campo a campo. */
     if (atacanteId !== PROPRIA && ESTADO_VLAB[atacanteId].armaCaida) {
       contexto.armaRecuperada = true;
       ESTADO_VLAB[atacanteId].armaCaida = false;
+      montado.fichaAtacante.armaCaida = false;
     }
     const reacaoEmUso = alvoFicha.reacaoDefensiva || null;
     /* CORRECÇÃO DA E3 (re-prova E7, 09/11/2026): a fotografia
@@ -2080,7 +2116,7 @@
       ? { fase: ESTADO_VLAB.ong.estadoMorte.fase, falhas: ESTADO_VLAB.ong.estadoMorte.falhas | 0 }
       : null;
     const saidaMotor = vlabComDmg(() => VLAB_MOTOR.resolverAtaque({
-      atacante: vlabFichaAtacante(atacanteId), alvo: alvoFicha, tecnica, contexto }));
+      atacante: montado.fichaAtacante, alvo: alvoFicha, tecnica, contexto }));
     /* C-39: a Reacção declarada consome-se SÓ com a resolução
        feita (espelho do consumo da reacção do ataque de
        oportunidade) — saída com erro não consome nada. O ramo de
@@ -2585,7 +2621,8 @@
      (correcção R1 do julgamento de Fidelidade da T-D: antes eram
      universos diferentes e o 0 saía do clamp, não da contagem). */
   let campoPronto = false, falhaArranque = '', falhaDefinitiva = false;
-  let estado = 'base';        // base | atacar | consumivel | mover | movendo | rolagem | resultado | vez-ia | confirmar-fim | fim
+  let estado = 'base';        // base | atacar | consumivel | mover | movendo | previa | rolagem | resultado | vez-ia | confirmar-fim | fim
+                              // 'previa' (PRÉVIA v2): alvo marcado, ainda sem rolagem — a rolagem nasce no Confirmar
   /* Máquina de turnos (T1.3): a vez roda por ORDEM. vezAtual,
      indiceVez e rodada só mudam em passarVez()/iniciarVezIA() e no
      arranque — nenhum outro caminho os escreve. */
@@ -2899,6 +2936,13 @@
       acoesEl.innerHTML = B('voltar', '←', 'Voltar', 'ghost')
         + (MODO_MESTRE && desgracaPropostaPendente() ? B('trocar-desgraca', '⇄', 'Trocar') : '')
         + B('confirmar', '✓', 'Confirmar', 'primary');
+    } else if (estado === 'previa') {
+      /* PRÉVIA v2: o assento do ramo 'rolagem' — [Confirmar]
+         [Voltar] e ninguém mais; o rótulo de estado («prévia —
+         ainda não lançou») vive na frase da gaveta, que o desenho
+         da prévia diz a cada repintura (ataquePreviaDesenhar). */
+      acoesEl.innerHTML = B('voltar', '←', 'Voltar', 'ghost')
+        + B('confirmar', '✓', 'Confirmar', 'primary');
     } else if (estado === 'desgraca-lista') {
       // A decisão está no cartão: a faixa mostra só o estado, como
       // na vez da IA — um botão que não responde é proibido aqui.
@@ -2906,6 +2950,11 @@
     } else if (estado === 'resultado') {
       acoesEl.innerHTML = B('continuar', '', 'Continuar ▸', 'primary');
     }
+    /* PRÉVIA v2: cada repintura re-deriva (ou limpa) o desenho da
+       prévia — é o gancho que mantém a geometria viva (R-07) e
+       que apaga o overlay quando o estado muda por qualquer via
+       (invalidadores incluídos). */
+    ataquePreviaDesenhar();
     sincronizarCartaoDesgraca();
     atualizarContadorVD();   // C-VD: a caixa segue cada mudança de estado
   }
@@ -3972,6 +4021,13 @@
        apresentação a correr). Sem isto, um clique durante o gesto
        despejava o evento duas vezes no export. */
     if (acao === 'continuar' && apresentacaoEmCurso) { continuarAposApresentacao = true; return; }
+    /* PRÉVIA v2: o Confirmar com uma prévia aberta é o Confirmar
+       DA PRÉVIA (a rolagem nasce aí) — intercepta-se ANTES do
+       validador, que sem ataquePendente recusaria com «Nada para
+       confirmar». As guardas acima (gelo, recomeçar, parque de
+       desgraça de monstro, vez, apresentação) já correram: a
+       prévia nunca se confirma por cima delas. */
+    if (acao === 'confirmar' && estado === 'previa') { ataquePreviaConfirmar(); return; }
     /* Supervisor do Comestre (T1.5): TODA a acção é validada ANTES
        de acontecer. As acções de combate devolvem também a frase e
        a limpeza necessária: uma validação por chamada, partilhada
@@ -3993,15 +4049,30 @@
         return;
       }
       if (bloqueioSup.duro) return;
-    } else {
+    } else if (acao !== 'ataque-basico') {
       supRegistar('accao', { acao, actor: PROPRIA });
     }
+    /* PRÉVIA v2: o gesto «ataque-basico» já não regista à cabeça —
+       o ramo da declaração é dono do seu registo: nos ramos de
+       arma (quebrada/caída) regista o gesto como antes; no
+       nascimento da prévia NÃO regista (a acta guarda actos, não
+       intenções — o registo do ataque nasce no Confirmar, por
+       arrasto da rolagem, §7.3/EM-S-17). */
     if (acao === 'voltar') {
       /* J1 (carta IBX-213): com uma rolagem por resolver, o Voltar
          NÃO a deita fora — devolve à mesma rolagem pendente. Sem
          rolagem pendente, o Voltar é o de sempre (incl. cancelar a
          declaração de Transformação antes de rolar). */
       if (rolagemPorResolver()) { say(FRASE_ROLAGEM_PENDENTE); return; }
+      /* PRÉVIA v2: Voltar na prévia desiste dela e volta à ESCOLHA
+         DE ALVO (não à base) — custo zero, sem registo novo (a
+         acta guarda actos, não intenções, §7.4). Um segundo Voltar,
+         já na escolha de alvo, sai para a base como sempre. */
+      if (estado === 'previa') {
+        estado = 'atacar'; renderAcoes();
+        say(`Escolha de alvo — toque no inimigo e aperte <b>${DADOS_COMBATE.ong.arma}</b>.`);
+        return;
+      }
       estado = 'base'; ataquePendente = null; renderAcoes(); say('É a vez da <b>Ong</b>.'); return;
     }
     if (acao === 'mover') { entrarMover(); return; }
@@ -4106,46 +4177,30 @@
          registada se um dia houver). */
       const c = DADOS_COMBATE.ong;
       if (ESTADO_VLAB.ong.armaQuebrada) {
+        /* O gesto regista-se como antes (o ramo é dono do registo
+           do ataque-basico desde a PRÉVIA v2) — e não nasce
+           prévia: arma quebrada não lança. */
+        supRegistar('accao', { acao: 'ataque-basico', actor: PROPRIA });
         say(`O ${c.arma} está quebrado — só volta a servir depois de consertado.`);
         return;
       }
       if (ESTADO_VLAB.ong.armaCaida) {
         /* Apanhar a arma = 1 Acção de Movimento (motor, desgraças
            J3): consome-se o movimento desta vez, sem ataque. */
+        supRegistar('accao', { acao: 'ataque-basico', actor: PROPRIA });
         ESTADO_VLAB.ong.armaCaida = false;
         reservaMovimento = 0;
         say(`A <b>Ong</b> apanha o ${c.arma} do chão — isso gasta o movimento desta vez.`);
         return;
       }
-      const semente = vlabSemente();
-      const verificacao = vlabVerificacao();
-      const s = vlabResolverAtaqueCompleto(PROPRIA, alvo, {
-        modoDesgraca: 'proposta', semente, verificacao });
-      if (s.erro) {
-        supRegistar('bloqueada', { acao: 'ataque-basico', actor: PROPRIA, alvo, razao: s.erro.codigo });
-        if (s.erro.codigo === 'PA_INSUFICIENTE') {
-          const livre = FICHAS.ong.alma.total - FICHAS.ong.alma.comprometido - paGasto;
-          say(`Alma livre não chega — o ${c.arma} custa <b>8 PA</b> e a livre dela é ${livre}.`);
-        } else {
-          say('O ataque não se resolveu — tente outra vez.');
-        }
-        return;
-      }
-      ataquePendente = { tipo: 'chicote', nome: c.arma, vlab: s, semente, verificacao };
-      /* Supervisor (pós-críticos T1.5): a rolagem PÚBLICA dela
-         (faces escolhidas e total, os mesmos da frase) entra no
-         registo. */
-      const rol = s.rolagem;
-      const idxEsc = Math.max(0, rol.resultados.indexOf(rol.escolhido));
-      const facesEsc = rol.conjuntosDeFaces[idxEsc] || rol.conjuntosDeFaces[0];
-      supRegistar('accao', { acao: 'ataque-basico', actor: PROPRIA, alvo, faces: facesEsc, total: rol.total });
-      estado = 'rolagem'; renderAcoes();
-      let soma = facesEsc.join(' + ') + ' + ' + rol.bonus;
-      if (rol.ajusteVantagemDesvantagem > 0) soma += ' + ' + rol.ajusteVantagemDesvantagem;
-      if (rol.ajusteVantagemDesvantagem < 0) soma += ' − ' + (-rol.ajusteVantagemDesvantagem);
-      const notaVD = rol.niveisLiquidos !== 0
-        ? ` · (${rol.niveisLiquidos > 0 ? 'a melhor' : 'a pior'} de ${rol.conjuntosDeFaces.length} rolagens — ${rol.niveisLiquidos > 0 ? 'Vantagem' : 'Desvantagem'})` : '';
-      say(`${c.arma} de <b>Ong</b> contra <b>${nomeCena(alvo)}</b> · <b>${rol.expressao} → ${soma} = ${rol.total}</b>${notaVD} · aperte <b>Confirmar</b> para saber se acertou.`);
+      /* ═══ PRÉVIA v2 (passo ③): declarar já NÃO rola. Depois da
+         validação (o portão da marcação, em validarAlvoAtaqueOng)
+         nasce o estado 'previa' sobre o `alvo` global — SEM chamar
+         o adaptador, SEM tirar semente, SEM registar o ataque e
+         SEM recibo. A rolagem, o registo e o recibo nascem no
+         Confirmar (ataquePreviaConfirmar). A gaveta pinta o ramo
+         'previa' e renderAcoes desenha o caminho e diz o livro. */
+      estado = 'previa'; renderAcoes();
       return;
     }
     if (acao === 'transformacao') {
@@ -4197,12 +4252,21 @@
     }
     if (acao === 'confirmar') {
       const pend = ataquePendente;
-      ataquePendente = null;
+      /* PRÉVIA v2 — cirurgia de ordem (EM-S-08): o pendente só se
+         consome (ataquePendente = null) e atacou só se marca
+         DEPOIS de a chamada que resolve correr sem erro. Na ordem
+         antiga os dois escreviam-se AQUI, antes da segunda chamada
+         e da leitura de s.erro: uma falha dela deixava o golpe
+         gasto e a rolagem apagada. Em erro, o pendente fica — a
+         rolagem continua por resolver e as guardas J1 mantêm-na. */
       /* Guarda reposta (bancada, R3): sem pendente, o Confirmar
          fecha em silêncio na base — nunca lê pend.tipo a null. O
          validador já recusa este caso; a guarda é a rede local. */
       if (!pend) { estado = 'base'; renderAcoes(); return; }
       if (pend.tipo === 'transformacao') {
+        /* A Transformação não tem chamada que falhe depois da
+           validação: consome o pendente dentro do seu ramo. */
+        ataquePendente = null;
         /* O débito é REAL (T1.4 §3.3): paGasto escreve-se e a ficha
            compõe o PA livre a partir dele. Sem alma que chegue,
            recusa sem debitar e sem forçar (pagamento forçado com
@@ -4219,8 +4283,6 @@
       }
       // Chicote: o Confirmar REVELA a resolução do motor (D-14.2).
       // O alcance revalida-se com o alcance real da arma dela (6).
-      atacou = true;                   // a acção gasta-se, acerte ou erre
-      estado = 'resultado'; renderAcoes();
       /* T-D: o alvo DESTE golpe fixa-se antes do gesto — um toque
          durante a apresentação pode marcar outro alvo para a acção
          seguinte, nunca para o golpe já confirmado. */
@@ -4273,6 +4335,12 @@
         say('O ataque não se resolveu — tente outra vez.');
         return;
       }
+      /* A resolução correu sem erro: SÓ AGORA o pendente se
+         consome e a acção se marca gasta (cirurgia EM-S-08) —
+         a partir daqui o fluxo é o de sempre. */
+      ataquePendente = null;
+      atacou = true;                   // a acção gasta-se, acerte ou erre
+      estado = 'resultado'; renderAcoes();
       /* O custo da técnica paga-se ao resolver (acerte ou erre) —
          mas só depois das conferências que podem abortar a
          resolução (pós-Crítico 1, achado 6): no ramo de acerto, o
@@ -4557,6 +4625,18 @@
     if (hit.unitId) {
       const fig = unidade(hit.unitId);
       const nome = fig ? fig.nome : nomeCena(hit.unitId);
+      /* PRÉVIA v2: com a prévia aberta, tocar noutra figura TROCA o
+         alvo da prévia e re-deriva-a (o desenho §4.2: a prévia
+         segue o alvo marcado) — ou mata-a para a escolha de alvo
+         se o portão recusar o alvo novo. Sem registo novo (§7.4).
+         O cartão da figura não se abre por cima da prévia. */
+      if (estado === 'previa' && hit.unitId !== PROPRIA) {
+        alvo = hit.unitId;
+        const bloqueioToque = validarAlvoAtaqueOng('atacar');
+        if (bloqueioToque) { estado = 'atacar'; renderAcoes(); say(bloqueioToque.mensagem); return; }
+        renderAcoes();
+        return;
+      }
       if (hit.unitId === PROPRIA) {
         // A própria: abre a ficha dela. Em Mover, o toque nela só diz
         // que ela já está aqui (a casa dela não é destino).
@@ -5650,6 +5730,11 @@
     if (apresentacaoEmCurso) { agendarPassoAuto(); return; }   // T-D: o gesto manda — o passo espera e reagenda (a apresentação da cena NÃO escala com a velocidade: a 3× o passo de 283 ms chegaria a meio dos 0,70 s)
     if (estado === 'movendo') return;    // a animação manda: o moveend retoma
     if (estado === 'desgraca-lista') { agendarPassoAuto(); return; }   // T-DESGRACA-NADA: a lista é decisão do Mestre — o automático espera, como espera pela proposta por confirmar
+    /* PRÉVIA v2 (R-06): o piloto confirma a PRÓPRIA prévia no mesmo
+       passo — sem este ramo, o estado 'previa' encravava o piloto
+       em silêncio (nem resolve nem avança). A guarda H10 do ramo
+       'rolagem' abaixo continua a valer DEPOIS do Confirmar. */
+    if (estado === 'previa') { tratarAcao('confirmar'); agendarPassoAuto(); return; }
     if (estado === 'rolagem') {
       if (ataquePendente && ataquePendente.tipo === 'transformacao') { agendarPassoAuto(); return; }
       /* Tranche VLAB (pós-Crítico 3, achado 1): uma desgraça em modo
@@ -5729,6 +5814,340 @@
       path: destino.path.map(casaVista),
       durationMs: ritmo(Math.min(1200, Math.max(220, destino.passos * 140)))
     });
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     PRÉVIA DE ATAQUE (tranche PRÉVIA v2, passos ③④⑤)
+     A tese: a rolagem nasce no Confirmar, não na marcação do alvo.
+     Entre a marcação e o Confirmar vive o estado 'previa'.
+     EMENDA Q-02 (palavra do Mestre, 2026-11-11 22:39; REF_79):
+     a VIRAGEM da personagem para o alvo durante a prévia é
+     PÚBLICA — é facto de mundo: acontece na cena de quem mira
+     (R-Q02-2) e viaja na captura da ponte de saves como
+     `previaPublica.frenteRad`; quem aplica repõe a frente em
+     qualquer papel (R-Q02-3). O DESENHO (caminho, anel, marcas)
+     continua a ser interface: pinta-se em quem mira e, vindo na
+     captura, SÓ no MODO_MESTRE ao aplicar; em papel de jogadora
+     ao aplicar NUNCA se chama showPrevia com a prévia alheia.
+     Não se inventa canal novo: o transporte é a ponte existente.
+     Na prévia não há chamada ao motor, não há
+     semente tirada, não há registo do ataque, não há recibo e
+     ataquePendente é null (nenhum parque de desgraça pode abrir
+     — R-01). O alvo da prévia é o `alvo` global (EM-S-08): não
+     nasce variável nova de alvo.
+     FRONTEIRA LAVRADA: a contagem de obstáculos de caminho
+     MOSTRA-SE no livro como leitura da travessia; o consumo
+     mecânico do +3 na rolagem é emenda do motor (frente
+     C-42/VLAB) e NÃO se finge nesta casca — os níveis líquidos
+     mostrados são os do contexto montado (passo ①), nem um a
+     mais. O ramo dos −10% da cobertura média é de MAGIA e não
+     há magias nesta batalha: não se constrói (fica nomeado).
+     ════════════════════════════════════════════════════════════ */
+  /* Fracções exactas (BigInt) — o MÉTODO de visao.js (intervaloRaio),
+     reutilizado como régua de aritmética, não a função de visão. */
+  function previaBgcd(a, b) { a = a < 0n ? -a : a; b = b < 0n ? -b : b; while (b) { const t = a % b; a = b; b = t; } return a || 1n; }
+  function previaFrac(n, d) { let num = BigInt(n), den = d === undefined ? 1n : BigInt(d); if (den < 0n) { num = -num; den = -den; } const g = previaBgcd(num, den); return { n: num / g, d: den / g }; }
+  const previaFracCmp = (a, b) => { const c = a.n * b.d - b.n * a.d; return c < 0n ? -1 : c > 0n ? 1 : 0; };
+  const previaFracStr = f => f.d === 1n ? String(f.n) : f.n + '/' + f.d;
+  /* A função ÚNICA de travessia (passo ④, EM-S-02): supercover
+     centro-a-centro com fracções exactas. Devolve as casas POR
+     ORDEM DE CHEGADA, cada uma com a fracção exacta de entrada;
+     mesma fracção de entrada = simultâneos. Uma casa só entra se
+     o segmento atravessar o seu INTERIOR (intervalo de entrada
+     com comprimento positivo): o toque de vértice (raspão, E-09)
+     não conta — a casa de raspão não é atravessada. Dela derivam
+     o conjunto sem ordem (livro/contornos) e a leitura de
+     cobertura — uma só geometria, duas leituras. */
+  function ataquePreviaTravessia(de, para) {
+    if (de.x === para.x && de.y === para.y) return [{ x: de.x, y: de.y, entrada: '0', simultaneo: false }];
+    const E = [BigInt(2 * de.x + 1), BigInt(2 * de.y + 1)];
+    const D = [BigInt(2 * (para.x - de.x)), BigInt(2 * (para.y - de.y))];
+    const F0 = previaFrac(0n), F1 = previaFrac(1n);
+    const casas = [];
+    for (let cy = Math.min(de.y, para.y) - 1; cy <= Math.max(de.y, para.y) + 1; cy++)
+    for (let cx = Math.min(de.x, para.x) - 1; cx <= Math.max(de.x, para.x) + 1; cx++) {
+      let lo = null, hi = null, fora = false;
+      const eixos = [[E[0], D[0], BigInt(2 * cx), BigInt(2 * cx + 2)],
+                     [E[1], D[1], BigInt(2 * cy), BigInt(2 * cy + 2)]];
+      for (const [e, d, l, h] of eixos) {
+        if (d === 0n) { if (!(l < e && e < h)) { fora = true; break; } }
+        else {
+          const t1 = previaFrac(l - e, d), t2 = previaFrac(h - e, d);
+          const ll = previaFracCmp(t1, t2) < 0 ? t1 : t2, hh = previaFracCmp(t1, t2) < 0 ? t2 : t1;
+          lo = (lo === null || previaFracCmp(ll, lo) > 0) ? ll : lo;
+          hi = (hi === null || previaFracCmp(hh, hi) < 0) ? hh : hi;
+        }
+      }
+      if (fora || lo === null) continue;
+      if (!(previaFracCmp(lo, hi) < 0 && previaFracCmp(hi, F0) > 0 && previaFracCmp(lo, F1) < 0)) continue;
+      const entrada = previaFracCmp(lo, F0) < 0 ? F0 : lo;
+      casas.push({ x: cx, y: cy, _e: entrada, entrada: previaFracStr(entrada) });
+    }
+    casas.sort((a, b) => previaFracCmp(a._e, b._e) || (a.x - b.x) || (a.y - b.y));
+    let anterior = null;
+    return casas.map(c => {
+      const sim = anterior !== null && previaFracCmp(c._e, anterior) === 0;
+      anterior = c._e;
+      return { x: c.x, y: c.y, entrada: c.entrada, simultaneo: sim };
+    });
+  }
+  /* Os obstáculos de um lançamento concreto, sobre o REGISTO
+     REAL (nunca um registo paralelo): as casas de visaoOpacos()
+     com o grau declarado (passo ②) + figuras vivas (média, por
+     lei do desenho) + figuras caídas vivo===false (média), em
+     casas da travessia, excepto a casa do atacante e a do alvo.
+     Devolvidos por ordem de chegada na travessia. */
+  function ataquePreviaObstaculos(travessia, atacanteId, alvoId) {
+    const graus = new Map(visaoOpacosComGrau().map(o => [chave(o.x, o.y), o.grau]));
+    const primeira = travessia[0], ultima = travessia[travessia.length - 1];
+    const obstaculos = [];
+    const unidades = view.getState().units;
+    for (const casa of travessia) {
+      if ((casa.x === primeira.x && casa.y === primeira.y)
+        || (casa.x === ultima.x && casa.y === ultima.y)) continue;
+      const grauCenario = graus.get(chave(casa.x, casa.y));
+      if (grauCenario) obstaculos.push({ x: casa.x, y: casa.y, grau: grauCenario, fonte: 'cenario', entrada: casa.entrada });
+      for (const u of unidades) {
+        if (u.id === atacanteId || u.id === alvoId) continue;
+        if (u.posicao.x === casa.x && u.posicao.y === casa.y)
+          obstaculos.push({ x: casa.x, y: casa.y, grau: 'media', fonte: u.vivo === false ? 'figura-caida' : 'figura', id: u.id, entrada: casa.entrada });
+      }
+    }
+    return obstaculos;
+  }
+  /* Os níveis líquidos que a prévia mostra: compostos do contexto
+     MONTADO (passo ①) pela composição do próprio motor (D3,
+     vlab-completo.js: v = niveisVantagem + flanco; d =
+     niveisDesvantagem + fraco + caido da ficha do atacante;
+     líquido preso a ±4) — leitura do mesmo objecto que o
+     Confirmar entregará, nunca uma conta paralela. */
+  function ataquePreviaLiquido(montado) {
+    const ctx = montado.contexto;
+    const est = montado.fichaAtacante.estado || [];
+    const v = Math.max(0, ctx.niveisVantagem | 0) + (ctx.flanqueando ? 1 : 0);
+    const d = Math.max(0, ctx.niveisDesvantagem | 0)
+      + (est.includes('fraco') ? 1 : 0) + (est.includes('caido') ? 1 : 0);
+    return Math.max(-4, Math.min(4, v - d));
+  }
+  /* O livro em palavras (§3.1 do desenho): cada linha de caminho
+     corresponde a um contorno no chão, e cada contorno a uma
+     linha — excepto a cobertura TOTAL, que não ganha linha
+     nenhuma (EM-S-21: a peça total aparece como mundo, sem
+     sinal). As fontes de estado entram só em palavras (não são
+     geometria). */
+  function ataquePreviaFraseLivro(montado, obstaculos, liquido) {
+    const partes = [`<b>Prévia — ainda não lançou</b> · ${montado.tecnica.nome} contra <b>${nomeCena(alvo)}</b> · custa <b>${montado.tecnica.custoPA} PA</b> ao confirmar`];
+    const figs = obstaculos.filter(o => o.fonte === 'figura' || o.fonte === 'figura-caida');
+    const pedras = obstaculos.filter(o => o.fonte === 'cenario' && o.grau === 'media');
+    if (figs.length === 1) partes.push('uma figura no caminho');
+    else if (figs.length > 1) partes.push(`${figs.length} figuras no caminho`);
+    if (pedras.length === 1) partes.push('uma pedra no caminho');
+    else if (pedras.length > 1) partes.push(`${pedras.length} pedras no caminho`);
+    const est = montado.fichaAtacante.estado || [];
+    if (est.includes('fraco')) partes.push('a Ong está fraca');
+    if (est.includes('caido')) partes.push('a Ong está caída');
+    if ((montado.contexto.niveisDesvantagem | 0) > 0) partes.push('corpo partido');
+    partes.push(liquido === 0 ? 'sem Vantagem nem Desvantagem'
+      : liquido > 0 ? `<b>Vantagem ${liquido}</b>` : `<b>Desvantagem ${-liquido}</b>`);
+    return partes.join(' · ') + ' — aperte <b>Confirmar</b> para lançar ou <b>Voltar</b> para desistir.';
+  }
+  /* O desenho corrente da prévia (estado serializável para as
+     provas; null fora da prévia). O desenho RE-DERIVA-SE a cada
+     repintura (chamado de renderAcoes): banda, livro e geometria
+     lêem o mundo do instante — CASA_M pode mudar a meio (R-07) e
+     a prévia nunca mostra geometria congelada. */
+  let previaAtaqueDesenho = null;
+  /* EMENDA Q-02 (R-Q02-2): a frente DELA antes da prévia (rad,
+     pela primitiva da cena; null fora da prévia) e a bandeira de
+     «manter» do Confirmar. O restauro é CENTRAL nesta limpeza —
+     todos os invalidadores já passam por aqui (Voltar/desistir
+     via renderAcoes, gelo, restauro do Supervisor, troca de alvo
+     recusada) — e o Confirmar bem-sucedido arma a bandeira ANTES
+     de mudar de estado, para a frente virada FICAR. */
+  let previaAtaqueFrenteAnterior = null;
+  let previaAtaqueManterFrente = false;
+  /* EMENDA Q-02 (R-Q02-3): o estado público APLICADO neste ecrã
+     vindo de uma captura alheia ({frenteRad, desenho} ou null) —
+     o desenho dele só se pinta no MODO_MESTRE (ver o assentamento
+     na ponte); em jogadora guarda-se só a frente. */
+  let previaPublicaAplicada = null;
+  function ataquePreviaFrenteActualRad() {
+    try { if (typeof view.getFrente === 'function') return view.getFrente(PROPRIA); } catch (_) {}
+    return visaoFrenteRad(PROPRIA);
+  }
+  function ataquePreviaVirar(eu, ele) {
+    const desejada = Math.atan2(ele.posicao.x - eu.posicao.x, ele.posicao.y - eu.posicao.y);
+    if (previaAtaqueFrenteAnterior === null)
+      previaAtaqueFrenteAnterior = ataquePreviaFrenteActualRad();
+    try { if (typeof view.setFrente === 'function') view.setFrente(PROPRIA, desejada); } catch (_) {}
+  }
+  function ataquePreviaLimparDesenho() {
+    /* A frente trata-se SEMPRE (mesmo sem desenho corrente):
+       manter (Confirmar) consome a bandeira e fica; qualquer
+       outra saída da prévia repõe a frente anterior. */
+    if (previaAtaqueFrenteAnterior !== null) {
+      if (!previaAtaqueManterFrente) {
+        try { if (typeof view.setFrente === 'function')
+          view.setFrente(PROPRIA, previaAtaqueFrenteAnterior); } catch (_) {}
+      }
+      previaAtaqueFrenteAnterior = null;
+    }
+    previaAtaqueManterFrente = false;
+    if (!previaAtaqueDesenho && !previaPublicaAplicada) return;
+    previaAtaqueDesenho = null;
+    previaPublicaAplicada = null;
+    try { if (typeof view.showPrevia === 'function') view.showPrevia(null); else view.showMovement([]); } catch (_) {}
+  }
+  function ataquePreviaDesenhar() {
+    if (estado !== 'previa') { ataquePreviaLimparDesenho(); return; }
+    const eu = unidade(PROPRIA), ele = alvo ? unidade(alvo) : null;
+    if (!eu || !ele) { ataquePreviaLimparDesenho(); return; }
+    const travessia = ataquePreviaTravessia(eu.posicao, ele.posicao);
+    const obstaculos = ataquePreviaObstaculos(travessia, PROPRIA, alvo);
+    const montado = vlabMontarContextoAtaque(PROPRIA, alvo, { modoDesgraca: 'proposta' });
+    const liquido = ataquePreviaLiquido(montado);
+    previaAtaqueDesenho = { alvo, travessia, obstaculos, liquido, custoPA: montado.tecnica.custoPA };
+    /* EMENDA Q-02 (R-Q02-2): a viragem acontece AQUI, na cena de
+       quem mira, a cada re-derivação (troca de alvo incluída) —
+       a frente anterior guarda-se só na primeira viragem. */
+    ataquePreviaVirar(eu, ele);
+    /* Forma do caminho: o SEGMENTO centro-a-centro + as casas
+       acesas da travessia, pela primitiva mínima da cena
+       (showPrevia) — ver a nota em cena.js: showMovement sozinha
+       não distingue caminho, contorno de obstáculo e marca de
+       alvo (um só estilo para tudo). Os obstáculos MÉDIOS ganham
+       contorno; o alvo, a sua marca própria; a peça TOTAL não
+       ganha sinal nenhum (EM-S-21). O caminho desenha-se INTEIRO
+       até ao alvo, nunca truncado. Sem showPrevia (vista de
+       recurso das baterias), cai nas casas acesas de sempre. */
+    const medios = obstaculos.filter(o => o.grau === 'media');
+    if (typeof view.showPrevia === 'function')
+      view.showPrevia({ de: casaVista(eu.posicao), alvo: casaVista(ele.posicao),
+        caminho: travessia.map(casaVista), obstaculos: medios.map(casaVista) });
+    else view.showMovement(travessia.map(casaVista));
+    say(ataquePreviaFraseLivro(montado, obstaculos, liquido));
+  }
+  /* EMENDA Q-02 (R-Q02-3): o facto público da prévia corrente
+     deste ecrã — a frente virada para o alvo (geometria exacta
+     das posições, a mesma que ataquePreviaVirar escreve na cena)
+     e o desenho no formato que view.showPrevia consome (o mesmo
+     objecto que ataquePreviaDesenhar pinta em quem mira).
+     null fora do estado 'previa'. É ISTO que a captura da ponte
+     transporta em `previaPublica`; a rolagem NÃO entra aqui —
+     dados/roladas da captura ficam imóveis durante a prévia. */
+  function ataquePreviaPublicaActual() {
+    if (estado !== 'previa') return null;
+    const eu = unidade(PROPRIA), ele = alvo ? unidade(alvo) : null;
+    if (!eu || !ele) return null;
+    const frenteRad = Math.atan2(ele.posicao.x - eu.posicao.x, ele.posicao.y - eu.posicao.y);
+    let desenho = null;
+    if (previaAtaqueDesenho) {
+      const medios = previaAtaqueDesenho.obstaculos.filter(o => o.grau === 'media');
+      desenho = { de: casaVista(eu.posicao), alvo: casaVista(ele.posicao),
+        caminho: previaAtaqueDesenho.travessia.map(casaVista),
+        obstaculos: medios.map(casaVista) };
+    }
+    return { frenteRad, desenho };
+  }
+  /* EMENDA Q-02 (R-Q02-3): assentamento do facto público ao
+     APLICAR uma captura, chamado pela ponte depois da reentrada
+     na vez (como ambiente/escala/visao). A FRENTE repõe-se em
+     qualquer papel (é mundo). O DESENHO só se pinta no
+     MODO_MESTRE; em papel de jogadora chama-se showPrevia(null)
+     — zero elementos do desenho alheio. Sem o campo (save antigo
+     ou fora de prévia), LIMPA o estado público aplicado: nenhum
+     desenho público fica pendurado de uma captura anterior. */
+  function ataquePreviaPublicaAplicar(pub) {
+    previaPublicaAplicada = null;
+    if (pub && typeof pub === 'object') {
+      previaPublicaAplicada = JSON.parse(JSON.stringify(pub));
+      try { if (typeof view.setFrente === 'function') view.setFrente(PROPRIA, pub.frenteRad); } catch (_) {}
+      if (MODO_MESTRE && pub.desenho) {
+        try { if (typeof view.showPrevia === 'function')
+          view.showPrevia(JSON.parse(JSON.stringify(pub.desenho))); } catch (_) {}
+        return;
+      }
+    }
+    try { if (typeof view.showPrevia === 'function') view.showPrevia(null); } catch (_) {}
+  }
+  /* O Confirmar da prévia: é aqui que a rolagem nasce (passo ③),
+     com a intercepção total decidida antes dela (passo ⑤). */
+  function ataquePreviaConfirmar() {
+    const c = DADOS_COMBATE.ong;
+    /* Revalidação pelo MESMO portão da marcação (R-02). Recusada,
+       REGISTA — herda o caminho da recusa do Confirmar actual
+       (§7.4: Confirmar recusado regista; prévia invalidada, não). */
+    const bloqueio = validarAlvoAtaqueOng('confirmar');
+    if (bloqueio) {
+      supRegistar('bloqueada', { acao: 'confirmar', actor: PROPRIA, razao: bloqueio.razao });
+      estado = 'atacar'; renderAcoes(); say(bloqueio.mensagem); return;
+    }
+    supRegistar('accao', { acao: 'confirmar', actor: PROPRIA });
+    const eu = unidade(PROPRIA), ele = unidade(alvo);
+    const travessia = ataquePreviaTravessia(eu.posicao, ele.posicao);
+    const obstaculos = ataquePreviaObstaculos(travessia, PROPRIA, alvo);
+    const montado = vlabMontarContextoAtaque(PROPRIA, alvo, { modoDesgraca: 'proposta' });
+    const frasePA = livre => `Alma livre não chega — o ${c.arma} custa <b>8 PA</b> e a livre dela é ${livre}.`;
+    if (montado.fichaAtacante.paLivre < montado.tecnica.custoPA) {
+      /* O motor recusaria com PA_INSUFICIENTE: nada rolado, nada
+         debitado, atacou por marcar, prévia morta, custo zero
+         (EM-S-08) — com o registo da recusa da declaração antiga. */
+      supRegistar('bloqueada', { acao: 'ataque-basico', actor: PROPRIA, alvo, razao: 'PA_INSUFICIENTE' });
+      estado = 'atacar'; renderAcoes(); say(frasePA(montado.fichaAtacante.paLivre)); return;
+    }
+    /* Passo ⑤ (§5.9): intercepção por cobertura TOTAL — sobre a
+       travessia ordenada, ANTES de qualquer rolagem contra o
+       alvo. Havendo obstáculo total entre ela e o alvo, o motor
+       NÃO se chama contra o alvo; o custo paga-se por inteiro
+       (o PA da técnica montada, pelo débito de sempre); regista-se
+       o facto; e a frase pública narra o embate como mundo, só
+       pós-Confirmar — na prévia, a peça total não teve sinal
+       nenhum (EM-S-21). */
+    if (obstaculos.some(o => o.grau === 'total')) {
+      paGasto += montado.tecnica.custoPA;
+      atualizarChipVida();           // M-015: o débito reflecte-se já no chip
+      atacou = true;
+      supRegistar('accao', { acao: 'ataque', actor: PROPRIA, alvo, acerto: false, cobertura: 'total' });
+      previaAtaqueManterFrente = true;   // Q-02: Confirmar mantém a frente virada
+      estado = 'resultado'; renderAcoes();
+      say(`<b>${c.arma}</b> de <b>Ong</b> — o chicote bateu nas pedras do caminho e não chegou a <b>${nomeCena(alvo)}</b>.`);
+      return;
+    }
+    /* A rolagem NASCE aqui: a semente e a verificação tiram-se
+       neste instante e a chamada é a que vivia na declaração. */
+    const semente = vlabSemente();
+    const verificacao = vlabVerificacao();
+    const s = vlabResolverAtaqueCompleto(PROPRIA, alvo, {
+      modoDesgraca: 'proposta', semente, verificacao });
+    if (s.erro) {
+      /* EM-S-08: a 1.ª chamada falhou — nada rolado, nada
+         debitado, atacou por marcar, prévia morta, volta à
+         escolha de alvo com a razão em palavras, custo zero. */
+      supRegistar('bloqueada', { acao: 'ataque-basico', actor: PROPRIA, alvo, razao: s.erro.codigo });
+      estado = 'atacar'; renderAcoes();
+      if (s.erro.codigo === 'PA_INSUFICIENTE') {
+        const livre = FICHAS.ong.alma.total - FICHAS.ong.alma.comprometido - paGasto;
+        say(frasePA(livre));
+      } else say('O ataque não se resolveu — tente outra vez.');
+      return;
+    }
+    ataquePendente = { tipo: 'chicote', nome: c.arma, vlab: s, semente, verificacao };
+    /* O registo do ataque (faces/total) nasce AQUI, por arrasto
+       da chamada (§7.3/EM-S-17) — e os RECIBOS_PUBLICOS com ele,
+       dentro do adaptador. Na declaração antiga, nasciam os dois
+       ao marcar o alvo. */
+    const rol = s.rolagem;
+    const idxEsc = Math.max(0, rol.resultados.indexOf(rol.escolhido));
+    const facesEsc = rol.conjuntosDeFaces[idxEsc] || rol.conjuntosDeFaces[0];
+    supRegistar('accao', { acao: 'ataque-basico', actor: PROPRIA, alvo, faces: facesEsc, total: rol.total });
+    previaAtaqueManterFrente = true;   // Q-02: Confirmar mantém a frente virada
+    estado = 'rolagem'; renderAcoes();
+    let soma = facesEsc.join(' + ') + ' + ' + rol.bonus;
+    if (rol.ajusteVantagemDesvantagem > 0) soma += ' + ' + rol.ajusteVantagemDesvantagem;
+    if (rol.ajusteVantagemDesvantagem < 0) soma += ' − ' + (-rol.ajusteVantagemDesvantagem);
+    const notaVD = rol.niveisLiquidos !== 0
+      ? ` · (${rol.niveisLiquidos > 0 ? 'a melhor' : 'a pior'} de ${rol.conjuntosDeFaces.length} rolagens — ${rol.niveisLiquidos > 0 ? 'Vantagem' : 'Desvantagem'})` : '';
+    say(`${c.arma} de <b>Ong</b> contra <b>${nomeCena(alvo)}</b> · <b>${rol.expressao} → ${soma} = ${rol.total}</b>${notaVD} · aperte <b>Confirmar</b> para saber se acertou.`);
   }
 
   /* ---------- Supervisor do Comestre (T1.5 — adenda do Mestre) ----------
@@ -5837,16 +6256,34 @@
     supRegistar('guarda', { acao: 'mover', actor: PROPRIA, razao: 'O moveend dela não chegou em 5 s — movimento destravado sem desconto' });
     agendarPassoAuto();   // destravada, o Modo automático pode retomar
   }
+  /* Distância em LINHA RECTA centro-a-centro, em casas (PRÉVIA
+     v2: a régua do portão dos ataques dela — ver validarAlvoAtaqueOng). */
+  function distanciaRectaCasas(deId, paraId) {
+    const a = unidade(deId), b = unidade(paraId);
+    if (!a || !b) return Infinity;
+    return Math.hypot(b.posicao.x - a.posicao.x, b.posicao.y - a.posicao.y);
+  }
   /* Só os ataques dirigidos a outra figura usam alvo e alcance.
      A confirmação chama novamente esta validação: o alvo pode ter
-     mudado desde a escolha. Isso não é uma verificação duplicada. */
+     mudado desde a escolha. Isso não é uma verificação duplicada.
+     PRÉVIA v2 (passo ③ — a ÚNICA mudança de régua da tranche):
+     o portão dos ataques DELA passa a medir em linha recta
+     centro-a-centro ≤ alcanceEmCasas(alcance), com o CASA_M vivo
+     — é a banda da travessia da prévia. Corpos no caminho já NÃO
+     recusam (o ramo «tapado» de fraseForaDeAlcance fica morto
+     para estes ataques por construção: a recta nunca excede a
+     régua que atravessa corpos): cobram-se no livro da prévia.
+     A MESMA função corre na marcação (ataque-basico) e na
+     revalidação do Confirmar (R-02: uma só régua nos dois
+     instantes). A BFS (distanciaEntre) continua a governar o
+     Mover e a IA, intactas. */
   function validarAlvoAtaqueOng(contexto) {
     if (!alvo) return { razao: 'Sem alvo escolhido',
       mensagem: 'Primeiro <b>toque no inimigo</b> que você quer atacar — ele fica marcado como alvo.' };
     const u = unidade(alvo);
     if (!u || u.vivo === false) return { razao: 'O alvo já não está na batalha',
       mensagem: 'O alvo já não está na batalha — escolha outro inimigo.' };
-    if (distanciaAte(alvo) > alcanceEmCasas(DADOS_COMBATE.ong.alcance)) return { razao: 'Alvo fora de alcance',
+    if (distanciaRectaCasas(PROPRIA, alvo) > alcanceEmCasas(DADOS_COMBATE.ong.alcance)) return { razao: 'Alvo fora de alcance',
       mensagem: fraseForaDeAlcance(alvo, contexto) };
     return null;
   }
@@ -5984,6 +6421,11 @@
     seqTurno++;                          // continuações da IA morrem
     if (contextoIA) consumirContextoIA(contextoIA.id);
     reservasDestinoIA.clear();   // o mundo congela neste instante: reservas do mundo velho não vazam
+    /* PRÉVIA v2 (invalidador nomeado): uma prévia aberta MORRE no
+       gelo — o desenho limpa-se aqui explicitamente e o estado
+       sai de 'previa' para 'fim' já a seguir; a frase é a de
+       sempre do gelo. Sem registo (prévia invalidada, §7.4). */
+    ataquePreviaLimparDesenho();
     estado = 'fim';
     atualizarVez(); renderAcoes();   // EXP-R1: o indicador passa a «FIM» no gelo (terminal honesto)
   }
@@ -6185,6 +6627,11 @@
     rodada = snap.rodada; indiceVez = snap.indiceVez;
     ataquePendente = null; custoPendente = null; caminhoPendente = null;
     limparPrecosPendentes();   // RN-1: os preços do voo abandonado morrem no restauro
+    /* PRÉVIA v2 (invalidador nomeado): a prévia aberta morre no
+       restauro — limpa-se o desenho aqui; a vez reentra por
+       iniciarVez/iniciarVezIA a seguir e o estado sai de 'previa'.
+       Sem registo (prévia invalidada, §7.4). */
+    ataquePreviaLimparDesenho();
     continuarAposApresentacao = false;   // R1-Priv: o Continuar diferido morre no restauro — pertencia à linha do tempo abandonada
     passoEmCurso = false; parado = false;
     /* Caso 12 VLAB (medido na sonda de 04/11): um snapshot só
@@ -6306,7 +6753,14 @@
    * 'vlab' (o estado do motor por figura, que o supEstadoCanonico
    * desta base já trata como parte do estado da batalha). */
   const FASES_SAVE = ['base', 'atacar', 'consumivel', 'mover', 'movendo',
-    'rolagem', 'resultado', 'vez-ia', 'confirmar-fim', 'fim'];
+    'rolagem', 'resultado', 'vez-ia', 'confirmar-fim', 'fim',
+    /* PRÉVIA v2: 'previa' é ponto estável da vez dela SEM pendentes
+       (como 'confirmar-fim'): pode ser capturada, mas ao carregar a
+       prévia NÃO se restaura como ecrã — a vez reentra na base por
+       iniciarVez (intenção não se guarda, §7.4 do desenho). Sem
+       esta entrada, uma captura a meio da prévia nasceria com fase
+       rejeitada pelo aplicar. */
+    'previa'];
   /* O bloco vlab de UMA figura (espelho exacto do validador do
      módulo em saves-mestre.js — os dois têm de concordar sempre). */
   function validarVlabUnidade(u, id) {
@@ -6353,6 +6807,40 @@
     }
     return null;
   }
+  /* EMENDA Q-02 (R-Q02-3): o campo OPCIONAL 'previaPublica' da
+     captura — { frenteRad, desenho } no precedente de
+     ambiente/escala/visao: save antigo sem a chave é válido;
+     presente, confere-se no domínio e fora dele é
+     SAVE_ESTADO_INVALIDO, nunca clamp silencioso. frenteRad:
+     número finito em [-2π, 2π]. desenho: null, ou o objecto que
+     view.showPrevia consome — { de, alvo, caminho, obstaculos }
+     com casas de vista {x, z} inteiras dentro da área.
+     NOTA DE GÉMEO: o validador gémeo de saves-mestre.js (fora
+     desta árvore) tem de aprender esta chave — resíduo lavrado
+     no ESTADO da sede REF_79. */
+  function validarPreviaPublica(pp) {
+    const INV = 'SAVE_ESTADO_INVALIDO', FALTA = 'SAVE_CAMPOS_EM_FALTA';
+    if (!pp || typeof pp !== 'object' || Array.isArray(pp)) return INV;
+    if (Object.keys(pp).some(k => !['frenteRad', 'desenho'].includes(k))) return INV;
+    if (!('frenteRad' in pp)) return FALTA;
+    if (typeof pp.frenteRad !== 'number' || !Number.isFinite(pp.frenteRad)
+      || Math.abs(pp.frenteRad) > Math.PI * 2) return INV;
+    if (!('desenho' in pp) || pp.desenho === null) return null;
+    const d = pp.desenho;
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return INV;
+    if (Object.keys(d).some(k => !['de', 'alvo', 'caminho', 'obstaculos'].includes(k))) return INV;
+    const casaOk = c => c && typeof c === 'object' && !Array.isArray(c)
+      && Object.keys(c).every(k => k === 'x' || k === 'z')
+      && Number.isInteger(c.x) && Number.isInteger(c.z)
+      && c.x >= AREA.origin.x && c.x < AREA.origin.x + AREA.cols
+      && c.z >= AREA.origin.y && c.z < AREA.origin.y + AREA.rows;
+    if (!casaOk(d.de) || !casaOk(d.alvo)) return INV;
+    for (const lista of ['caminho', 'obstaculos']) {
+      if (lista in d && (!Array.isArray(d[lista]) || d[lista].length > 256
+        || d[lista].some(c => !casaOk(c)))) return INV;
+    }
+    return null;
+  }
   function validarEstadoParaAplicar(e) {
     const INV = 'SAVE_ESTADO_INVALIDO', FALTA = 'SAVE_CAMPOS_EM_FALTA';
     if (!e || typeof e !== 'object') return FALTA;
@@ -6377,7 +6865,7 @@
        do estado, na mesma régua (save antigo sem ele é válido —
        carrega com a matriz vazia declarada no aplicar; sem esta
        excepção, todo o save COM a matriz era rejeitado aqui). */
-    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala' && k !== 'visao' && k !== 'furtividade')) return INV;
+    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala' && k !== 'visao' && k !== 'furtividade' && k !== 'previaPublica')) return INV;
     const ids = ELENCO.map(u => u.id);
     const inteiro = n => Number.isInteger(n);
     const finito = n => typeof n === 'number' && Number.isFinite(n);
@@ -6502,6 +6990,9 @@
     /* FURTIVIDADE: presente, tem de trazer a matriz na forma dos
        dois domínios (ou só os pares, vinda de captura redigida). */
     if ('furtividade' in e && !furtMatrizValida(e.furtividade)) return INV;
+    /* EMENDA Q-02: 'previaPublica', presente, confere-se no seu
+       domínio (validarPreviaPublica) — ausente, save válido. */
+    if ('previaPublica' in e) { const erroPP = validarPreviaPublica(e.previaPublica); if (erroPP) return erroPP; }
     /* PORTA C-23: o bloco do motor confere-se com a mesma régua. */
     return validarVlabParaAplicar(e.vlab);
   }
@@ -6579,7 +7070,16 @@
            os booleanos partilhados — escondidaRolagem (o número)
            nunca sai do domínio dele, e um restauro dessa captura
            não faz nascer pares novos. */
-        furtividade: furtCapturaPorPapel(MODO_MESTRE)
+        furtividade: furtCapturaPorPapel(MODO_MESTRE),
+        /* EMENDA Q-02 (R-Q02-3): a prévia pública entra na captura
+           SÓ enquanto a prévia dura (chave opcional, como
+           ambiente/escala/visao — fora da prévia a chave nem
+           nasce, e saves sem ela continuam válidos). A rolagem
+           NÃO viaja: 'dados' acima lê dadoEstado/roladasDados,
+           imóveis durante a prévia por construção (a rolagem só
+           nasce no Confirmar). */
+        ...(estado === 'previa' && ataquePreviaPublicaActual()
+          ? { previaPublica: ataquePreviaPublicaActual() } : {})
       };
     },
     aplicar(e) {
@@ -6627,6 +7127,10 @@
           escala: CASA_M,   // ESCALA: idem — o pré-estado cobre também a escala
           visao: { ...visaoPartida },   // VISÃO: idem — o pré-estado cobre também a visão
           furtividade: furtMatrizCapturaTotal(),   // FURTIVIDADE: idem — o pré-estado cobre também a matriz (dois domínios)
+          /* Q-02: a frente actual entra no pré-estado — uma
+             aplicação falhada também não muda a frente. */
+          previaFrente: (() => { try { return typeof view.getFrente === 'function' ? view.getFrente(PROPRIA) : null; } catch (_) { return null; } })(),
+          previaPublicaAplicada: previaPublicaAplicada ? JSON.parse(JSON.stringify(previaPublicaAplicada)) : null,
           reaccoes: { ...REACCOES_DECLARADAS },
           mortePropriaAdjudicada, partidaPendente, correrUsado,
           desvincular: opcoesMovimento.desvincular,
@@ -6767,6 +7271,12 @@
           furtMatrizRepor(null);
           supRegistar('furtividade', { origem: 'save', razao: 'Save sem furtividade — matriz vazia declarada' });
         }
+        /* EMENDA Q-02 (R-Q02-3): o facto público da prévia
+           assenta com o resto, depois da reentrada na vez — a
+           frente repõe-se em qualquer papel; o desenho só se
+           pinta no MODO_MESTRE; em jogadora, zero elementos.
+           Sem o campo, limpa o estado público aplicado. */
+        ataquePreviaPublicaAplicar('previaPublica' in e ? e.previaPublica : null);
         /* EM-AV2-07: o fogo NÃO entra nos ficheiros de save — um
            load em sessão apaga os fogos da batalha actual, como a
            L10 anuncia (antes sobreviviam ao load, por desvio:
@@ -6841,6 +7351,15 @@
             opcoesMovimento.desvincular = preSave.desvincular;
             for (const idDecl of Object.keys(REACCOES_DECLARADAS)) delete REACCOES_DECLARADAS[idDecl];
             for (const idDecl of Object.keys(preSave.reaccoes)) REACCOES_DECLARADAS[idDecl] = preSave.reaccoes[idDecl];
+            /* Q-02: aplicação que não aconteceu repõe a frente e
+               o estado público que havia antes dela. */
+            if (preSave.previaFrente !== null && preSave.previaFrente !== undefined) {
+              try { if (typeof view.setFrente === 'function') view.setFrente(PROPRIA, preSave.previaFrente); } catch (__) {}
+            }
+            previaPublicaAplicada = preSave.previaPublicaAplicada || null;
+            if (previaPublicaAplicada && MODO_MESTRE && previaPublicaAplicada.desenho) {
+              try { if (typeof view.showPrevia === 'function') view.showPrevia(JSON.parse(JSON.stringify(previaPublicaAplicada.desenho))); } catch (__) {}
+            }
             mortePropriaAdjudicada = preSave.mortePropriaAdjudicada;
             try { aplicarTelaVermelha(); } catch (__) {}
             supCongelado = preSave.supCongelado;
@@ -8852,7 +9371,25 @@
      a zona fechada (Opção C, logo abaixo) retira a casa que vaza do
      campo de quem está fora, e tudo o resto do campo de quem está
      dentro. */
-  function visaoOpacos() { return [[4, 2], [5, 2], [4, 3], [5, 3]]; }
+  /* PRÉVIA v2, passo ②: a MESMA declaração passa a dizer também o
+     GRAU de cobertura de cada casa (EM-S-01: o grau é declaração
+     da peça/mapa, na mesma declaração que já alimentava a visão —
+     uma só lista de casas, nunca uma segunda). O miolo 2×2 é
+     'total': é um anel FECHADO de 26 pedras à volta do foco, já
+     declarado tapa-vista por palavra do Mestre — uma figura atrás
+     dele está coberta por completo, como atrás de uma parede.
+     Alternativa nomeada: se o anel for julgado baixo demais para
+     «por completo», o valor cai para 'media' AQUI, numa palavra
+     desta declaração — o mecanismo não muda. Tudo o resto do mapa
+     continua sem registo (efeito zero — «pequena» não existe).
+     visaoOpacos() continua a devolver só [x, y]: a extensão é
+     invisível aos consumidores de visão (visaoCampo,
+     visaoCampoOlho e o gancho __visao.campo recebem exactamente
+     o que recebiam). Quem lê o grau é visaoOpacosComGrau(),
+     derivado desta mesma lista. */
+  const VISAO_OPACOS_DECLARACAO = [[4, 2, 'total'], [5, 2, 'total'], [4, 3, 'total'], [5, 3, 'total']];
+  function visaoOpacos() { return VISAO_OPACOS_DECLARACAO.map(([x, y]) => [x, y]); }
+  function visaoOpacosComGrau() { return VISAO_OPACOS_DECLARACAO.map(([x, y, grau]) => ({ x, y, grau })); }
   /* ZONA FECHADA DO CÍRCULO (Opção C — palavra do Mestre, 2026-11-11
      15:15: «Se ela nunca tiver visto, é para ficar no escuro e não
      mostrar»): o interior do círculo de pedras é zona fechada nos dois
@@ -9976,7 +10513,33 @@
     }
   }, 400);
 
-  /* ---------- gancho de prova da bateria (não é mecânica) ---------- */
+  /* ---------- gancho de prova da bateria (não é mecânica) ----------
+     PRÉVIA v2: o estado serializado da prévia (PV-04 lê daqui a
+     travessia ordenada, os obstáculos e o líquido para os conferir
+     contra o desenho e o livro). null fora do estado 'previa'. */
+  window.__previaAtaque = Object.freeze({
+    estado: () => (estado === 'previa' && previaAtaqueDesenho)
+      ? JSON.parse(JSON.stringify({ estado, ...previaAtaqueDesenho })) : null,
+    /* EMENDA Q-02 (R-Q02-4): o facto público da prévia para as
+       provas — o deste ecrã quando mira (origem 'local'), ou o
+       aplicado de uma captura alheia (origem 'aplicada'). Em
+       papel de jogadora, o aplicado devolve desenho:null: o
+       desenho alheio não se expõe neste ecrã, nem pelo gancho —
+       só a frente, que é mundo. null quando não há prévia
+       pública nenhuma (nem local, nem aplicada). */
+    publica: () => {
+      if (estado === 'previa') {
+        const pub = ataquePreviaPublicaActual();
+        return pub ? { ...pub, origem: 'local' } : null;
+      }
+      if (previaPublicaAplicada) {
+        return MODO_MESTRE
+          ? { ...JSON.parse(JSON.stringify(previaPublicaAplicada)), origem: 'aplicada' }
+          : { frenteRad: previaPublicaAplicada.frenteRad, desenho: null, origem: 'aplicada' };
+      }
+      return null;
+    }
+  });
   window.__visao = Object.freeze({
     estado: () => ({
       papel: MODO_MESTRE ? 'mestre' : 'jogadora',
