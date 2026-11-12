@@ -2237,8 +2237,16 @@
     if (dep) {
       if (dep.armaCaida) ESTADO_VLAB[id].armaCaida = true;
       if (dep.armaQuebrada) ESTADO_VLAB[id].armaQuebrada = true;
-      for (const e of dep.estadosNovos || [])
+      /* F-13 (palavra do Mestre, 08/11/2026): num monstro, o
+         estado 'caido' (a desgraça «cai») não assenta — cair é
+         morrer, e a morte aplica-se no fim deste consumo. Nela,
+         o 'caido' assenta como sempre. */
+      const quedaDeMonstro = id !== PROPRIA
+        && (dep.estadosNovos || []).includes('caido');
+      for (const e of dep.estadosNovos || []) {
+        if (e === 'caido' && id !== PROPRIA) continue;
         if (!ESTADO_VLAB[id].estados.includes(e)) ESTADO_VLAB[id].estados.push(e);
+      }
       if (id === PROPRIA && Number.isFinite(dep.vidaActual)) {
         danoSofrido = FICHAS.ong.vida.total - dep.vidaActual;   // acerta-se: o motor já aplicou o tecto (nunca mata)
         atualizarChipVida();
@@ -2247,6 +2255,20 @@
            acumula-se na Vida interna dele — o motor aplicou o
            tecto de 1 de Vida, por isso nunca nasce uma queda aqui. */
         ESTADO_VLAB[id].danoSofrido = VIDA_MONSTROS[id] - dep.vidaActual;
+      }
+      if (quedaDeMonstro) {
+        /* F-13: a desgraça «cai» deitou o monstro — e monstro
+           caído é monstro morto: a figura tomba já, a Vida interna
+           fecha a zero e, se era o último, a batalha fecha em
+           vitória (o padrão da morte por ambiente). */
+        if (VIDA_MONSTROS[id] != null)
+          ESTADO_VLAB[id].danoSofrido = VIDA_MONSTROS[id];
+        try {
+          const pm = view.apresentarMorte(id);
+          if (pm && pm.catch) pm.catch(() => {});
+        } catch (_) { view.setVivo(id, false); }
+        ambAoMorrerFigura(id);
+        if (vlabTodosMonstrosForaDeCombate()) fimDeBatalha('vitoria');
       }
     }
     if (sm.falhaCritica && sm.falhaCritica.efeitoMecanico
@@ -2288,14 +2310,23 @@
     const dep = (saida.soDoMestre || {}).alvoDepois;
     if (!dep) return null;
     if (id !== PROPRIA) {
-      for (const e of dep.estadosNovos || [])
+      /* F-13 (palavra do Mestre, 08/11/2026): monstro caído =
+         monstro MORTO. O estado 'caido' nunca assenta num monstro:
+         a queda dele entra na morte abaixo, como a Vida a zero. */
+      const quedaDeMonstro = (dep.estadosNovos || []).includes('caido');
+      for (const e of dep.estadosNovos || []) {
+        if (e === 'caido') continue;
         if (!ESTADO_VLAB[id].estados.includes(e)) ESTADO_VLAB[id].estados.push(e);
+      }
       for (const e of dep.estadosRemovidos || [])
         ESTADO_VLAB[id].estados = ESTADO_VLAB[id].estados.filter(x => x !== e);
       if (VIDA_MONSTROS[id] != null && Number.isFinite(dep.vidaActual))
         ESTADO_VLAB[id].danoSofrido = VIDA_MONSTROS[id] - dep.vidaActual;
       const caiu = VIDA_MONSTROS[id] != null
-        && (dep.vidaActual === 0 || (dep.estadosNovos || []).includes('foraDeCombate'));
+        && (dep.vidaActual === 0 || (dep.estadosNovos || []).includes('foraDeCombate')
+          || quedaDeMonstro);
+      if (caiu && quedaDeMonstro && VIDA_MONSTROS[id] != null)
+        ESTADO_VLAB[id].danoSofrido = VIDA_MONSTROS[id];   // F-13: a queda mata — a Vida interna fecha a zero, tenha o golpe tirado o que tiver
       if (caiu) {
         /* A queda VÊ-SE pela máquina de morte da cena quando ela
            existe; na cena sagrada do vivo cai no setVivo de sempre
@@ -3571,13 +3602,28 @@
       fimDaVezIA(minhaSeq);
       return;
     }
-    /* T-J7: o monstro caído levanta-se ao abrir a vez dele — espelho
-       do levantar da Ong em iniciarVez (retira 'caido', gasta o
-       movimento da vez, anuncia-se). A acção mantém-se, como a dela. */
+    /* F-13 (palavra do Mestre, 08/11/2026): monstro caído =
+       monstro MORTO. A REF_11 (T-J7) levantava-o aqui, como a
+       Ong — essa palavra caiu: os consumos do golpe já matam o
+       monstro à queda, e este ponto é a rede do que escapar
+       (ex.: um save antigo restaurado com o monstro ainda
+       'caido'): ele morre ao abrir a vez, sem agir nem voltar. */
     vezIASemMovimento = false;
     if ((ESTADO_VLAB[id].estados || []).includes('caido')) {
       ESTADO_VLAB[id].estados = ESTADO_VLAB[id].estados.filter(e => e !== 'caido');
-      vezIASemMovimento = true;
+      if (VIDA_MONSTROS[id] != null)
+        ESTADO_VLAB[id].danoSofrido = VIDA_MONSTROS[id];
+      try {
+        const pm = view.apresentarMorte(id);
+        if (pm && pm.catch) pm.catch(() => {});
+      } catch (_) { view.setVivo(id, false); }
+      ambAoMorrerFigura(id);   // RAIO E FOGO: a morte apaga o fogo da figura
+      say(`<b>${nomeCena(id)}</b> está caído — e monstro caído não se levanta: morreu.`);
+      if (vlabTodosMonstrosForaDeCombate()) { fimDeBatalha('vitoria'); return; }
+      if (batalhaFim) return;
+      const minhaSeq = ++seqTurno;
+      fimDaVezIA(minhaSeq);
+      return;
     }
     if (fichaAberta) fecharFicha();          // D-13.12: a vez dele apresenta-se em ecrã limpo
     atualizarVez(); renderAcoes();
