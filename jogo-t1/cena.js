@@ -45,6 +45,8 @@
                     throw new RangeError('Altitude: 0..60 metros.');
             }
             const renderer = new T.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+            renderer.info.autoReset = false;
+            renderer.setClearColor(new T.Color(0x353b48), 1);
             renderer.outputEncoding = T.sRGBEncoding;
             renderer.toneMapping = T.ACESFilmicToneMapping;
             renderer.toneMappingExposure = 0.92;
@@ -110,53 +112,383 @@
                 const cor = (x, y) => C(x).lerp(C(y), t);
                 return { i, t, exp: L(a.exp, b.exp), hemiInt: L(a.hemiInt, b.hemiInt), hemiCeu: cor(a.hemiCeu, b.hemiCeu), hemiChao: cor(a.hemiChao, b.hemiChao), solInt: L(a.solInt, b.solInt), solCor: cor(a.solCor, b.solCor), solPos: [L(a.solPos[0], b.solPos[0]), L(a.solPos[1], b.solPos[1]), L(a.solPos[2], b.solPos[2])], horizonte: cor(a.horizonte, b.horizonte), fogueira: L(a.fogueira, b.fogueira), tochas: L(a.tochas, b.tochas), chamas: L(a.chamas, b.chamas) };
             }
-            function ambPintarCeu(idx, nivelChuva) {
-                const pal = AMB_CEUS[idx], cv = document.createElement('canvas');
-                cv.width = 1024; cv.height = 512;
-                const cx = cv.getContext('2d'), g = cx.createLinearGradient(0, 0, 0, 512);
-                for (const [p, c] of pal.paradas) g.addColorStop(p, c);
-                cx.fillStyle = g; cx.fillRect(0, 0, 1024, 512);
-                let s = 1000 + idx * 77 + nivelChuva * 131;
-                const rr = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
-                for (let n = 0; n < 4; n++) {
-                    const nx = 120 + rr() * 760, ny = 40 + rr() * 190;
-                    for (let k = 0; k < 26; k++) {
-                        const r = 22 + rr() * 66, x = nx + (rr() - .5) * 230, y = ny + (rr() - .5) * 44;
-                        const gr = cx.createRadialGradient(x, y, 0, x, y, r);
-                        const tinta = pal.claro ? '255,255,255' : '8,13,22';
-                        gr.addColorStop(0, 'rgba(' + tinta + ',' + (.05 + rr() * .07) + ')'); gr.addColorStop(1, 'rgba(' + tinta + ',0)');
-                        cx.fillStyle = gr; cx.fillRect(x - r, y - r, r * 2, r * 2);
-                    }
+            /* ---------- CÉU DO MUNDO (protótipo — desenho v2, sentença E1–E13) ----------
+             * Passagem própria: cena de céu separada + câmara perspectiva
+             * só-rotação (E1). O fundo em canvas morreu (E2): nenhum
+             * escritor atribui scene.background em operação normal — o
+             * recurso único é a cor de limpeza sólida. A âncora protege
+             * a LUZ: os derivados não são tocados; o céu lê a amostra
+             * publicada por ambEscrever/ambAplicarPulso e escreve só
+             * nos seus objectos. */
+            const CEU_SOLIDO = C(0x353b48);
+            const ceuCena = new T.Scene();
+            const ceuCam = new T.PerspectiveCamera(50, 1, .1, 20);
+            let ceuEstado = 'normal', ceuVerificado = false, ceuPublicado = null, ceuUltimoNow = -1;
+            const ceuDelta = { calls: 0, triangles: 0 };
+            /* CEU_LUA_ESC (volta 2; SENTENCA da bancada-v2): a emenda
+               de escurecimento foi REVOGADA pelo juiz e o alvo dele
+               e a mediana 0,38 na banda [0,34-0,44] com pico <= 0,62;
+               MEDIDO nesta VM: factor 1,0 rende mediana 0,593 e pico
+               0,749 (a resposta nao e linear) - o factor que pousa a
+               mediana no alvo e 0,75 (volta 3, analise-v3). */
+            const CEU_LUA_ESC = .75;
+            const CEU_POSICOES = [0, .45, .5, .75, .78, .8, .93, 1];
+            function ceuPaletaCor(pal, p) {
+                const ps = pal.paradas;
+                if (p <= ps[0][0]) return C(ps[0][1]);
+                for (let k = 1; k < ps.length; k++) {
+                    if (p <= ps[k][0]) return C(ps[k - 1][1]).lerp(C(ps[k][1]), (p - ps[k - 1][0]) / (ps[k][0] - ps[k - 1][0]));
                 }
-                for (let k = 0; k < 90; k++) {
-                    const y = rr() * 512, w = 80 + rr() * 500, x = rr() * 1024;
-                    cx.fillStyle = (rr() > .5 ? 'rgba(255,255,255,' : 'rgba(0,0,0,') + (.02 + rr() * .04) + ')';
-                    cx.fillRect(x, y, w, 1 + rr() * 3);
-                }
-                if (nivelChuva > 0) {
-                    cx.fillStyle = 'rgba(138,147,156,' + (nivelChuva === 1 ? '.28' : '.48') + ')';
-                    cx.fillRect(0, 0, 1024, 400);
-                    cx.fillStyle = 'rgba(138,147,156,' + (nivelChuva === 1 ? '.12' : '.22') + ')';
-                    cx.fillRect(0, 400, 1024, 112);
-                }
-                return cv;
+                return C(ps[ps.length - 1][1]);
             }
-            const ambCeus = AMB_ANCORAS.map((_, i) => [0, 1, 2].map(n => ambPintarCeu(i, n)));
-            const ambCeuCv = document.createElement('canvas'); ambCeuCv.width = 1024; ambCeuCv.height = 512;
-            const ambCeuCtx = ambCeuCv.getContext('2d');
-            const ambCeuTex = new T.CanvasTexture(ambCeuCv); ambCeuTex.encoding = T.sRGBEncoding;
-            let ambFundoOriginal, ambCeuChave = '';
-            function ambDesenharCeu(amostra, cf, pulsoE) {
-                const nivel = Math.round(cf);
-                const chave = amostra.i + ':' + Math.round(amostra.t * 20) + ':' + nivel + ':' + Math.round(pulsoE * 10);
-                if (chave === ambCeuChave) return;
-                ambCeuChave = chave;
-                ambCeuCtx.globalAlpha = 1;
-                ambCeuCtx.drawImage(ambCeus[amostra.i][nivel], 0, 0);
-                if (amostra.t > 0) { ambCeuCtx.globalAlpha = amostra.t; ambCeuCtx.drawImage(ambCeus[(amostra.i + 1) % AMB_ANCORAS.length][nivel], 0, 0); }
-                if (pulsoE > 0) { ambCeuCtx.globalAlpha = .3 * pulsoE; ambCeuCtx.fillStyle = '#e8eef7'; ambCeuCtx.fillRect(0, 0, 1024, 512); }
-                ambCeuCtx.globalAlpha = 1;
-                ambCeuTex.needsUpdate = true;
+            function ceuWSol(h) {
+                const S = t => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+                if (h >= 6.5 && h <= 18) return 1;
+                if (h > 18 && h < 23) return 1 - S((h - 18) / 5);
+                if (h >= 23 || h < 3.5) return 0;
+                return S((h - 3.5) / 3);
+            }
+            const ceuGradUniforms = { uHor: { value: new T.Color(0, 0, 0) } };
+            for (let k = 0; k < 8; k++) ceuGradUniforms['uP' + k] = { value: new T.Vector4(0, 0, 0, CEU_POSICOES[k]) };
+            const ceuGradMat = new T.ShaderMaterial({
+                uniforms: ceuGradUniforms,
+                vertexShader: 'varying vec3 vDir; void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+                fragmentShader: [
+                    'uniform vec4 uP0; uniform vec4 uP1; uniform vec4 uP2; uniform vec4 uP3; uniform vec4 uP4; uniform vec4 uP5; uniform vec4 uP6; uniform vec4 uP7;',
+                    'uniform vec3 uHor; varying vec3 vDir;',
+                    'vec3 ceuGrad(float p) {',
+                    ' vec3 c = uP0.rgb;',
+                    ' if (p > uP0.w) c = mix(uP0.rgb, uP1.rgb, clamp((p - uP0.w) / max(uP1.w - uP0.w, 0.0001), 0.0, 1.0));',
+                    ' if (p > uP1.w) c = mix(uP1.rgb, uP2.rgb, clamp((p - uP1.w) / max(uP2.w - uP1.w, 0.0001), 0.0, 1.0));',
+                    ' if (p > uP2.w) c = mix(uP2.rgb, uP3.rgb, clamp((p - uP2.w) / max(uP3.w - uP2.w, 0.0001), 0.0, 1.0));',
+                    ' if (p > uP3.w) c = mix(uP3.rgb, uP4.rgb, clamp((p - uP3.w) / max(uP4.w - uP3.w, 0.0001), 0.0, 1.0));',
+                    ' if (p > uP4.w) c = mix(uP4.rgb, uP5.rgb, clamp((p - uP4.w) / max(uP5.w - uP4.w, 0.0001), 0.0, 1.0));',
+                    ' if (p > uP5.w) c = mix(uP5.rgb, uP6.rgb, clamp((p - uP5.w) / max(uP6.w - uP5.w, 0.0001), 0.0, 1.0));',
+                    ' if (p > uP6.w) c = mix(uP6.rgb, uP7.rgb, clamp((p - uP6.w) / max(uP7.w - uP6.w, 0.0001), 0.0, 1.0));',
+                    ' return c; }',
+                    'void main() { vec3 d = normalize(vDir); float g = clamp(d.y, 0.0, 1.0); vec3 col = ceuGrad(1.0 - g); col = mix(uHor, col, smoothstep(0.0, 0.15, g)); gl_FragColor = vec4(col, 1.0);',
+                    '#include <tonemapping_fragment>',
+                    '#include <encodings_fragment>',
+                    '}'
+                ].join('\n'),
+                side: T.BackSide, depthWrite: false, depthTest: false, toneMapped: true
+            });
+            const ceuCupula = new T.Mesh(new T.SphereGeometry(10, 32, 16), ceuGradMat);
+            ceuCupula.frustumCulled = false; ceuCupula.renderOrder = 0; ceuCena.add(ceuCupula);
+            /* Estrelas (E7): ShaderMaterial próprio — PointsMaterial não
+               faz tamanhos/cintilação por ponto. */
+            const ceuEstrelasGeo = new T.BufferGeometry();
+            {
+                const pos = new Float32Array(1300 * 3), tam = new Float32Array(1300), fase = new Float32Array(1300), freq = new Float32Array(1300), bri = new Float32Array(1300), cor = new Float32Array(1300);
+                let s = 4241;
+                const rr = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+                for (let n = 0; n < 1300; n++) {
+                    const u = rr() * 2 - 1, th = rr() * 6.2831853, r = Math.sqrt(1 - u * u);
+                    pos[n * 3] = r * Math.cos(th) * 9.8; pos[n * 3 + 1] = u * 9.8; pos[n * 3 + 2] = r * Math.sin(th) * 9.8;
+                    const classe = rr();
+                    tam[n] = classe < .45 ? 3.0 + rr() * 1.2 : (classe < .85 ? 4.2 + rr() * 2.2 : 6.4 + rr() * 3.2);
+                    fase[n] = rr() * 6.2831853; freq[n] = .3 + rr() * .5; bri[n] = .45 + rr() * .55; cor[n] = rr();
+                }
+                ceuEstrelasGeo.setAttribute('position', new T.BufferAttribute(pos, 3));
+                ceuEstrelasGeo.setAttribute('aTam', new T.BufferAttribute(tam, 1));
+                ceuEstrelasGeo.setAttribute('aFase', new T.BufferAttribute(fase, 1));
+                ceuEstrelasGeo.setAttribute('aFreq', new T.BufferAttribute(freq, 1));
+                ceuEstrelasGeo.setAttribute('aBrilho', new T.BufferAttribute(bri, 1));
+                ceuEstrelasGeo.setAttribute('aCor', new T.BufferAttribute(cor, 1));
+            }
+            const ceuEstrelasMat = new T.ShaderMaterial({
+                uniforms: { uTempo: { value: 0 }, uDpr: { value: 1 }, uAlfaGlobal: { value: 0 } },
+                vertexShader: 'attribute float aTam; attribute float aFase; attribute float aFreq; attribute float aBrilho; attribute float aCor; uniform float uTempo; uniform float uDpr; varying float vA; varying float vFlare; varying vec3 vCor; void main() { vA = aBrilho * (0.75 + 0.25 * sin(6.28318 * aFreq * uTempo + aFase)); vFlare = smoothstep(0.78, 1.0, aBrilho); vCor = mix(vec3(0.84, 0.89, 1.0), vec3(1.0, 0.95, 0.87), aCor); vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = aTam * uDpr * (1.0 + 2.4 * vFlare); gl_Position = projectionMatrix * mv; }',
+                fragmentShader: [
+                    'uniform float uAlfaGlobal; varying float vA; varying float vFlare; varying vec3 vCor;',
+                    'void main() { vec2 pp = gl_PointCoord - vec2(0.5); float d = length(pp); float nucleo = smoothstep(0.5, 0.05, d); float lh = (1.0 - smoothstep(0.0, 0.05, abs(pp.y))) * (1.0 - smoothstep(0.10, 0.5, abs(pp.x))); float lv = (1.0 - smoothstep(0.0, 0.05, abs(pp.x))) * (1.0 - smoothstep(0.10, 0.5, abs(pp.y))); float a = min((nucleo + 0.55 * (lh + lv) * vFlare) * uAlfaGlobal * vA, uAlfaGlobal * vA); if (a < 0.004) discard; gl_FragColor = vec4(vCor, a);',
+                    '#include <tonemapping_fragment>',
+                    '#include <encodings_fragment>',
+                    '}'
+                ].join('\n'),
+                transparent: true, depthWrite: false, depthTest: false, toneMapped: true
+            });
+            const ceuEstrelas = new T.Points(ceuEstrelasGeo, ceuEstrelasMat);
+            ceuEstrelas.frustumCulled = false; ceuEstrelas.renderOrder = 1; ceuEstrelas.visible = false; ceuCena.add(ceuEstrelas);
+            /* Discos DESENHADOS (volta 2, veredicto do olho do Mestre):
+               texturas canvas 512x512; tamanhos angulares verdadeiros
+               na ceuCam - sol: disco O 4,2o com coroa e halo ate O 13o;
+               lua: disco O 3,1o com maria, crateras e fase desenhada,
+               halo ate O 5,6o. Presenca por forma, nao por pontos.
+               EMENDA DO OLHO DO MESTRE (2026-11-12): "so deixe a lua e
+               o sol maiores, o resto ta top" - os dois planos levam
+               x1,5 (sol 2,165 -> 3,2475; lua 0,928 -> 1,392): disco
+               pintado sol O 6,35o / halo O 19,5o; lua O 4,66o / halo
+               O 8,4o. Disco e halo escalam juntos; textura, tinta,
+               opacidade e CEU_LUA_ESC intocados.
+               EMENDA 2 DO OLHO (2026-11-12, sobre as fotos V4):
+               "deixe o sol assim por enquanto, mas quero a lua
+               maior" - so a lua cresce outra vez: plano 1,392 ->
+               2,227 (x1,6): disco pintado O 7,44o / halo O 13,4o.
+               O sol fica byte-igual em 3,2475. */
+            function ceuTexturaSol() {
+                const cv = document.createElement('canvas'); cv.width = cv.height = 512;
+                const cx = cv.getContext('2d');
+                let s = 2027;
+                const rr = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+                let gr = cx.createRadialGradient(256, 256, 70, 256, 256, 256);
+                gr.addColorStop(0, 'rgba(255,255,255,.34)'); gr.addColorStop(.35, 'rgba(255,255,255,.16)');
+                gr.addColorStop(.65, 'rgba(255,255,255,.05)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+                cx.fillStyle = gr; cx.fillRect(0, 0, 512, 512);
+                for (let k = 0; k < 46; k++) {
+                    const a = rr() * 6.2832, r0 = 84 + rr() * 30, comp = 10 + rr() * 20, larg = 5 + rr() * 7;
+                    const x = 256 + Math.cos(a) * r0, y = 256 + Math.sin(a) * r0;
+                    cx.save(); cx.translate(x, y); cx.rotate(a + 1.5708);
+                    const g2 = cx.createRadialGradient(0, 0, 0, 0, 0, comp);
+                    const al = .03 + rr() * .06;
+                    g2.addColorStop(0, 'rgba(255,255,255,' + al + ')'); g2.addColorStop(1, 'rgba(255,255,255,0)');
+                    cx.fillStyle = g2; cx.beginPath(); cx.ellipse(0, 0, larg, comp, 0, 0, 6.2832); cx.fill(); cx.restore();
+                }
+                gr = cx.createRadialGradient(246, 242, 8, 256, 256, 84);
+                gr.addColorStop(0, 'rgba(214,214,214,1)'); gr.addColorStop(.55, 'rgba(192,192,192,1)');
+                gr.addColorStop(.88, 'rgba(168,168,168,1)'); gr.addColorStop(1, 'rgba(152,152,152,.92)');
+                cx.fillStyle = gr; cx.beginPath(); cx.arc(256, 256, 83, 0, 6.2832); cx.fill();
+                cx.save(); cx.beginPath(); cx.arc(256, 256, 83, 0, 6.2832); cx.clip();
+                for (let k = 0; k < 460; k++) {
+                    const a = rr() * 6.2832, d = Math.sqrt(rr()) * 78, x = 256 + Math.cos(a) * d, y = 256 + Math.sin(a) * d, r = 3 + rr() * 13;
+                    const g3 = cx.createRadialGradient(x, y, 0, x, y, r);
+                    const v = rr() < .5 ? '255,255,255' : '196,178,148';
+                    const al = .08 + rr() * .13;
+                    g3.addColorStop(0, 'rgba(' + v + ',' + al + ')'); g3.addColorStop(1, 'rgba(' + v + ',0)');
+                    cx.fillStyle = g3; cx.fillRect(x - r, y - r, r * 2, r * 2);
+                }
+                for (let k = 0; k < 24; k++) {
+                    const a = rr() * 6.2832, d = Math.sqrt(rr()) * 66, x = 256 + Math.cos(a) * d, y = 256 + Math.sin(a) * d, r = 14 + rr() * 13;
+                    const g4 = cx.createRadialGradient(x, y, 0, x, y, r);
+                    const al = .10 + rr() * .07;
+                    g4.addColorStop(0, 'rgba(168,148,116,' + al + ')'); g4.addColorStop(1, 'rgba(168,148,116,0)');
+                    cx.fillStyle = g4; cx.fillRect(x - r, y - r, r * 2, r * 2);
+                }
+                cx.restore();
+                cx.strokeStyle = 'rgba(255,255,255,.22)'; cx.lineWidth = 2;
+                cx.beginPath(); cx.arc(256, 256, 81.5, 0, 6.2832); cx.stroke();
+                const tex = new T.CanvasTexture(cv); tex.encoding = T.sRGBEncoding; return tex;
+            }
+            function ceuTexturaLua() {
+                const cv = document.createElement('canvas'); cv.width = cv.height = 512;
+                const cx = cv.getContext('2d');
+                let s = 991;
+                const rr = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+                let gr = cx.createRadialGradient(256, 256, 140, 256, 256, 256);
+                gr.addColorStop(0, 'rgba(255,255,255,.10)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+                cx.fillStyle = gr; cx.fillRect(0, 0, 512, 512);
+                cx.save(); cx.beginPath(); cx.arc(256, 256, 142, 0, 6.2832); cx.clip();
+                gr = cx.createRadialGradient(196, 186, 20, 256, 256, 205);
+                gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.55, 'rgba(244,242,238,1)');
+                gr.addColorStop(.85, 'rgba(214,210,204,1)'); gr.addColorStop(1, 'rgba(178,174,168,1)');
+                cx.fillStyle = gr; cx.fillRect(114, 114, 284, 284);
+                const maria = [[300, 190, 52], [352, 238, 38], [268, 268, 44], [318, 318, 30], [218, 300, 26], [368, 160, 22], [238, 196, 20], [286, 140, 18]];
+                for (const mm of maria) {
+                    const g2 = cx.createRadialGradient(mm[0], mm[1], 0, mm[0], mm[1], mm[2]);
+                    g2.addColorStop(0, 'rgba(46,42,40,.34)'); g2.addColorStop(.7, 'rgba(46,42,40,.20)'); g2.addColorStop(1, 'rgba(46,42,40,0)');
+                    cx.fillStyle = g2; cx.fillRect(mm[0] - mm[2], mm[1] - mm[2], mm[2] * 2, mm[2] * 2);
+                }
+                for (let k = 0; k < 26; k++) {
+                    const a = rr() * 6.2832, d = Math.sqrt(rr()) * 128, x = 256 + Math.cos(a) * d, y = 256 + Math.sin(a) * d, r = 6 + rr() * 20;
+                    const g3 = cx.createRadialGradient(x, y, 0, x, y, r);
+                    const al = .08 + rr() * .14;
+                    g3.addColorStop(0, 'rgba(52,48,44,' + al + ')'); g3.addColorStop(1, 'rgba(52,48,44,0)');
+                    cx.fillStyle = g3; cx.fillRect(x - r, y - r, r * 2, r * 2);
+                }
+                for (let k = 0; k < 120; k++) {
+                    const a = rr() * 6.2832, d = Math.sqrt(rr()) * 132, x = 256 + Math.cos(a) * d, y = 256 + Math.sin(a) * d, r = 1.2 + rr() * 4.6;
+                    cx.fillStyle = 'rgba(50,46,42,' + (.10 + rr() * .16) + ')';
+                    cx.beginPath(); cx.arc(x, y, r, 0, 6.2832); cx.fill();
+                    cx.strokeStyle = 'rgba(255,255,255,' + (.10 + rr() * .14) + ')'; cx.lineWidth = 1;
+                    cx.beginPath(); cx.arc(x, y, r, -2.4, -0.9); cx.stroke();
+                }
+                gr = cx.createRadialGradient(150, 380, 40, 150, 380, 240);
+                gr.addColorStop(0, 'rgba(30,28,30,.38)'); gr.addColorStop(1, 'rgba(30,28,30,0)');
+                cx.fillStyle = gr; cx.fillRect(114, 114, 284, 284);
+                cx.restore();
+                cx.strokeStyle = 'rgba(255,255,255,.5)'; cx.lineWidth = 2.5;
+                cx.beginPath(); cx.arc(256, 256, 140.5, -1.15, 0.75); cx.stroke();
+                cx.globalCompositeOperation = 'destination-out';
+                gr = cx.createRadialGradient(256, 256, 134, 256, 256, 143);
+                gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,1)');
+                cx.fillStyle = gr; cx.beginPath(); cx.arc(256, 256, 143, 0, 6.2832); cx.fill();
+                cx.globalCompositeOperation = 'source-over';
+                const tex = new T.CanvasTexture(cv); tex.encoding = T.sRGBEncoding; return tex;
+            }
+            const ceuSolMat = new T.MeshBasicMaterial({ map: ceuTexturaSol(), transparent: true, depthWrite: false, depthTest: false, toneMapped: true });
+            const ceuSol = new T.Mesh(new T.PlaneGeometry(3.2475, 3.2475), ceuSolMat);
+            ceuSol.frustumCulled = false; ceuSol.renderOrder = 3; ceuSol.visible = false; ceuCena.add(ceuSol);
+            const ceuLuaMat = new T.MeshBasicMaterial({ map: ceuTexturaLua(), transparent: true, depthWrite: false, depthTest: false, toneMapped: true });
+            const ceuLua = new T.Mesh(new T.PlaneGeometry(2.227, 2.227), ceuLuaMat);
+            ceuLua.frustumCulled = false; ceuLua.renderOrder = 2; ceuLua.visible = false; ceuCena.add(ceuLua);
+            /* Nuvens com FORMA (volta 2): morre a esfera de bandas.
+               Tres massas pintadas em canvas 1024x640 dentro de margem segura, alfa morto
+               nos bordos - sopros com luz por cima (lum 255) e sombra
+               por baixo (lum ~128) - postas em 16 placas na cupula. A
+               tinta e a opacidade seguem as formulas E8; a deriva roda
+               as placas em longitude. */
+            function ceuTexturaNuvem(semente) {
+                const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 640;
+                const cx = cv.getContext('2d');
+                let s = semente;
+                const rr = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+                const sopros = [];
+                const torres = 5 + Math.floor(rr() * 3);
+                for (let c = 0; c < torres; c++) {
+                    const bx = 220 + rr() * 480, by = 320 + rr() * 80, esc = .8 + rr() * .4;
+                    for (let k = 0; k < 14; k++) sopros.push({ x: bx + (rr() - .5) * 400 * esc, y: by + (rr() - .5) * 110 * esc, r: (45 + rr() * 75) * esc, a: .26 + rr() * .18 });
+                    const tx = bx + (rr() - .5) * 60, ty = by - 95 * esc;
+                    for (let k = 0; k < 10; k++) sopros.push({ x: tx + (rr() - .5) * 280 * esc, y: ty + (rr() - .5) * 96 * esc, r: (35 + rr() * 60) * esc, a: .26 + rr() * .18 });
+                }
+                let ymin = 1e9, ymax = -1e9;
+                for (const pp of sopros) { ymin = Math.min(ymin, pp.y - pp.r); ymax = Math.max(ymax, pp.y + pp.r); }
+                for (const pp of sopros) {
+                    const t = (pp.y - ymin) / Math.max(1, ymax - ymin);
+                    const L = Math.round(255 - t * 127);
+                    const g = cx.createRadialGradient(pp.x, pp.y - pp.r * .18, 0, pp.x, pp.y, pp.r);
+                    g.addColorStop(0, 'rgba(' + L + ',' + L + ',' + L + ',' + (pp.a + .12) + ')');
+                    g.addColorStop(.62, 'rgba(' + L + ',' + L + ',' + L + ',' + pp.a + ')');
+                    g.addColorStop(1, 'rgba(' + L + ',' + L + ',' + L + ',0)');
+                    cx.fillStyle = g; cx.fillRect(pp.x - pp.r, pp.y - pp.r, pp.r * 2, pp.r * 2);
+                }
+                for (let k = 0; k < 34; k++) {
+                    const pp = sopros[Math.floor(rr() * sopros.length)];
+                    const x = pp.x + (rr() - .5) * 60, y = pp.y + pp.r * .45, r = pp.r * .8;
+                    const g = cx.createRadialGradient(x, y, 0, x, y, r);
+                    g.addColorStop(0, 'rgba(96,96,104,.26)'); g.addColorStop(1, 'rgba(96,96,104,0)');
+                    cx.fillStyle = g; cx.fillRect(x - r, y - r, r * 2, r * 2);
+                }
+                cx.globalCompositeOperation = 'destination-out';
+                let gb = cx.createLinearGradient(0, 0, 0, 70);
+                gb.addColorStop(0, 'rgba(0,0,0,1)'); gb.addColorStop(1, 'rgba(0,0,0,0)');
+                cx.fillStyle = gb; cx.fillRect(0, 0, 1024, 70);
+                gb = cx.createLinearGradient(0, 640, 0, 570);
+                gb.addColorStop(0, 'rgba(0,0,0,1)'); gb.addColorStop(1, 'rgba(0,0,0,0)');
+                cx.fillStyle = gb; cx.fillRect(0, 570, 1024, 70);
+                gb = cx.createLinearGradient(0, 0, 70, 0);
+                gb.addColorStop(0, 'rgba(0,0,0,1)'); gb.addColorStop(1, 'rgba(0,0,0,0)');
+                cx.fillStyle = gb; cx.fillRect(0, 0, 70, 640);
+                gb = cx.createLinearGradient(1024, 0, 954, 0);
+                gb.addColorStop(0, 'rgba(0,0,0,1)'); gb.addColorStop(1, 'rgba(0,0,0,0)');
+                cx.fillStyle = gb; cx.fillRect(954, 0, 70, 640);
+                cx.globalCompositeOperation = 'source-over';
+                const tex = new T.CanvasTexture(cv); tex.encoding = T.sRGBEncoding; return tex;
+            }
+            const ceuNuvensMats = [101, 208, 315].map(sd => new T.MeshBasicMaterial({ map: ceuTexturaNuvem(sd), transparent: true, depthWrite: false, depthTest: false, toneMapped: true }));
+            const ceuNuvens = [];
+            let ceuNuvemAng = 0;
+            {
+                const geoNuvem = new T.PlaneGeometry(1, .625);
+                let s = 555;
+                const rr = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+                for (let k = 0; k < 16; k++) {
+                    const lon = rr() * 6.2832, el = .10 + rr() * .36, larg = 2.6 + rr() * 2.6;
+                    const dir = new T.Vector3(Math.cos(el) * Math.cos(lon), Math.sin(el), Math.cos(el) * Math.sin(lon));
+                    const m = new T.Mesh(geoNuvem, ceuNuvensMats[k % 3]);
+                    m.scale.set(larg, larg * .625, 1);
+                    m.position.copy(dir).multiplyScalar(9);
+                    m.lookAt(0, 0, 0);
+                    m.frustumCulled = false; m.renderOrder = 4; m.visible = false;
+                    m.userData.base = dir;
+                    ceuCena.add(m); ceuNuvens.push(m);
+                }
+            }
+            function ceuNuvensAplicar(tinta, op) {
+                for (const mt of ceuNuvensMats) { mt.color.copy(tinta); mt.opacity = op; }
+                const vis = op >= .01;
+                for (const m of ceuNuvens) m.visible = vis;
+            }
+            function ceuNuvensDeriva(dt) {
+                ceuNuvemAng = (ceuNuvemAng + dt * .2 * Math.PI / 180) % (Math.PI * 2);
+                const ca = Math.cos(ceuNuvemAng), sa = Math.sin(ceuNuvemAng);
+                for (const m of ceuNuvens) {
+                    const b = m.userData.base;
+                    m.position.set((b.x * ca + b.z * sa) * 9, b.y * 9, (-b.x * sa + b.z * ca) * 9);
+                    m.lookAt(0, 0, 0);
+                }
+            }
+            /* Publicação (E3): ambEscrever publica e ambAplicarPulso
+               republica — o céu final nasce da amostra, do cinz da
+               chuva e do pulso, como o fundo em canvas nascia. */
+            function ceuPublicar(amostra, cf, pulsoE) {
+                const cinz = ambNivel(AMB_CHUVA.cinzento, cf);
+                const pa = AMB_CEUS[amostra.i], pb = AMB_CEUS[(amostra.i + 1) % AMB_CEUS.length];
+                for (let k = 0; k < 8; k++) {
+                    const p = CEU_POSICOES[k];
+                    const c = ceuPaletaCor(pa, p).lerp(ceuPaletaCor(pb, p), amostra.t);
+                    c.lerp(ambCor(0x8a939c), cinz).lerp(ambCor(0xd7dee8), .30 * pulsoE);
+                    ceuGradUniforms['uP' + k].value.set(c.r, c.g, c.b, p);
+                }
+                ceuGradUniforms.uHor.value.copy(scene.fog.color);
+                const wSol = ceuWSol(ambActual.hora), wLua = 1 - wSol, fFecho = ambNivel([1, .45, .05], cf);
+                const dir = new T.Vector3(amostra.solPos[0], amostra.solPos[1], amostra.solPos[2]).normalize();
+                ceuSol.position.copy(dir).multiplyScalar(9.5); ceuSol.lookAt(0, 0, 0);
+                ceuLua.position.copy(dir).multiplyScalar(9.5); ceuLua.lookAt(0, 0, 0);
+                ceuSolMat.color.copy(amostra.solCor);
+                ceuSolMat.opacity = wSol * fFecho; ceuSol.visible = fFecho >= .1 && ceuSolMat.opacity >= .01;
+                const cs = amostra.solCor.clone().convertLinearToSRGB();
+                const yy = .2126 * cs.r + .7152 * cs.g + .0722 * cs.b;
+                cs.lerp(new T.Color(yy, yy, yy), .45).multiplyScalar(.82);
+                cs.multiplyScalar(CEU_LUA_ESC);
+                ceuLuaMat.color.copy(cs).convertSRGBToLinear();
+                ceuLuaMat.opacity = wLua * fFecho; ceuLua.visible = fFecho >= .1 && ceuLuaMat.opacity >= .01;
+                ceuEstrelasMat.uniforms.uAlfaGlobal.value = .55 * wLua * fFecho;
+                ceuEstrelas.visible = fFecho >= .1 && ceuEstrelasMat.uniforms.uAlfaGlobal.value >= .01;
+                ceuNuvensAplicar(ambCor(0x26334a).lerp(amostra.solCor.clone().lerp(ambCor(0xffffff), .65), wSol), ambNivel([.38, .68, .96], cf));
+                const z = ceuGradUniforms.uP0.value;
+                ceuPublicado = {
+                    zenite: '#' + new T.Color(z.x, z.y, z.z).convertLinearToSRGB().getHexString(),
+                    horVivo: '#' + scene.fog.color.clone().convertLinearToSRGB().getHexString(),
+                    wSol, wLua, fFecho
+                };
+            }
+            function ceuPublicadoEstado() {
+                if (!ceuPublicado) return { modo: ceuEstado, zenite: null, horVivo: null, wSol: 0, wLua: 1, fFecho: 1, ceuCalls: ceuDelta.calls };
+                return { modo: ceuEstado, zenite: ceuPublicado.zenite, horVivo: ceuPublicado.horVivo, wSol: +ceuPublicado.wSol.toFixed(3), wLua: +ceuPublicado.wLua.toFixed(3), fFecho: +ceuPublicado.fFecho.toFixed(3), ceuCalls: ceuDelta.calls };
+            }
+            /* Por frame (E9), dentro de ambTick depois do pulso: tempo
+               das estrelas, deriva das nuvens integrada (dt próprio
+               com o mesmo clamp de 0,08 s — ambTick recebe `now`, não
+               o dt de animate) e o quaternião da câmara activa. */
+            function ceuTick(now) {
+                if (!ceuPublicado || ceuEstado === 'falha') return;
+                ceuEstrelasMat.uniforms.uTempo.value = now / 1000;
+                ceuEstrelasMat.uniforms.uDpr.value = renderer.getPixelRatio();
+                if (ceuUltimoNow >= 0) {
+                    const dt = Math.min(.08, Math.max(0, (now - ceuUltimoNow) / 1000));
+                    ceuNuvensDeriva(dt);
+                }
+                ceuUltimoNow = now;
+                ceuCam.quaternion.copy(camaraActiva().quaternion);
+                ceuCam.aspect = width / Math.max(1, height); ceuCam.updateProjectionMatrix();
+            }
+            function ceuVerificarProgramas() {
+                const progs = renderer.info.programs || [];
+                for (const p of progs) if (p.diagnostics && p.diagnostics.runnable === false) { ceuEstado = 'falha'; return; }
+            }
+            /* Render em duas passagens (E1): reset manual só dos
+               contadores de render (info.reset() tocaria também a
+               memória — a prova de dispose da E11 lê info.memory). */
+            function ceuRenderizar() {
+                const cam = camaraActiva();
+                if (ceuEstado === 'falha' || !ceuPublicado) { scene.background = CEU_SOLIDO; renderer.render(scene, cam); return; }
+                scene.background = null;
+                const ri = renderer.info.render;
+                ri.calls = 0; ri.triangles = 0; ri.lines = 0; ri.points = 0;
+                renderer.autoClear = true;
+                renderer.render(ceuCena, ceuCam);
+                ceuDelta.calls = ri.calls; ceuDelta.triangles = ri.triangles;
+                renderer.clearDepth();
+                renderer.autoClear = false;
+                renderer.render(scene, cam);
+                renderer.autoClear = true;
+                if (!ceuVerificado) { ceuVerificado = true; ceuVerificarProgramas(); }
+            }
+            function ceuDispose() {
+                ceuCena.traverse(o => {
+                    if (o.geometry) o.geometry.dispose();
+                    if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+                });
             }
             /* Fontes decorativas da camada pintada (brilhos das tochas):
                identificadas pela assinatura que a própria casa usa —
@@ -401,13 +733,7 @@
                         d.o.material.opacity = opDec;
                     }
                 }
-                if (!ambTrans && cf === 0 && ambAlvo.hora === 23 && pulsoE === 0) {
-                    if (ambFundoOriginal !== undefined && scene.background !== ambFundoOriginal) scene.background = ambFundoOriginal;
-                } else {
-                    if (ambFundoOriginal === undefined) ambFundoOriginal = scene.background;
-                    if (scene.background !== ambCeuTex) scene.background = ambCeuTex;
-                    ambDesenharCeu(amostra, cf, pulsoE);
-                }
+                ceuPublicar(amostra, cf, pulsoE);
                 const tabela = quality === 'baixa' ? AMB_CHUVA.gotasBaixa : AMB_CHUVA.gotas;
                 /* Chuva e neve nunca juntas (VOLTA 3): o tipo manda
                  * qual dos sistemas desenha; o outro fica a zero.
@@ -456,14 +782,7 @@
                 if (!ambUltimaAmostra) return;
                 hemi.intensity = ambUltimaAmostra.hemiInt + .38 * e;
                 if (ambUltimoHor) scene.fog.color.copy(ambUltimoHor).lerp(ambCor(0xd7dee8), .55 * e);
-                if (e > 0) {
-                    if (ambFundoOriginal === undefined) ambFundoOriginal = scene.background;
-                    if (scene.background !== ambCeuTex) scene.background = ambCeuTex;
-                    ambDesenharCeu(ambUltimaAmostra, ambActual.chuva, e);
-                } else if (!ambTrans && ambActual.chuva === 0 && ambAlvo.hora === 23) {
-                    if (ambFundoOriginal !== undefined && scene.background !== ambFundoOriginal) scene.background = ambFundoOriginal;
-                    ambCeuChave = '';
-                } else ambDesenharCeu(ambUltimaAmostra, ambActual.chuva, 0);
+                ceuPublicar(ambUltimaAmostra, ambActual.chuva, e);
             }
             function aplicarAmbiente(estado, opcoes = {}) {
                 if (!estado || !Number.isFinite(estado.hora) || estado.hora < 0 || estado.hora >= 24) throw new RangeError('Ambiente: hora fora de [0,24).');
@@ -556,6 +875,7 @@
                     if (t >= .2) { ambPulsoT0 = -1; ambAplicarPulso(0); }
                     else ambAplicarPulso(t < .03 ? t / .03 : Math.max(0, 1 - (t - .03) / .15));
                 }
+                ceuTick(now);
             }
             function dispararRaio() {
                 /* RELAMPAGO cosmético (desenho base §4.3): só o pulso de
@@ -1816,6 +2136,8 @@
                 width = Math.max(1, r.width);
                 height = Math.max(1, r.height);
                 renderer.setSize(width, height, false);
+                ceuCam.aspect = width / height;
+                ceuCam.updateProjectionMatrix();
                 if (mode === 'livre') {
                     cameraLivre.aspect = width / height;
                     cameraLivre.updateProjectionMatrix();
@@ -1887,7 +2209,7 @@
                 return { area: JSON.parse(JSON.stringify(area)), selected, camera: mode, zoom: mode === 'livre' ? null : zoom[mode], zoomRange: mode === 'livre' ? null : zoomRange(), livre: mode === 'livre' ? { pos: [livreRound(ctrlLivre.pos.x), livreRound(ctrlLivre.pos.y), livreRound(ctrlLivre.pos.z)], yaw: livreRound(ctrlLivre.yaw), pitch: livreRound(ctrlLivre.pitch) } : null, gridVisible: grid.visible, qualidade: quality, moving: [...units.values()].some(u => u.step || u.queue.length), units: [...units.values()].map(publicUnit) };
             }
             function stats() {
-                return { movementCells:movementCells.map(p=>({...p})), presentation:presentation ? {attacker:presentation.a.id,target:presentation.b.id,phase:!presentation.started?'waiting':presentation.t<.2?'turn':'gesture'} : null, hoverVisible: hover.visible, destinationVisible: destination.visible, reachableCells: (moveLayer.children[0]?.geometry.attributes.position.count ?? 0)/6, fps, triangles: renderer.info.render.triangles, totalTriangles: count(scene), drawCalls: renderer.info.render.calls, dpr: renderer.getPixelRatio(), width, height, visibleWidthMeters: viewWidth, cellPixels: CELL / viewWidth * width, shadowSize: renderer.shadowMap.enabled ? 512 : 0, areaMeters: { width: area.cols * CELL, height: area.rows * CELL }, models: [...units.values()].map(u => ({ id:u.id, frente:((T.MathUtils.radToDeg(u.pivot.rotation.y)%360)+360)%360, drawOffset:{x:u.root.position.x-wx(u.x),y:u.root.position.y-world.height(wx(u.x),wz(u.z))-u.altitude,z:u.root.position.z-wz(u.z)}, modelo:u.model, loadError:u.loadError ?? null, triangles:count(u.pivot), markerTint:u.markerTint ?? null, skins:(()=>{const skins=new Set();u.pivot.traverse(o=>{if(o.isSkinnedMesh)skins.add(o.skeleton.bones.map(b=>b.uuid).join(','))});return skins.size})(), action:u.actionName ?? null, actionTime:u.action?.time ?? null, clips:u.animations.map(a=>a.name), clipDurations:u.animations.map(a=>({name:a.name,duration:a.duration})) })), animations: { idle: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.idle).length, walk: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.andar).length, advancing: [...units.values()].filter(u => u.mixer && u.mixer.time > 0).length } };
+                return { movementCells:movementCells.map(p=>({...p})), presentation:presentation ? {attacker:presentation.a.id,target:presentation.b.id,phase:!presentation.started?'waiting':presentation.t<.2?'turn':'gesture'} : null, hoverVisible: hover.visible, destinationVisible: destination.visible, reachableCells: (moveLayer.children[0]?.geometry.attributes.position.count ?? 0)/6, fps, triangles: renderer.info.render.triangles, totalTriangles: count(scene), drawCalls: renderer.info.render.calls, ceuCalls: ceuDelta.calls, ceuTriangles: ceuDelta.triangles, dpr: renderer.getPixelRatio(), width, height, visibleWidthMeters: viewWidth, cellPixels: CELL / viewWidth * width, shadowSize: renderer.shadowMap.enabled ? 512 : 0, areaMeters: { width: area.cols * CELL, height: area.rows * CELL }, models: [...units.values()].map(u => ({ id:u.id, frente:((T.MathUtils.radToDeg(u.pivot.rotation.y)%360)+360)%360, drawOffset:{x:u.root.position.x-wx(u.x),y:u.root.position.y-world.height(wx(u.x),wz(u.z))-u.altitude,z:u.root.position.z-wz(u.z)}, modelo:u.model, loadError:u.loadError ?? null, triangles:count(u.pivot), markerTint:u.markerTint ?? null, skins:(()=>{const skins=new Set();u.pivot.traverse(o=>{if(o.isSkinnedMesh)skins.add(o.skeleton.bones.map(b=>b.uuid).join(','))});return skins.size})(), action:u.actionName ?? null, actionTime:u.action?.time ?? null, clips:u.animations.map(a=>a.name), clipDurations:u.animations.map(a=>({name:a.name,duration:a.duration})) })), animations: { idle: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.idle).length, walk: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.andar).length, advancing: [...units.values()].filter(u => u.mixer && u.mixer.time > 0).length } };
             }
             function animate(now) {
                 if (disposed)
@@ -1981,7 +2303,7 @@
                 ambQuadro(now, dt);
                 let ambFogD0 = null;
                 if (ambNevoaExtra > 0 && scene.fog && typeof scene.fog.density === 'number') { ambFogD0 = scene.fog.density; scene.fog.density = ambFogD0 + ambNevoaExtra; }
-                try { renderer.render(scene, camaraActiva()); } finally { if (ambFogD0 !== null) scene.fog.density = ambFogD0; }
+                try { ceuRenderizar(); } finally { if (ambFogD0 !== null) scene.fog.density = ambFogD0; }
                 const boxes = [];
                 const bodies = [...units.values()].filter(u => !u.oculto).map(u => unitRect(u)).filter(Boolean);
                 for (const u of [...units.values()].sort((a, b) => (b.id === selected) - (a.id === selected))) {
@@ -2360,7 +2682,7 @@
                     u.step = null;
                     pose(u);
                 }, aplicarAmbiente, getAmbienteAplicado() {
-                    return { hora: ambActual.hora, chuva: ambActual.chuva, raios: ambAlvo.raios, emTransicao: !!ambTrans, derivados: ambDerivados };
+                    return { hora: ambActual.hora, chuva: ambActual.chuva, raios: ambAlvo.raios, emTransicao: !!ambTrans, derivados: ambDerivados, ceu: ceuPublicadoEstado() };
                 }, dispararRaio, raioArenaVisual, acenderFogoCasa, apagarFogoCasa, definirEstagioFogoCasa, setUnidadeAArder, limparFogos, getVeuEstado, setCapChuva(n) {
                     ambCapChuva = n == null ? null : Math.max(0, Math.floor(n));
                     ambReaplicar();
@@ -2408,7 +2730,7 @@
                     observer.disconnect();
                     renderer.domElement.removeEventListener('webglcontextlost', contextLost);
                     [...units.keys()].forEach(removeUnit);
-                    chuvaGeo.dispose(); chuvaMat.dispose(); neveGeo.dispose(); neveMat.dispose(); respGeo.dispose(); respMat.dispose(); ambCeuTex.dispose();
+                    chuvaGeo.dispose(); chuvaMat.dispose(); neveGeo.dispose(); neveMat.dispose(); respGeo.dispose(); respMat.dispose(); ceuDispose();
                     release(scene);
                     sun.shadow.map?.dispose();
                     renderer.dispose();
