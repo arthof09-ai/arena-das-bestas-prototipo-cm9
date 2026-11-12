@@ -65,6 +65,11 @@
   var ITERACOES_PBKDF2 = 250000;
   var CHAVE_APARELHO = 'entrada-mestre-aparelho';
   var CHAVE_RESUMO_APARELHO = 'entrada-mestre-resumo-aparelho';
+  /* A VERSÃO DO JOGO (palavra do Mestre, 12/11/2026 08:20): a
+   * marca discreta do canto inferior esquerdo da entrada lê ESTA
+   * constante — é o sítio ÚNICO dela: cada publicação actualiza
+   * aqui o número da sua REF e a marca acompanha. */
+  var VERSAO_JOGO = 'REF_72';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -339,6 +344,15 @@
   placa.appendChild(el('div', 'ent-faixa', 'Campo de batalha'));
   raiz.appendChild(placa);
 
+  /* A marca da versão no canto inferior esquerdo: nasce com a
+   * entrada e fica enquanto ela estiver no ecrã. Não é interface
+   * de acção (sem clique) e NÃO entra na lista que o filme
+   * esconde — o «sempre» da palavra dele. O estilo é a regra
+   * .ent-versao de entrada.css. */
+  var marcaVersao = el('div', 'ent-versao', VERSAO_JOGO);
+  marcaVersao.id = 'ent-versao';
+  raiz.appendChild(marcaVersao);
+
   /* Vista 1 — os três botões do layout. NÃO há botão do Google
    * separado: o fluxo Google vive dentro dos dois botões de entrar. */
   var vistaBotoes = el('div');
@@ -348,12 +362,16 @@
   var btnJogadora = el('button', 'ent-btn'); btnJogadora.id = 'ent-jogadora'; btnJogadora.type = 'button';
   var btnConfig = el('button', 'ent-btn', 'Configurações');
   btnConfig.id = 'ent-config'; btnConfig.type = 'button';
-  var ajuda = el('p', 'ent-ajuda', 'Você entra com a sua conta Google. Ela fica guardada neste celular.');
+  /* A frase «Você entra com a sua conta Google. Ela fica guardada
+   * neste celular.» SAIU (palavra do Mestre, 12/11/2026 09:01: a
+   * frase por baixo dos botões que fala de entrar com a conta Google
+   * e de ela ficar guardada neste celular). Sai só o texto visível:
+   * o fluxo Google dentro dos botões e a guarda da conta no aparelho
+   * ficam exactamente iguais. */
   vistaBotoes.appendChild(erroEntrada);
   vistaBotoes.appendChild(btnMestre);
   vistaBotoes.appendChild(btnJogadora);
   vistaBotoes.appendChild(btnConfig);
-  vistaBotoes.appendChild(ajuda);
   raiz.appendChild(vistaBotoes);
 
   function pintarBotaoMestre() {

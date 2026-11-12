@@ -87,6 +87,26 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   text-shadow: 0 1px 8px rgba(0, 0, 0, .9);
 }
 
+/* ---------- a versão do jogo no canto inferior esquerdo
+   (palavra do Mestre, 12/11/2026 08:20): está SEMPRE enquanto a
+   entrada estiver no ecrã — escondidinha/apagadinha (letra
+   pequena, opacidade baixa), mas lê-se com um pouco de esforço.
+   Sem fundo, sem borda, sem clique; encostada ao canto com os
+   safe-area-insets, como o PULAR; z-index 5: acima dos painéis
+   (2), do PULAR (3) e do splash da logo (4). O filme NÃO a
+   esconde: a regra «.a-tocar-filme» nomeia a interface de acção
+   e esta marca não entra nela. O texto vem da constante
+   VERSAO_JOGO do entrada.js. ---------- */
+.ent-versao {
+  position: absolute; z-index: 5;
+  left: calc(9px + env(safe-area-inset-left, 0px));
+  bottom: calc(9px + env(safe-area-inset-bottom, 0px));
+  font-size: 11px; line-height: 1.2; letter-spacing: .05em;
+  color: #efe6cf; opacity: .4;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, .65);
+  pointer-events: none; user-select: none; -webkit-user-select: none;
+}
+
 /* ---------- painéis (senha e configurações) ---------- */
 .ent-painel {
   position: absolute; left: 31%; width: 38%; top: 34%;
@@ -280,6 +300,21 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   /* a frase reserva 44 px (2 linhas a 14 px, com margem): o erro
      fica-lhe acima com 10 px de folga */
   .ent-erro-entrada { left: 10%; width: 80%; bottom: calc(2.5% + 258px); }
+  /* a marca da versão em retrato: cai sobre a zona clara da arte e
+     lê-se pior que em paisagem — por palavra dele (12/11/2026
+     08:42: «em pé deixe um pouco menos opaco»), a opacidade subiu
+     de 0,4 para 0,55 SÓ em retrato (menos apagada, lê-se melhor);
+     ele viu a foto a 0,55 e disse (12/11/2026 08:45: «Acho que
+     ainda tá difícil de ler») — segundo afino: opacidade 0,75 e
+     uma sombrinha escura suave atrás das letras, SÓ em retrato,
+     para a letra clara se ler sobre a parte clara do desenho sem
+     a marca ficar gritante; letra, cor, posição e o resto ficam
+     os da regra base, e em paisagem vale a regra base intocada
+     (0,4, sem esta sombra) */
+  .ent-versao {
+    opacity: .75;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, .6), 0 0 2px rgba(0, 0, 0, .6);
+  }
 }
 
 /* ---------- FILME + LOOP (tranche t-entrada-filme): o filme de
