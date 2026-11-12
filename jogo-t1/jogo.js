@@ -1952,10 +1952,50 @@
   }
   /* A chamada única ao motor. opts: { modoDesgraca, semente,
      verificacao, ataqueDeOportunidade, desgracaEscolhida,
-     confirmacaoDeProposta } — o resto deriva-se do estado. */
+     confirmacaoDeProposta, danoEmArea, danoReflectido,
+     danoPeriodico, danoAmbiental } — o resto deriva-se do estado.
+     Chave fora desta lista é erro nomeado (ver a guarda
+     ADAPTADOR_OPCAO_DESCONHECIDA na função): nada se larga em
+     silêncio (dívida E1 da REF_35). Bandeira com valor definido
+     não booleano é erro nomeado ADAPTADOR_BANDEIRA_INVALIDA
+     (Emenda n.º 1 da sentença da bancada E1): true repassa-se,
+     false explícito vale como ausência, undefined é ausência. */
   function vlabResolverAtaqueCompleto(atacanteId, alvoId, opts) {
     opts = opts || {};
     if (!VLAB_MOTOR) return { erro: { codigo: 'MOTOR_VLAB_INDISPONIVEL', detalhe: 'vlab-completo.js não carregou' } };
+    /* DÍVIDA E1 (REF_35; tranche Órfãs do Ledger, 11/11/2026): este
+       adaptador monta o contexto do motor de uma lista FECHADA de
+       opts — antes, qualquer chave fora dela (incl. as bandeiras de
+       exclusão do motor) era largada EM SILÊNCIO e o golpe resolvia
+       como se ela não existisse. A partir daqui, chave desconhecida
+       com valor definido é ERRO NOMEADO e nada se resolve (a regra
+       de ouro da casa: erro nomeado = nada foi aplicado) — largar
+       deixou de ser silencioso, para esta e para qualquer bandeira
+       futura que um chamador invente. */
+    const VLAB_OPTS_CONHECIDAS = ['modoDesgraca', 'semente', 'verificacao',
+      'ataqueDeOportunidade', 'desgracaEscolhida', 'confirmacaoDeProposta',
+      'danoEmArea', 'danoReflectido', 'danoPeriodico', 'danoAmbiental'];
+    const optsDesconhecidas = Object.keys(opts)
+      .filter(k => opts[k] !== undefined && !VLAB_OPTS_CONHECIDAS.includes(k));
+    if (optsDesconhecidas.length) return { erro: { codigo: 'ADAPTADOR_OPCAO_DESCONHECIDA',
+      detalhe: 'opts fora da lista do adaptador: ' + optsDesconhecidas.join(', ') } };
+    /* EMENDA N.º 1 DA SENTENÇA E1 (bancada, pré-fusão): a guarda de
+       cima vigia o NOME das chaves; esta vigia o TIPO das 4 bandeiras.
+       O motor lê as bandeiras com ===true — um valor definido
+       não booleano (1, 0, 'true', null, objecto, NaN…) passava a
+       guarda de nomes, não era repassado e o golpe somava a falha
+       em silêncio (o vector medido SEMTICAO-1). A fronteira onde
+       opts entra é aqui: bandeira presente (propriedade própria),
+       com valor !== undefined e não booleano → ERRO NOMEADO, antes
+       de qualquer mutação, e nada se resolve. true é válido
+       (repassa-se abaixo, ===true); false explícito é válido
+       (bandeira desligada = ausência); undefined conta como
+       ausente, como em toda a guarda. */
+    const bandeirasInvalidas = ['danoEmArea', 'danoReflectido', 'danoPeriodico', 'danoAmbiental']
+      .filter(k => Object.prototype.hasOwnProperty.call(opts, k)
+        && opts[k] !== undefined && typeof opts[k] !== 'boolean');
+    if (bandeirasInvalidas.length) return { erro: { codigo: 'ADAPTADOR_BANDEIRA_INVALIDA',
+      detalhe: 'bandeira(s) com valor definido não booleano: ' + bandeirasInvalidas.join(', ') } };
     const c = DADOS_COMBATE[atacanteId];
     const tecnica = atacanteId === PROPRIA
       ? { nome: c.arma, custoPA: 8, expressaoAtaque: vlabExprAtaque(atacanteId),
@@ -1979,6 +2019,19 @@
       contexto.flanqueando = true;
     if (opts.desgracaEscolhida) contexto.desgracaEscolhida = opts.desgracaEscolhida;
     if (opts.confirmacaoDeProposta) contexto.confirmacaoDeProposta = opts.confirmacaoDeProposta;
+    /* DÍVIDA E1: as bandeiras de exclusão da fronteira T1 do motor
+       (vlab-completo.js: dano em área/reflectido/periódico/ambiental
+       sobre quem está 'aMorrer' NÃO soma falha de morte) repassam-se
+       TAL E QUAL o motor as lê — só o valor ===true conta, como lá.
+       A exclusão governa SÓ o +1 da corrida aberta: o dano em si
+       aplica-se na mesma; o nascimento da corrida e a reentrada da
+       estabilizada NÃO são suprimidos (fronteira do motor, medida
+       no arnês da tranche). O dano-0 não é bandeira: já está
+       excluído no motor pela condição totalEfectivo > 0 do T1. */
+    if (opts.danoEmArea === true) contexto.danoEmArea = true;
+    if (opts.danoReflectido === true) contexto.danoReflectido = true;
+    if (opts.danoPeriodico === true) contexto.danoPeriodico = true;
+    if (opts.danoAmbiental === true) contexto.danoAmbiental = true;
     /* Arma caída de um monstro: apanhá-la gasta o movimento dele —
        quem chama declara a recuperação e a bandeira limpa-se aqui. */
     if (atacanteId !== PROPRIA && ESTADO_VLAB[atacanteId].armaCaida) {
