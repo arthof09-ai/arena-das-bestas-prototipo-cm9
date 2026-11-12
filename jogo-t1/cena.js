@@ -607,9 +607,9 @@
                 'float n1(float x) { float i = floor(x); float f = fract(x); f = f * f * (3.0 - 2.0 * f);',
                 '  return mix(hash21(vec2(i, 7.7)), hash21(vec2(i + 1.0, 7.7)), f); }'
             ].join('\n');
-            function fogoMatChama(semente, camada) {
+            function fogoMatChama(semente, camada, casa) {
                 return new T.ShaderMaterial({
-                    uniforms: { uTempo: { value: 0 }, uEnv: { value: 0 }, uSemente: { value: semente }, uCamada: { value: camada } },
+                    uniforms: { uTempo: { value: 0 }, uEnv: { value: 0 }, uSemente: { value: semente }, uCamada: { value: camada }, uCasa: { value: casa ? 1 : 0 } },
                     vertexShader: [
                         'uniform float uTempo; uniform float uSemente;',
                         'varying vec2 vUv;',
@@ -621,7 +621,7 @@
                         '  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }'
                     ].join('\n'),
                     fragmentShader: [
-                        'uniform float uTempo; uniform float uEnv; uniform float uSemente; uniform float uCamada;',
+                        'uniform float uTempo; uniform float uEnv; uniform float uSemente; uniform float uCamada; uniform float uCasa;',
                         'varying vec2 vUv;',
                         FOGO_GLSL_RUIDO,
                         'vec3 rampa(float h) {',
@@ -636,10 +636,15 @@
                         '  float ext = uCamada > 0.5 ? 1.0 : 0.0;',
                         '  float nG = fbm(vec2(uv.x * 3.0 + uSemente * 1.37, uv.y * 2.1 - t * 1.45 + uSemente * 0.71));',
                         '  float nF = fbm(vec2(uv.x * 7.0 - uSemente * 0.53, uv.y * 6.0 - t * 2.7 + uSemente * 1.93));',
+                        /* ORFAS DO LEDGER (11/11) - a ESTRELA da base das casas: ruido fino
+                         * extra, so nas casas (uCasa) e corroendo por baixo (o termo em
+                         * erode some aos 42% da altura): parte os raios direitos dos
+                         * planos cruzados que desenham a estrela de 4 pontas. */
+                        '  float nB = fbm(vec2(uv.x * 11.0 - uSemente * 0.71, uv.y * 9.0 - t * 3.1 + uSemente * 2.57));',
                         '  float bal = (nG - 0.5) * (0.50 + 0.55 * ext) * uv.y;',
                         '  float cx = abs(uv.x * 2.0 - 1.0 + bal * 2.0);',
-                        '  float meiaL = mix(0.68, 0.14, pow(uv.y, 0.7));',
-                        '  float erode = (nG - 0.5) * (0.30 + 1.10 * uv.y + 0.30 * ext) + (nF - 0.5) * 0.34;',
+                        '  float meiaL = mix(0.68, 0.14, pow(uv.y, 0.7)) * (1.0 - uCasa * 0.22 * (1.0 - smoothstep(0.0, 0.35, uv.y)));',  /* ORFAS: nas casas a base estreita 22% junto ao chao - raios da estrela mais curtos */
+                        '  float erode = (nG - 0.5) * (0.30 + 1.10 * uv.y + 0.30 * ext) + (nF - 0.5) * 0.34 + uCasa * (nB - 0.5) * 1.35 * (1.0 - smoothstep(0.02, 0.50, uv.y));',
                         '  float d = cx / max(meiaL, 0.001) + erode * 1.35;',
                         '  float corpo = 1.0 - smoothstep(0.50, 1.02, d);',
                         '  if (corpo <= 0.004) discard;',
@@ -720,12 +725,18 @@
                         '  if (corpo <= 0.004) discard;',
                         '  float sulco = smoothstep(-0.15, 0.09, (nM - 0.5) * (1.4 + 1.5 * smoothstep(0.15, 0.60, uv.y)) + (nF - 0.5) * 0.55);',
                         '  corpo *= mix(1.0, sulco, smoothstep(0.05, 0.35, uv.y));',
-                        '  corpo *= 0.50 + 0.50 * smoothstep(0.0, 0.08, uv.y);',
+                        '  corpo *= 0.34 + 0.66 * smoothstep(0.0, 0.30, uv.y);',  /* ORFAS: base mais fraca e a subir devagar (0,08->0,30) - a poca de luz da base deixa de mandar na Seguir */
                         '  float dentro = clamp(-d, 0.0, 0.8);',
                         '  float calor = clamp(0.30 + nM * 0.74 + dentro * 0.30 - uv.y * 0.38 + (nF - 0.5) * 0.30, 0.0, 1.0);',
                         '  float trem = 0.82 + 0.34 * n1(t * 2.3 + uSemente * 2.31) + 0.12 * n1(t * 6.9 + uSemente * 0.97);',
                         '  float facing = abs(dot(normalize(vNormV), normalize(-vPosV)));',
                         '  corpo *= 0.72 + 0.28 * smoothstep(0.02, 0.45, facing);',
+                        /* ORFAS: corte do resto translucido - o que fica abaixo de
+                         * 0,16 nao soma luz nenhuma (era esse resto, somado em
+                         * toda a parede, que desenhava o tubo de perto); as
+                         * linguas (corpo alto) passam e ganham contraste. */
+                        '  corpo = smoothstep(0.16, 0.66, corpo);',
+                        '  if (corpo <= 0.004) discard;',
                         '  vec3 cor = rampa(calor);',
                         '  gl_FragColor = vec4(cor * 0.47 * trem * corpo * uEnv, 1.0);',
                         '}'
@@ -785,6 +796,25 @@
              * ENVOLVIDA — chama à volta do corpo, à escala dela, a
              * subir por ela, sem a engolir. Larguras/alturas/brasas
              * multiplicam a `escala` da chamada (casa 1,5 · pessoa 1). */
+            /* CASCA POR-TAMANHO (tranche ORFAS DO LEDGER, 11/11 - reserva
+             * A-14 da REF_47): a casca e os planos da pessoa nasceram a
+             * medida da heroina de referencia (a Ong, alturaMetros 2,625
+             * em jogo.js). A escala de cada figura le-se de u.size - a
+             * alturaMetros validada em addUnit, a MESMA que escala o
+             * modelo GLB de forma uniforme (razao pela qual o racio de
+             * alturas e tambem o racio de larguras das figuras GLB).
+             * Para a Ong a escala e exactamente 1: as MEDIDAS do fogo
+             * da volta 5 ficam as mesmas nela. Tecto 2,00 de sanidade
+             * (a validacao admite 0-15 m). Piso 0,75 de LEITURA, medido
+             * no Lobo (marcador de 1,35 m): a 0,51 a casca (raio da base
+             * 0,49 m) fica DENTRO do corpo dele (meia-profundidade
+             * 0,70 m) e o fogo quase nao se le; a 0,75 o raio (0,71 m)
+             * despega do corpo e a chama le-se outra vez. */
+            const FOGO_ALT_REF = 2.625;
+            function fogoEscFigura(u) {
+                const e = (u && Number.isFinite(u.size) ? u.size : FOGO_ALT_REF) / FOGO_ALT_REF;
+                return Math.min(2.00, Math.max(0.75, e));
+            }
             const FOGO_PARAMS = {
                 casa:   { largIn: 1.30, altIn: 2.15, largOut: 1.62, altOut: 2.40, brasas: 30, raioB: .45, sobem: 2.9, luzAlt: 1.05 },
                 pessoa: { largIn: 1.55, altIn: 2.15, largOut: 1.85, altOut: 2.45, brasas: 20, raioB: .50, sobem: 2.9, luzAlt: .8 }
@@ -810,12 +840,12 @@
                 const semente = Math.random() * 100;
                 const P = FOGO_PARAMS[tipo === 'pessoa' ? 'pessoa' : 'casa'];
                 const mats = [];
-                const matIn = fogoMatChama(semente, 0); mats.push(matIn);
+                const matIn = fogoMatChama(semente, 0, tipo !== 'pessoa'); mats.push(matIn);
                 const mIn = new T.Mesh(fogoGeo(), matIn);
                 mIn.scale.set(P.largIn * escala, P.altIn * escala, P.largIn * escala);
                 mIn.frustumCulled = false;
                 grupo.add(mIn);
-                const matOut = fogoMatChama(semente + 37.7, 1); mats.push(matOut);
+                const matOut = fogoMatChama(semente + 37.7, 1, tipo !== 'pessoa'); mats.push(matOut);
                 const mOut = new T.Mesh(fogoGeo(), matOut);
                 mOut.rotation.y = Math.PI / 6;   /* a camada de fora roda 30° sobre a de dentro:
                  * os planos desencontrados dissolvem a estrela de pontas da base */
@@ -826,7 +856,8 @@
                     /* a casca cilíndrica que envolve o corpo (ver fogoMatCasca);
                      * geometria própria por grupo — liberta-se com ele */
                     const casca = new T.Mesh(new T.CylinderGeometry(0.66, 0.95, 2.5, 24, 5, true), fogoMatCasca(semente + 71.3));
-                    casca.position.y = 1.25;
+                    casca.scale.set(escala, escala, escala);   /* ORFAS A-14: a casca acompanha a escala da figura (antes era fixa) */
+                    casca.position.y = 1.25 * escala;
                     casca.frustumCulled = false;
                     mats.push(casca.material);
                     grupo.add(casca);
@@ -911,7 +942,8 @@
                     if (existente) return;
                     const u = units.get(id);
                     if (!u || !u.root) return;
-                    const f = fogoCriarGrupo(1, false, 'pessoa');
+                    const f = fogoCriarGrupo(fogoEscFigura(u), false, 'pessoa');   /* ORFAS A-14: escala pela altura da figura */
+                    f.escFigura = fogoEscFigura(u);
                     f.t0 = performance.now();
                     u.root.add(f.grupo);
                     fogosPessoas.set(id, f);
