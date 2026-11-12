@@ -440,14 +440,29 @@
      mesmo trio da página de referência. A figura da jogadora deste
      aparelho (PROPRIA) nunca se oculta a si própria. */
   const VISAO_INIMIGOS = ['orc', 'capanga', 'lobo'];
-  /* SENSOR (percepção base — §5.1 do estudo v2): os valores são os
-     de ENSAIO da página de referência (Percepção Base dela 60 contra
-     Furtividade Base do Capanga 50), DECLARADOS: as fichas deste
-     aparelho ainda não têm campos de Percepção/Furtividade Base —
-     quando os tiverem, o sensor passa a lê-los. O alvo do ensaio é
-     o Capanga. O sensor nunca cria, move nem apaga lembranças:
-     sente o LADO (sectores de 90°), nunca a casa. */
-  const VISAO_SENSOR = { pb: 60, fb: 50, alvo: 'capanga' };
+  /* SENSOR (percepção base — §5.1 do estudo v2): corre com os
+     valores REAIS lavrados em t-furtividade-base/VALORES-BASE.md
+     (fórmula do Mestre, 11/11/2026: atributo + perícia + bónus
+     fixos, os dados fora; P4 dissolvida — toda a ficha tem base).
+     O trio de ensaio {pb:60, fb:50, alvo:'capanga'} SAIU: o alvo
+     deixa de ser «só o Capanga» e a comparação corre para
+     qualquer par (figura × observadora) em que os DOIS valores
+     existam — par sem os dois valores não corre (sem estimativas).
+     Regime P3 final (palavra dele, 14:22–14:23): fora do campo, é
+     SEMPRE base contra base, automático, sem declaração e sem
+     rolagens. O sensor não corre entre aliadas (H5: o sinal é
+     sensação de perigo). O sensor nunca cria, move nem apaga
+     lembranças: sente o LADO (sectores de 90°), nunca a casa.
+     Contas abertas NÃO entram: Chen/Bushi (resíduo por decompor
+     nas fichas) e o Capanga (atributos não lidos) ficam fora da
+     tabela até as contas fecharem — os pares deles não correm. */
+  const FURTIVIDADE_BASES = {
+    wang:     { pb: 42, fb: 40 },   // da linha da ficha (roll: 2d6+42 / 2d6+40) — o elenco vivo de hoje ainda não a tem
+    orc:      { pb: 3,  fb: 8 },    // SAB 3 · DES 8 (+ perícia 0 sem linha + fixos 0)
+    lobo:     { pb: 7,  fb: 20 },   // SAB 7 · DES 20 (Estágio Prata 1, o desta arena)
+    ong:      { pb: 8,  fb: 15 },   // SAB 8 · DES 15 (forma normal)
+    espectro: { pb: 2,  fb: 55 }    // SAB 2 · DES 55 (bestiário — fora do elenco vivo)
+  };
   /* Domínio do estado da visão: {modo, forma, prazo} é o legado
      (saves anteriores à tranche do anel — o anel ausente vale
      DESLIGADO); com a 4.ª chave, tem de ser exactamente
@@ -6001,6 +6016,11 @@
          PARTIDA — entram no snapshot (o «voltar» repõe a visão
          daquele turno; a memória da Ultra não viaja — nasce vazia). */
       visao: { ...visaoPartida },
+      /* FURTIVIDADE (Fase 0, E-5): a matriz entra no snapshot nos
+         DOIS domínios (o snapshot é ferramenta do Mestre, em
+         memória) — snapshot sem o campo (anterior à tranche)
+         repõe a matriz VAZIA, como o fogo. */
+      furtividade: furtMatrizCapturaTotal(),
       /* RAIO E FOGO (desenho 05/11): casas a arder e figuras
          A Arder são estado da BATALHA — entram no snapshot do
          Supervisor como o ambiente. NÃO entram nos ficheiros de
@@ -6131,6 +6151,16 @@
        visão actual (declarado — como a escala). */
     if (snap.visao && visaoDominioValido(snap.visao))
       visaoAssentar({ ...snap.visao }, { silencioso: true, limparMemoria: true });
+    /* FURTIVIDADE (Fase 0, E-5): a matriz do snapshot volta com o
+       resto (o visaoAssentar acima limpou-a pela porta da memória;
+       aqui repõe-se a guardada). Snapshot antigo sem o campo:
+       matriz VAZIA declarada — nunca «mantém a actual». O restauro
+       nunca rola nem instala: repõe-se exactamente o guardado. */
+    if (snap.furtividade) furtMatrizRepor(snap.furtividade);
+    else {
+      furtMatrizRepor(null);
+      supRegistar('furtividade', { origem: 'supRestaurar', razao: 'Snapshot sem matriz — matriz vazia declarada' });
+    }
     /* RAIO E FOGO: o fogo da batalha volta com o resto do snapshot
        (snapshot sem o campo — anterior à tranche — apaga tudo). */
     ambRestaurarFogo(snap.raioFogo);
@@ -6332,7 +6362,11 @@
        régua (save antigo sem ele é válido — mantém a escala actual
        no aplicar). Sem esta excepção, TODO o save com escala era
        rejeitado aqui, antes de qualquer outra conferência. */
-    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala' && k !== 'visao')) return INV;
+    /* Tranche FURTIVIDADE (Fase 0): 'furtividade' é campo OPCIONAL
+       do estado, na mesma régua (save antigo sem ele é válido —
+       carrega com a matriz vazia declarada no aplicar; sem esta
+       excepção, todo o save COM a matriz era rejeitado aqui). */
+    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala' && k !== 'visao' && k !== 'furtividade')) return INV;
     const ids = ELENCO.map(u => u.id);
     const inteiro = n => Number.isInteger(n);
     const finito = n => typeof n === 'number' && Number.isFinite(n);
@@ -6449,6 +6483,9 @@
        {modo, forma, prazo} ou, com o anel, {…, anel booleano} —
        sem chaves estranhas (a regra exacta é do visaoDominioValido). */
     if ('visao' in e && !visaoDominioValido(e.visao)) return INV;
+    /* FURTIVIDADE: presente, tem de trazer a matriz na forma dos
+       dois domínios (ou só os pares, vinda de captura redigida). */
+    if ('furtividade' in e && !furtMatrizValida(e.furtividade)) return INV;
     /* PORTA C-23: o bloco do motor confere-se com a mesma régua. */
     return validarVlabParaAplicar(e.vlab);
   }
@@ -6519,7 +6556,14 @@
         escala: CASA_M,
         /* Tranche VISÃO: a visão da partida entra na captura —
            carregar repõe-na (a memória da Ultra não viaja). */
-        visao: { ...visaoPartida }
+        visao: { ...visaoPartida },
+        /* FURTIVIDADE (Fase 0, E-4/E-5): a matriz entra na captura
+           REDIGIDA POR PAPEL: no aparelho do Mestre viajam os dois
+           domínios e restauram-se coerentes; no da Party viajam só
+           os booleanos partilhados — escondidaRolagem (o número)
+           nunca sai do domínio dele, e um restauro dessa captura
+           não faz nascer pares novos. */
+        furtividade: furtCapturaPorPapel(MODO_MESTRE)
       };
     },
     aplicar(e) {
@@ -6566,6 +6610,7 @@
           ambiente: { ...ambientePartida },   // AMBIENTE: o pré-estado cobre também o ambiente (atomicidade S-CONF-02)
           escala: CASA_M,   // ESCALA: idem — o pré-estado cobre também a escala
           visao: { ...visaoPartida },   // VISÃO: idem — o pré-estado cobre também a visão
+          furtividade: furtMatrizCapturaTotal(),   // FURTIVIDADE: idem — o pré-estado cobre também a matriz (dois domínios)
           reaccoes: { ...REACCOES_DECLARADAS },
           mortePropriaAdjudicada, partidaPendente, correrUsado,
           desvincular: opcoesMovimento.desvincular,
@@ -6694,6 +6739,18 @@
           visaoAssentar({ ...visaoPartida, modo: 'total' }, { silencioso: true, limparMemoria: true });
           supRegistar('visao', { origem: 'save', razao: 'Save sem visão — modo Total declarado' });
         }
+        /* FURTIVIDADE (Fase 0, E-5): a matriz do save volta com o
+           resto (o visaoAssentar acima limpou-a; aqui repõe-se a
+           guardada — de uma captura redigida vêm só os pares, e o
+           domínio da rolagem fica vazio até à próxima rolagem).
+           Save antigo SEM o campo: matriz VAZIA declarada no
+           registo, como o ambiente e a visão — nunca «mantém a
+           actual». O restauro nunca rola nem instala. */
+        if ('furtividade' in e) furtMatrizRepor(e.furtividade);
+        else {
+          furtMatrizRepor(null);
+          supRegistar('furtividade', { origem: 'save', razao: 'Save sem furtividade — matriz vazia declarada' });
+        }
         /* EM-AV2-07: o fogo NÃO entra nos ficheiros de save — um
            load em sessão apaga os fogos da batalha actual, como a
            L10 anuncia (antes sobreviviam ao load, por desvio:
@@ -6751,6 +6808,9 @@
                pré-estado — aplicação que não aconteceu não muda o preço. */
             try { escalaAssentar(preSave.escala, { silencioso: true }); } catch (__) {}
             if (preSave.visao) try { visaoAssentar({ ...preSave.visao }, { silencioso: true, limparMemoria: true }); } catch (__) {}
+            /* FURTIVIDADE: aplicação que não aconteceu também não
+               mexe na matriz — repõe-se a do pré-estado. */
+            if (preSave.furtividade) try { furtMatrizRepor(preSave.furtividade); } catch (__) {}
             /* EM-AV2-07: aplicação que não aconteceu também não
                apaga fogos — repõe-se o fogo do pré-estado. */
             if (preSave.raioFogo) try { ambRestaurarFogo(preSave.raioFogo); } catch (__) {}
@@ -8658,8 +8718,8 @@
          as pedras/ruínas restantes são decoração fora do registo. Na
          referência, os obstáculos eram cenário DECLARADO do ensaio
          (parede + árvore);
-       · o sensor corre com os valores de ENSAIO da referência
-         (VISAO_SENSOR — ver o bloco de estado);
+       · o sensor corre com os valores REAIS lavrados
+         (FURTIVIDADE_BASES — ver o bloco de estado);
        · a memória da Ultra morre também no fim da batalha (adenda):
          a vigia discreta detecta a transição e limpa os três registos.
      ════════════════════════════════════════════════════════════════════ */
@@ -8731,8 +8791,126 @@
     visaoMemoria.jaVisto.clear();
     visaoMemoria.lembrancas.clear();
     visaoMemoria.ultimaVisao = {};
+    furtLimparMatriz();   /* E-5(i): a limpeza da matriz mora nesta porta (e na transição de batalhaFim que a vigia detecta) */
     if (!MODO_MESTRE) view.limparFantasmas();
     else visaoPreviaLimparMemoria();   /* no Mestre, a mesma porta limpa também a memória da pré-vista */
+  }
+
+  /* ════════════════════════════════════════════════════════════════
+     FURTIVIDADE — FASE 0 (desenho fechado e DECIDIDO: DESENHO.md +
+     ADENDA-DECISOES.md em t-furtividade-base). Peças neutras: a
+     consulta pontual de cobertura (E-1), a estrutura da matriz em
+     dois domínios (E-4) e as cláusulas de saves/restauro (E-5).
+     O verbo «mover furtivo» está DESLIGADO: nada aqui instala
+     escondidos, nenhuma rolagem dispara — a matriz nasce vazia e
+     vazia fica até à tranche de activação.
+     ════════════════════════════════════════════════════════════════ */
+  /* Domínio do Mestre (FORA da captura da Party): o número da
+     rolagem, uma vez por figura e por esconderijo. */
+  const escondidaRolagem = {};
+  /* Estado partilhado: só o booleano por par (figura × observadora)
+     e a casa do esconderijo — é ele que os ecrãs lêem. */
+  const escondidaDe = {};
+  function furtLimparMatriz() {
+    for (const k of Object.keys(escondidaRolagem)) delete escondidaRolagem[k];
+    for (const k of Object.keys(escondidaDe)) delete escondidaDe[k];
+  }
+  /* O par (figura, observadora) está escondido? — leitura única da
+     matriz partilhada, usada pelos fantasmas (E-7(i)) e, amanhã,
+     pelo desenho. Sem par, não está escondida. */
+  function furtEscondidaDe(figura, observadora) {
+    const porObs = escondidaDe[figura];
+    const par = porObs ? porObs[observadora] : null;
+    return !!(par && par.escondida === true);
+  }
+  /* Escondida de TODAS as observadoras dadas (a leitura da
+     pré-vista, cuja presença é uma união: basta uma vê-la). */
+  function furtEscondidaDeTodas(figura, observadoras) {
+    if (!observadoras.length) return false;
+    return observadoras.every(o => furtEscondidaDe(figura, o));
+  }
+  /* A camada 2 corre para este par? (P3 final + §2a + H5): os dois
+     valores existem, não é a própria, e não é entre aliadas (o
+     sensor é sensação de perigo — aliada não é perigo). */
+  function furtParCorre(figura, observadora) {
+    if (figura === observadora) return false;
+    const bf = FURTIVIDADE_BASES[figura], bo = FURTIVIDADE_BASES[observadora];
+    if (!bf || !bo || typeof bf.fb !== 'number' || typeof bo.pb !== 'number') return false;
+    const ladoF = VISAO_INIMIGOS.includes(figura), ladoO = VISAO_INIMIGOS.includes(observadora);
+    return ladoF !== ladoO;   /* lados opostos: inimigos × heroínas */
+  }
+  /* CONSULTA PONTUAL DE COBERTURA (E-1): a figura está em cobertura
+     em relação à observadora ⇔ d2≤36 ∧ a casa cai na máscara da
+     forma em vigor ∧ a LOS V2 da observadora para a casa FALHA
+     (ocluída pelo registo de opacos de produção). É uma relação
+     por par — a calculadora de campos NÃO se toca (visao.js é
+     byte-igual à referência provada); a oclusão lê-se pela mesma
+     LOS exportada, casa a casa. A assimetria vem da máscara e da
+     frente da observadora, nunca da LOS (medida simétrica). */
+  function furtCoberturaConsulta(idFigura, idObservadora) {
+    const F = unidade(idFigura), O = unidade(idObservadora);
+    if (!F || !O || !window.Visao) return false;
+    const dx = F.posicao.x - O.posicao.x, dy = F.posicao.y - O.posicao.y;
+    if (dx * dx + dy * dy > 36) return false;
+    const olhar = visaoOlharDerivadoDe(idObservadora);
+    const facing = window.Visao.FRENTES[olhar];
+    if (!window.Visao.mascara(VISAO_FORMAS[visaoPartida.forma], dx, dy, facing)) return false;
+    const opacosSet = new Set(visaoOpacos().map(c => c[0] + ',' + c[1]));
+    return !window.Visao.LOS.V2([O.posicao.x, O.posicao.y], [F.posicao.x, F.posicao.y], opacosSet);
+  }
+  /* Validação da matriz vinda de fora (saves/snapshots): a forma
+     exacta dos dois domínios, como visaoDominioValido faz à visão.
+     Casa = par de inteiros; resultado = inteiro da rolagem. */
+  function furtMatrizValida(m) {
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return false;
+    const casaOk = c => Array.isArray(c) && c.length === 2 &&
+      Number.isInteger(c[0]) && Number.isInteger(c[1]) && Math.abs(c[0]) <= 99 && Math.abs(c[1]) <= 99;
+    if (m.rolagem !== undefined) {
+      if (!m.rolagem || typeof m.rolagem !== 'object' || Array.isArray(m.rolagem)) return false;
+      for (const v of Object.values(m.rolagem))
+        if (!v || typeof v !== 'object' || !Number.isInteger(v.resultado) || v.resultado < 0 || v.resultado > 99999 || !casaOk(v.casa)) return false;
+    }
+    if (m.pares !== undefined) {
+      if (!m.pares || typeof m.pares !== 'object' || Array.isArray(m.pares)) return false;
+      for (const porObs of Object.values(m.pares)) {
+        if (!porObs || typeof porObs !== 'object' || Array.isArray(porObs)) return false;
+        for (const par of Object.values(porObs))
+          if (!par || typeof par !== 'object' || typeof par.escondida !== 'boolean' || !casaOk(par.casa)) return false;
+      }
+    }
+    return true;
+  }
+  /* Cópia profunda dos dois domínios (os saves do Mestre guardam
+     os dois e restauram-nos coerentes). */
+  function furtMatrizCapturaTotal() {
+    return JSON.parse(JSON.stringify({ rolagem: escondidaRolagem, pares: escondidaDe }));
+  }
+  /* E-4 — a captura POR PAPEL: a da Party é REDIGIDA (omite
+     escondidaRolagem inteiro — o número da rolagem nunca sai do
+     domínio do Mestre); a dele leva os dois domínios. É o primeiro
+     mecanismo de redacção por papel da captura. */
+  function furtCapturaPorPapel(papelMestre) {
+    if (papelMestre) return furtMatrizCapturaTotal();
+    return { pares: JSON.parse(JSON.stringify(escondidaDe)) };
+  }
+  /* Repor a matriz vinda de um save/snapshot (E-5): ausente ou
+     inválida ⇒ matriz VAZIA (declarado por quem chama — nunca
+     «mantém a actual»); presente e válida repõe-se EXACTAMENTE o
+     que está guardado. O restauro nunca rola nem instala: não
+     nasce par novo, não se compara número nenhum — os booleanos
+     guardados são o estado, e o domínio da rolagem repõe-se ou
+     fica vazio até à próxima rolagem de esconderijo. */
+  function furtMatrizRepor(m) {
+    furtLimparMatriz();
+    if (!furtMatrizValida(m)) return false;
+    if (m.rolagem) for (const [f, v] of Object.entries(m.rolagem))
+      escondidaRolagem[f] = { resultado: v.resultado, casa: [v.casa[0], v.casa[1]] };
+    if (m.pares) for (const [f, porObs] of Object.entries(m.pares)) {
+      escondidaDe[f] = {};
+      for (const [o, par] of Object.entries(porObs))
+        escondidaDe[f][o] = { escondida: par.escondida, casa: [par.casa[0], par.casa[1]] };
+    }
+    return true;
   }
 
   /* ---------- a lembrança das figuras (só Ultra — adenda B) ---------- */
@@ -8743,7 +8921,14 @@
       if (!u) continue;
       const chaveCasa = u.posicao.x + ',' + u.posicao.y;
       const lem = visaoMemoria.lembrancas.get(id);
-      if (campoVisto.has(chaveCasa)) {
+      /* E-7(i): a matriz consulta-se ANTES do ramo de presença. Se
+         ela está escondida dela (matriz) na casa em que está, a
+         «presença» não aconteceu aos olhos dela: NÃO se actualiza
+         ultimaVisao (actualizá-la envenenava a memória com a
+         posição certa de quem não foi visto) — o ramo da
+         contradição abaixo trata a casa lembrada como hoje. Com a
+         matriz vazia (Fase 0), este ramo é exactamente o de hoje. */
+      if (campoVisto.has(chaveCasa) && !furtEscondidaDe(id, PROPRIA)) {
         /* presença (viva ou caída à vista dela): não há lembrança —
            a última visão fica registada e o relógio reinicia */
         if (lem) { view.removeFantasma('lem-' + id); visaoMemoria.lembrancas.delete(id); }
@@ -8768,20 +8953,38 @@
   }
 
   /* ---------- o sensor (percepção base — §5.1 do estudo) ---------- */
+  /* Camada 2 com valores reais (P3 final: base × base, automático,
+     sem estado, sem rolagens): para cada figura adversária viva,
+     o par corre se os dois valores existirem (furtParCorre) e ela
+     é SENTIDA se a Furtividade Base dela for MENOR que a Percepção
+     Base da dona deste ecrã, dentro do círculo de 9 m e fora do
+     campo visto. Com várias sentidas, a seta aponta a MAIS PERTO
+     (desempate pela ordem de VISAO_INIMIGOS) — a apresentação de
+     hoje é um só triângulo; o sensor multi-par completo é da
+     activação. Sentir ≠ ver: a seta diz o LADO, nunca a casa. */
   function visaoSensorActualizar(campoVisto, olhar) {
     if (!visaoSensorEl) return;
     let mostra = false, seta = '';
     if (visaoPartida.modo !== 'zero' && campoVisto) {
-      const ong = unidade(PROPRIA), alvo = unidade(VISAO_SENSOR.alvo);
-      if (ong && alvo && alvo.vivo) {
-        const vx = alvo.posicao.x - ong.posicao.x, vy = alvo.posicao.y - ong.posicao.y;
-        const dentro = Math.hypot(vx, vy) <= 6;               // círculo de 9 m
-        const visto = campoVisto.has(alvo.posicao.x + ',' + alvo.posicao.y);
-        if (dentro && VISAO_SENSOR.fb < VISAO_SENSOR.pb && !visto) {   // sentir ≠ ver
+      const ong = unidade(PROPRIA);
+      if (ong) {
+        let melhor = null, melhorDist = Infinity;
+        for (const id of VISAO_INIMIGOS) {
+          if (!furtParCorre(id, PROPRIA)) continue;          // sem os dois valores, o par não corre
+          const alvo = unidade(id);
+          if (!alvo || !alvo.vivo) continue;
+          const vx = alvo.posicao.x - ong.posicao.x, vy = alvo.posicao.y - ong.posicao.y;
+          const dist = Math.hypot(vx, vy);
+          if (dist > 6) continue;                            // fora do círculo de 9 m não corre
+          if (campoVisto.has(alvo.posicao.x + ',' + alvo.posicao.y)) continue;   // vista ≠ sentida
+          if (!(FURTIVIDADE_BASES[id].fb < FURTIVIDADE_BASES[PROPRIA].pb)) continue;   // a régua: < sente; ≥ não sente (empate é do furtivo)
+          if (dist < melhorDist) { melhorDist = dist; melhor = { vx, vy }; }
+        }
+        if (melhor) {
           mostra = true;
           const f = window.Visao.FRENTES[olhar];
-          const frente = vx * f[0] + vy * f[1];
-          const lado = f[0] * vy - f[1] * vx;                 // >0 = direita do corpo dela
+          const frente = melhor.vx * f[0] + melhor.vy * f[1];
+          const lado = f[0] * melhor.vy - f[1] * melhor.vx;                 // >0 = direita do corpo dela
           if (Math.abs(frente) >= Math.abs(lado)) seta = frente >= 0 ? '▲' : '▼';
           else seta = lado > 0 ? '▶' : '◀';
         }
@@ -8924,7 +9127,12 @@
       if (!u) continue;
       const chaveCasa = u.posicao.x + ',' + u.posicao.y;
       const lem = visaoPrevMemoria.lembrancas.get(id);
-      if (campoVisto.has(chaveCasa)) {
+      /* E-7(i), gémea: a matriz consulta-se ANTES do ramo de
+         presença — na pré-vista, «presença» é união: ela só está
+         presente se alguma heroína a vir de facto (não escondida
+         dela pela matriz). Sem actualizar ultimaVisao quando
+         ninguém a viu. Matriz vazia ⇒ comportamento de hoje. */
+      if (campoVisto.has(chaveCasa) && !furtEscondidaDeTodas(id, ELENCO.filter(e => !VISAO_INIMIGOS.includes(e.id)).map(e => e.id))) {
         if (lem) { view.removeFantasma('lem-' + id); visaoPrevMemoria.lembrancas.delete(id); }
         visaoPrevMemoria.ultimaVisao[id] = { x: u.posicao.x, y: u.posicao.y, frenteRad: visaoFrenteRad(id), em: agora };
         continue;
@@ -9212,6 +9420,40 @@
       return [...visaoCampoUniao(Array.isArray(olhos) ? olhos : undefined)];
     },
     previaDefinir: (v) => visaoPreviaDefinir(v)
+  });
+
+  /* ---------- gancho de prova da bateria — FURTIVIDADE FASE 0
+     (não é mecânica: nenhuma função daqui é chamada pelo jogo) --- */
+  window.__furtividade = Object.freeze({
+    /* a consulta pontual de cobertura de E-1, tal como o jogo a lê */
+    cobertura: (f, o) => furtCoberturaConsulta(f, o),
+    /* o portão de pares da camada 2 (os dois valores, lados opostos) */
+    parCorre: (f, o) => furtParCorre(f, o),
+    /* a leitura do booleano partilhado do par */
+    escondidaDe: (f, o) => furtEscondidaDe(f, o),
+    /* os dois domínios como valores (cópia) — para a bateria
+       conferir ida-e-volta; o número só se lê no aparelho do
+       Mestre, como em todo o lado */
+    matriz: () => furtMatrizCapturaTotal(),
+    capturaPorPapel: (mestre) => furtCapturaPorPapel(!!mestre),
+    repor: (m) => furtMatrizRepor(m),
+    limpar: () => { furtLimparMatriz(); return true; },
+    /* plantar um PAR (só o booleano partilhado — o que os ecrãs
+       lêem) para a bateria dos fantasmas: é estado partilhado,
+       não guarda número nenhum */
+    plantarPar: (f, o, escondida, casa) => {
+      if (!unidade(f) || !unidade(o) || !Array.isArray(casa)) return false;
+      (escondidaDe[f] = escondidaDe[f] || {})[o] = { escondida: !!escondida, casa: [casa[0] | 0, casa[1] | 0] };
+      return true;
+    },
+    /* plantar o NÚMERO da rolagem (domínio do Mestre): SÓ no
+       aparelho dele — no da Party recusa, como a captura redige */
+    plantarRolagem: (f, resultado, casa) => {
+      if (!MODO_MESTRE) return false;
+      if (!unidade(f) || !Number.isInteger(resultado) || !Array.isArray(casa)) return false;
+      escondidaRolagem[f] = { resultado, casa: [casa[0] | 0, casa[1] | 0] };
+      return true;
+    }
   });
 
   /* ---------- arranque ---------- */
