@@ -44,7 +44,9 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
    o que não couber rola DENTRO do pop-up — estatísticas incluídas. */
 #cfgpop{position:fixed;left:max(10px,env(safe-area-inset-left));top:170px;z-index:27;width:252px;
   max-width:calc(100vw - 20px);max-height:calc(100vh - 242px);overflow-y:auto;
-  background:var(--painel-denso);border:1px solid var(--linha);
+  /* D3-P1-11(a): fundo a alfa 0,55, local a este selector — --painel-denso
+     fica intacta para os outros consumidores (ex.: #desgraca-cartao). */
+  background:linear-gradient(160deg, rgba(26,20,12,.55), rgba(14,11,7,.55));border:1px solid var(--linha);
   border-radius:12px;padding:9px 12px}
 #cfgpop[hidden]{display:none}
 #cfgpop h3{font-family:Georgia,'DejaVu Serif',serif;font-size:10px;letter-spacing:.18em;
@@ -175,7 +177,8 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 
 /* ---------- ficha aberta: coluna lateral de 25% ---------- */
 #ficha{position:fixed;top:0;right:0;bottom:56px;width:25%;min-width:200px;max-width:320px;z-index:25;
-  overflow-y:auto;background:var(--painel-denso);border-left:2px solid var(--ouro);padding:9px 12px}
+  /* D3-P1-11(a): fundo a alfa 0,55, local a este selector (ver #cfgpop). */
+  overflow-y:auto;background:linear-gradient(160deg, rgba(26,20,12,.55), rgba(14,11,7,.55));border-left:2px solid var(--ouro);padding:9px 12px}
 #ficha[hidden]{display:none}
 #ficha header{display:flex;align-items:flex-start;gap:6px}
 #ficha h1{font-family:Georgia,'DejaVu Serif',serif;font-size:19px;color:var(--ouro-claro);letter-spacing:.05em;line-height:1}

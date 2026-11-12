@@ -2847,7 +2847,9 @@
         B('mover', '🚶', 'Mover') +
         B('consumivel', '🎒', rp ? 'Consum.' : 'Consumível') +
         B('encerrar', '✓', rp ? 'Fim' : 'Encerrar', 'ghost') +
-        B('terminar', '✕', rp ? 'Term.' : 'Terminar', 'ghost') +
+        /* D3-P0-7: o «Terminar» saiu da barra — mora agora no ⚙
+           (#cfg-terminar em index.html, accionado mais abaixo), com o
+           fluxo M-014 intacto ('terminar' → 'confirmar-fim'). */
         /* RAIO E FOGO, fim seco (desenho §5, proposta 1): o botão
            só existe enquanto ela está A Arder a seco — como o
            «Trocar» da desgraça, é superfície de um estado. */
@@ -4932,6 +4934,14 @@
     cfgEl.hidden = !abrir;
     $('btn-config').classList.toggle('on', abrir);
     $('btn-config').setAttribute('aria-expanded', String(abrir));
+  });
+  /* D3-P0-7: a entrada «Terminar» do ⚙ acciona EXACTAMENTE a acção
+     'terminar' de sempre (M-014: → estado 'confirmar-fim' → «Sim,
+     terminar» → terminarBatalha). Só mudou a morada do botão; o ⚙
+     fecha-se para a confirmação se ler na faixa. */
+  $('cfg-terminar').addEventListener('click', () => {
+    fecharCfg();
+    tratarAcao('terminar');
   });
   /* ---------- SAIR DAS CONFIGURAÇÕES (lei do Mestre, 11/11 10:36;
    * desenho J8) ----------
