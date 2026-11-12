@@ -2683,7 +2683,18 @@
     if (!MODO_MESTRE) return;
     if (!dgCartaoEl) return;
     const fonte = fonteCartaoDesgraca();
-    if (!fonte) { dgCartaoEl.hidden = true; return; }
+    if (!fonte) {
+      /* DÍVIDA 2 (t-dividas-vivo): fechar também LIMPA o cartão —
+         opções e proposta saem do DOM. Sem isto os botões data-dg
+         ficavam no DOM para sempre com o cartão escondido (sondas
+         por existência liam «aberto» eternamente, e botões
+         invisíveis presentes são uma armadilha). Limpar é seguro:
+         quem reabre repinta tudo (proposta + opções) mais abaixo
+         nesta função, nos dois modos (dela e monstro). */
+      dgOpcoesEl.innerHTML = '';
+      dgPropostaEl.innerHTML = '';
+      dgCartaoEl.hidden = true; return;
+    }
     const fc = fonte.fc;
     const doMonstro = fonte.origem !== 'dela';
     const marcada = doMonstro ? fonte.pendente.escolhaMarcada : undefined;
