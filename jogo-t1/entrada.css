@@ -181,6 +181,42 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   padding: 7px 9px; margin: 8px 0 4px;
 }
 
+/* ---------- Configurações em ABAS na entrada (t-config-abas,
+   SPEC §1.2/§3): folha Largo 560–600 px com coluna de 172 px;
+   Estreito 366 px (94vw) × 78vh com grelha 2+1 no topo. Sem
+   faixas-régua. O conteúdo rola DENTRO da aba; a zona Conta fica
+   depois das abas, fora da rolagem das abas. ---------- */
+.ent-painel.com-abas { display: flex; flex-direction: column; overflow: hidden; }
+.entab-corpo { flex: 1; min-height: 0; display: flex; gap: 10px; }
+.entab-indice { flex: none; width: 172px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+.entab-celula {
+  height: 44px; flex: none; display: flex; flex-direction: column; justify-content: center; gap: 1px;
+  text-align: left; padding: 4px 8px; border: 1px solid rgba(201, 162, 39, .45); border-radius: 8px;
+  background: rgba(28, 21, 12, .6); cursor: pointer;
+}
+.entab-celula b { font-size: 13px; color: var(--pergaminho, #e9dcb8); white-space: nowrap; line-height: 1.15; }
+.entab-celula i { font-style: normal; font-size: 9px; color: var(--pergaminho-mudo, #a5936d); white-space: nowrap; line-height: 1.2; }
+.entab-celula.on { background: var(--ouro); border-color: var(--ouro); }
+.entab-celula.on b { color: #1c1508; }
+.entab-celula.on i { color: #4a3a10; }
+.entab-conteudo { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
+.entab-aba { display: none; }
+.entab-aba.activa { display: block; }
+.ent-aba-frase { font-size: 12px; line-height: 1.45; color: var(--pergaminho, #e9dcb8); margin: 0 0 8px; }
+.ent-frase { font-size: 11.5px; line-height: 1.45; color: var(--pergaminho-fraco, #cbbd97); margin: 2px 0 4px; }
+.ent-restaurar-zona { margin-top: 10px; }
+.ent-conta { flex: none; max-height: 40%; overflow-y: auto; border-top: 1px solid rgba(201, 162, 39, .5); margin-top: 8px; padding-top: 2px; }
+.ent-conta .ent-nota { margin-top: 4px; }
+@media (min-width: 600px) {
+  .ent-painel.com-abas { left: 50%; transform: translateX(-50%); width: min(600px, 94%); }
+}
+@media (max-width: 599px) {
+  .ent-painel.com-abas { left: 3%; width: 94%; top: 11%; height: 78vh; max-height: 78vh; }
+  .entab-corpo { flex-direction: column; gap: 6px; }
+  .entab-indice { width: auto; display: grid; grid-template-columns: 1fr 1fr; overflow: visible; }
+  .entab-celula { height: auto; min-height: 56px; }
+}
+
 /* ---------- a porta do Google: o fluxo vive DENTRO dos botões de
    entrar; não há botão do Google na vista 1 ---------- */
 .ent-google {

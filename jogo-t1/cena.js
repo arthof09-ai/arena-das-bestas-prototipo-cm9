@@ -269,6 +269,60 @@
             const nevePts = new T.Points(neveGeo, neveMat);
             nevePts.frustumCulled = false; nevePts.visible = false; nevePts.renderOrder = 5;
             scene.add(nevePts);
+            /* A CAMADA DE CHÃO DA CHUVA NOVA (tranche t-aba-testes —
+             * o efeito do dossiê 052, fundido da candidata de
+             * t-chuva-052, atrás da bandeira da aba «Testes» do
+             * Mestre: o que faz a chuva LER-SE na vista de cima não
+             * são os traços a cair, são as ONDULAÇÕES e as COROAS DE
+             * RESPINGO no chão). Uma só malha de pontos (1 draw call
+             * quando visível; invisível, não desenha); cada respingo
+             * é um sprite no plano do chão com o ciclo de vida
+             * inteiro no shader: nasce com uma coroa de espigões e um
+             * ponto de impacto, abre um anel de ondulação (e um
+             * segundo anel fraco) e morre. Posições estáticas num
+             * disco de 16 m à volta da origem, com a altura do chão
+             * cozida por instância (world.height). O tamanho do
+             * sprite mede em METROS do mundo nas duas câmaras: na
+             * ortográfica (Fixa/360/Seguir), a escala é
+             * uAlturaPx·½·proj[1][1] (a matriz já traz o zoom); na
+             * livre (perspectiva), divide-se pela distância — o par
+             * de ramos da chuva com o ramo ortográfico certo.
+             * Parâmetros declarados: ciclo 0,8 s · diâmetro do sprite
+             * 0,85 m × (0,72–1,28 por instância) · anel até 0,44 do
+             * sprite · contagens por nível de TESTE [0, 380, 900]
+             * (qualidade baixa: [0, 240, 480]). Com neve a camada
+             * está desligada (a neve não respinga). */
+            /* Estado do teste: nasce DESLIGADO — sem o Mestre o ligar
+               na aba «Testes», a camada nunca desenha e o
+               comportamento é o da base. Vive só nesta closure e só
+               nesta sessão: nada se grava em chave nenhuma. */
+            let testeChuva052 = { ligada: false, nivel: 2 };
+            const RESP_MAX = 900, RESP_CICLO = .8, RESP_RAIO = 16;
+            const RESP_CONT = [0, 380, 900], RESP_CONT_BAIXA = [0, 240, 480];
+            const respGeo = new T.BufferGeometry();
+            {
+                const pos = new Float32Array(RESP_MAX * 3), fase = new Float32Array(RESP_MAX), tam = new Float32Array(RESP_MAX);
+                let s = 73031;
+                const rr = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+                for (let i = 0; i < RESP_MAX; i++) {
+                    const r = Math.sqrt(rr()) * RESP_RAIO, a = rr() * Math.PI * 2, x = Math.cos(a) * r, z = Math.sin(a) * r;
+                    pos[i * 3] = x; pos[i * 3 + 1] = world.height(x, z) + .04; pos[i * 3 + 2] = z;
+                    fase[i] = rr(); tam[i] = rr();
+                }
+                respGeo.setAttribute('position', new T.BufferAttribute(pos, 3));
+                respGeo.setAttribute('aFase', new T.BufferAttribute(fase, 1));
+                respGeo.setAttribute('aTam', new T.BufferAttribute(tam, 1));
+                respGeo.setDrawRange(0, 0);
+            }
+            const respMat = new T.ShaderMaterial({
+                uniforms: { uTempo: { value: 0 }, uAlturaPx: { value: 800 }, uOrto: { value: 1 }, uOpacidade: { value: 0 } },
+                vertexShader: 'uniform float uTempo; uniform float uAlturaPx; uniform float uOrto; attribute float aFase; attribute float aTam; varying float vIdade; varying float vTam; varying float vS; void main() { vIdade = fract(uTempo / ' + RESP_CICLO + ' + aFase); vTam = aTam; float S = 0.85 * (0.72 + 0.56 * aTam); vS = S; vec4 mv = modelViewMatrix * vec4(position, 1.0); float dist = max(0.1, -mv.z); float ppm = uAlturaPx * 0.5 * projectionMatrix[1][1]; float escala = (uOrto > 0.5) ? ppm : ppm / dist; gl_PointSize = clamp(S * escala, 2.0, 512.0); gl_Position = projectionMatrix * mv; }',
+                fragmentShader: 'uniform float uOpacidade; varying float vIdade; varying float vTam; varying float vS; void main() { vec2 c = (gl_PointCoord - vec2(0.5)) * vS; float r = length(c); float a = vIdade; float R = 0.44 * vS * sqrt(a); float w = 0.016 + 0.022 * a; float anel = smoothstep(w, 0.0, abs(r - R)) * pow(1.0 - a, 1.35); float anel2 = smoothstep(w * 0.8, 0.0, abs(r - R * 0.55)) * pow(1.0 - a, 1.6) * 0.35; float coroa = 0.0; if (a < 0.35) { float t = a / 0.35; float ang = atan(c.y, c.x); float esp = pow(0.5 + 0.5 * sin(ang * 5.0 + vTam * 40.0), 6.0); float Rc = mix(0.02, 0.17 * vS, t); coroa = esp * smoothstep(0.028, 0.0, abs(r - Rc)) * (1.0 - t); } float ponto = (a < 0.22) ? smoothstep(0.045, 0.0, r) * (1.0 - a / 0.22) * 0.8 : 0.0; float al = clamp(anel + anel2 + coroa * 0.9 + ponto, 0.0, 1.0) * uOpacidade * 0.85; if (al < 0.012) discard; gl_FragColor = vec4(0.80, 0.87, 0.94, al); }',
+                transparent: true, depthWrite: false
+            });
+            const respPts = new T.Points(respGeo, respMat);
+            respPts.frustumCulled = false; respPts.visible = false; respPts.renderOrder = 4;
+            scene.add(respPts);
             let ambAlvo = { hora: 23, chuva: 0, raios: false, precip: 'chuva' };
             let ambActual = { hora: 23, chuva: 0, precip: 'chuva' };
             let ambTrans = null, ambPulsoT0 = -1, ambUltimoRaio = -1e9, ambCapChuva = null;
@@ -328,6 +382,20 @@
                 neveMat.uniforms.uQueda.value = ambNivel(NEVE_QUEDA, cf);
                 { const vm = deNeve ? ambNivel(NEVE_VENTO_M, cf) : 0; neveMat.uniforms.uVento.value.set(DIR_VENTO.x * vm, DIR_VENTO.z * vm); }
                 ambNomGotas = gotas; ambNomFlocos = flocos;
+                /* Camada de chão da chuva nova (052), atrás da bandeira
+                   da aba «Testes»: desligada, a contagem é 0 e nada
+                   desenha (comportamento da base); ligada, a contagem e
+                   a opacidade são as do NÍVEL DE TESTE escolhido pelo
+                   Mestre (Fraco 1 · Forte 2), com o tecto de sempre e a
+                   neve a desligar (a neve não respinga). Os derivados
+                   da âncora não contam a camada — ficam byte-iguais. */
+                const cfTeste052 = testeChuva052.nivel;
+                let resp = (testeChuva052.ligada && !deNeve && cf > 0) ? Math.round(ambNivel(quality === 'baixa' ? RESP_CONT_BAIXA : RESP_CONT, cfTeste052)) : 0;
+                if (ambCapChuva != null) resp = Math.min(resp, ambCapChuva);
+                respGeo.setDrawRange(0, resp);
+                respPts.visible = resp > 0;
+                respMat.uniforms.uOpacidade.value = ambNivel(AMB_CHUVA.opacidade, cfTeste052);
+                respMat.uniforms.uAlturaPx.value = renderer.domElement.height || 800;
                 if (world.ground && world.ground.material && world.ground.material.color) world.ground.material.color.setScalar(ambNivel(AMB_CHUVA.molhado, cf));
                 ambDerivados = { exposicao: amostra.exp, hemiInt: amostra.hemiInt, solInt: amostra.solInt, fogueiraBase: amostra.fogueira, tochasBase: world.ambienteBases.tochas, chamas: amostra.chamas, gotas, flocos, nevoaExtra: ambNevoaExtra };
                 ambUltimaAmostra = amostra; ambUltimoHor = horFinal;
@@ -415,6 +483,9 @@
             function ambTick(now) {
                 chuvaMat.uniforms.uTempo.value = now / 1000;
                 neveMat.uniforms.uTempo.value = now / 1000;
+                respMat.uniforms.uTempo.value = now / 1000;
+                respMat.uniforms.uAlturaPx.value = renderer.domElement.height || 800;
+                respMat.uniforms.uOrto.value = mode !== 'livre' ? 1 : 0;
                 if (ambTrans) {
                     const ph = Math.min(1, (now - ambTrans.t0) / 7000), pc = Math.min(1, (now - ambTrans.t0) / 2500);
                     const eh = ph * ph * (3 - 2 * ph), ec = pc * pc * (3 - 2 * pc);
@@ -1077,6 +1148,14 @@
             }
             function ambReaplicar() { if (ambDerivados) ambEscrever(ambAmostra(ambActual.hora), ambActual.chuva, 0); }
             let width = 1, height = 1, selected = null, mode = 'fixa', quality = 'alta', disposed = false, raf, last = performance.now(), fps = 0, fpsAt = last, frames = 0, shadowAt = 0, yaw = 0, pitch = 1.05, viewWidth = 20, primeiraVista = true;
+            /* Offset de OLHAR deste aparelho (t-config-abas, SPEC §6.2):
+               azimute somado ao ângulo base da câmera de batalha quando
+               as teclas Q/E rodam a vista. Vive SÓ nesta closure: não
+               entra em getState/getStats, não é estado de jogo, não se
+               grava em save nem em localStorage — e nunca toca na
+               frente das personagens nem no campo de visão (o véu
+               deriva da frente delas, não da câmera). */
+            let olharYaw = 0;
             const zoom = { fixa: 1.5, seguir: 1, '360': 1 }, units = new Map(), events = new EventTarget(), times = [];
             /* ---------- CÂMERA LIVRE DO MESTRE (tranche t-camera-livre, desenho v2) ----------
              * Primeira pessoa dentro da arena, com a mecânica da sala/museu
@@ -1667,7 +1746,7 @@
                 } else {
                 const followed = units.get(selected), want = (mode === 'fixa' || !followed) ? new T.Vector3(0, .35, 0) : followed.root.position.clone().add(new T.Vector3(0, .8, 0));
                 target.lerp(want, 1 - Math.exp(-dt * 7));
-                const p = mode === '360' ? pitch : mode === 'seguir' ? 1 : width < height ? .72 : 1.12, a = mode === '360' ? yaw : mode === 'fixa' && width < height ? Math.PI / 2 : 0, distance = Math.max(45, extent * 2);
+                const p = mode === '360' ? pitch : mode === 'seguir' ? 1 : width < height ? .72 : 1.12, a = (mode === '360' ? yaw : mode === 'fixa' && width < height ? Math.PI / 2 : 0) + olharYaw, distance = Math.max(45, extent * 2);
                 camera.position.set(target.x + Math.sin(a) * Math.cos(p) * distance, target.y + Math.sin(p) * distance, target.z + Math.cos(a) * Math.cos(p) * distance);
                 camera.lookAt(target);
                 if (primeiraVista) {
@@ -1952,6 +2031,18 @@
                 }, dispararRaio, raioArenaVisual, acenderFogoCasa, apagarFogoCasa, definirEstagioFogoCasa, setUnidadeAArder, limparFogos, setCapChuva(n) {
                     ambCapChuva = n == null ? null : Math.max(0, Math.floor(n));
                     ambReaplicar();
+                }, setTesteChuva052(ligada, nivel) {
+                    /* Aba «Testes» (t-aba-testes): o Mestre liga e desliga
+                       a camada da chuva nova e escolhe o nível durante a
+                       partida. Nasce desligada; nada se grava. */
+                    if (typeof ligada !== 'boolean')
+                        throw new TypeError('testeChuva052: ligada booleano obrigatório.');
+                    if (![1, 2].includes(nivel))
+                        throw new RangeError('testeChuva052: nivel fora de {1,2}.');
+                    testeChuva052 = { ligada, nivel };
+                    ambReaplicar();
+                }, getTesteChuva052() {
+                    return { ...testeChuva052 };
                 }, setTremulacao(on) {
                     /* EM-AMB-B1: repassa a opção do Mestre ao mundo. */
                     if (world && typeof world.setTremulacao === 'function') world.setTremulacao(on);
@@ -1965,6 +2056,13 @@
                         yaw -= dx * .008;
                         pitch = clamp(pitch + dy * .005, .55, 1.4);
                     }
+                }, rodarOlhar(delta) {
+                    /* Q/E (SPEC §6.2): roda SÓ o offset de olhar deste
+                       aparelho, em qualquer modo de câmera de batalha.
+                       Na câmera livre não actua (lá manda o ctrlLivre). */
+                    if (mode !== 'livre') olharYaw += delta;
+                }, olharOffset() {
+                    return olharYaw;
                 }, projectCell(p) {
                     valid(p);
                     return screen(new T.Vector3(wx(p.x), 0, wz(p.z)));
@@ -1977,7 +2075,7 @@
                     observer.disconnect();
                     renderer.domElement.removeEventListener('webglcontextlost', contextLost);
                     [...units.keys()].forEach(removeUnit);
-                    chuvaGeo.dispose(); chuvaMat.dispose(); neveGeo.dispose(); neveMat.dispose(); ambCeuTex.dispose();
+                    chuvaGeo.dispose(); chuvaMat.dispose(); neveGeo.dispose(); neveMat.dispose(); respGeo.dispose(); respMat.dispose(); ambCeuTex.dispose();
                     release(scene);
                     sun.shadow.map?.dispose();
                     renderer.dispose();

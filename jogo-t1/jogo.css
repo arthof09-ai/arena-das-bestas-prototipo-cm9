@@ -42,10 +42,17 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 /* ---------- pop-up de configurações rápidas (sob a engrenagem) ---------- */
 /* Altura máxima: o fundo nunca passa da faixa (topo 170 + altura ≤ ecrã-242);
    o que não couber rola DENTRO do pop-up — estatísticas incluídas. */
-#cfgpop{position:fixed;left:max(10px,env(safe-area-inset-left));top:170px;z-index:27;width:252px;
-  max-width:calc(100vw - 20px);max-height:calc(100vh - 242px);overflow-y:auto;
-  /* D3-P1-11(a): fundo a alfa 0,55, local a este selector — --painel-denso
-     fica intacta para os outros consumidores (ex.: #desgraca-cartao). */
+/* Folha das Configurações em abas (t-config-abas, SPEC §1.1):
+   coluna flexível — cabeçalho pegajoso, corpo (índice + conteúdo a
+   rolar DENTRO da aba) e #stats reservado no fundo, fora da rolagem.
+   Largo (≥600 px): folha de 560–600 px. Estreito (<600 px): 366 px
+   (94vw) × 78vh, encostada ao fundo acima da faixa. */
+#cfgpop{position:fixed;left:max(10px,env(safe-area-inset-left));top:170px;z-index:27;
+  width:min(600px,94vw);max-height:calc(100vh - 242px);
+  display:flex;flex-direction:column;
+  /* D3-P1-11(a) (F-09/REF_75): fundo a alfa 0,55, local a este
+     selector — --painel-denso fica intacta para os outros
+     consumidores (ex.: #desgraca-cartao). */
   background:linear-gradient(160deg, rgba(26,20,12,.55), rgba(14,11,7,.55));border:1px solid var(--linha);
   border-radius:12px;padding:9px 12px}
 #cfgpop[hidden]{display:none}
@@ -91,7 +98,70 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
   font-size:11px;font-weight:700;padding:0 8px;border-radius:8px;
   border:1px solid rgba(201,162,39,.8);background:rgba(28,21,12,.85);color:var(--pergaminho-fraco)}
 .tog.on{background:var(--ouro);color:#1c1508}
-#cfgpop .stats{margin-top:6px;font-size:10px;color:var(--pergaminho-mudo);font-variant-numeric:tabular-nums}
+#cfgpop .stats{flex:none;height:22px;line-height:22px;margin:6px 0 0;padding:0;
+  border-top:1px dashed rgba(201,162,39,.25);
+  font-size:10px;color:var(--pergaminho-mudo);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;visibility:hidden}
+/* ---------- estrutura das abas do ⚙ ---------- */
+.cfg-corpo{position:relative;flex:1;min-height:0;display:flex;gap:10px}
+.cfg-indice-wrap{position:relative;flex:none;width:172px;display:flex}
+.cfg-indice{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+.cfg-celulas-todos,.cfg-celulas-suas{display:contents}
+.cfg-faixa{height:22px;flex:none;display:flex;align-items:center;justify-content:center;gap:8px;
+  font-family:Georgia,'DejaVu Serif',serif;font-size:9px;letter-spacing:.12em;
+  color:var(--ouro);text-transform:uppercase;text-align:center}
+.cfg-faixa::before,.cfg-faixa::after{content:'';flex:1;border-top:1px solid rgba(201,162,39,.4)}
+.cfg-faixa.sticky{position:sticky;top:0;z-index:2;background:var(--painel-denso)}
+.cfg-celula{height:44px;flex:none;display:flex;flex-direction:column;justify-content:center;gap:1px;
+  text-align:left;padding:4px 8px;border:1px solid rgba(201,162,39,.45);border-radius:8px;
+  background:rgba(28,21,12,.6);cursor:pointer}
+.cfg-celula b{font-size:13px;color:var(--pergaminho);white-space:nowrap;line-height:1.15}
+.cfg-celula i{font-style:normal;font-size:9px;color:var(--pergaminho-mudo);white-space:nowrap;line-height:1.2}
+.cfg-celula.on{background:var(--ouro);border-color:var(--ouro)}
+.cfg-celula.on b{color:#1c1508}
+.cfg-celula.on i{color:#4a3a10}
+.cfg-mais{position:absolute;left:0;right:0;bottom:0;display:none;justify-content:center;
+  padding:12px 0 2px;font-size:10px;font-weight:700;color:var(--ouro-claro);
+  background:linear-gradient(rgba(20,15,8,0),var(--painel-denso) 45%);pointer-events:none}
+.cfg-mais.on{display:flex}
+.cfg-mais-conteudo{position:absolute;left:182px;right:0;bottom:0;display:none;justify-content:center;padding:12px 0 2px;font-size:10px;font-weight:700;color:var(--ouro-claro);background:linear-gradient(rgba(20,15,8,0),rgba(14,11,7,.97) 45%);pointer-events:none;z-index:2}
+.cfg-mais-conteudo.on{display:flex}
+.cfg-conteudo{flex:1;min-width:0;min-height:0;overflow-y:auto}
+.cfg-aba{display:none}
+.cfg-aba.activa{display:block}
+.cfg-grupo{margin-top:10px}
+.cfg-grupo:first-child{margin-top:0}
+.cfg-frase{font-size:10.5px;line-height:1.45;color:var(--pergaminho-fraco);margin:2px 0 6px}
+.cfg-aba-frase{font-size:11px;line-height:1.45;color:var(--pergaminho);margin:0 0 8px}
+.cfg-restaurar-zona{margin-top:10px}
+.cfg-glossario b{color:var(--ouro-claro)}
+.seg.disabled{opacity:.45}
+.cfg-keys{width:100%;border-collapse:collapse}
+.cfg-keys td{padding:4px;border-top:1px dashed rgba(201,162,39,.25);vertical-align:top}
+.cfg-keys tr:first-child td{border-top:0}
+.cfg-chip{display:inline-block;border:1px solid rgba(201,162,39,.8);border-radius:6px;
+  padding:2px 6px;font-size:10px;font-weight:700;color:var(--ouro-claro);white-space:nowrap}
+.cfg-kact{font-size:11px;font-weight:700;color:var(--pergaminho);white-space:nowrap;width:86px}
+.cfg-ktut{font-size:10.5px;line-height:1.4;color:var(--pergaminho-fraco)}
+.cfg-keys-livre td{border-top:0;padding:2px 4px}
+@media (max-width:599px){
+  #cfgpop{width:min(366px,94vw);top:auto;bottom:64px;height:min(78vh,calc(100vh - 170px));max-height:none}
+  .cfg-corpo{flex-direction:column;gap:6px}
+  .cfg-indice-wrap{width:auto}
+  .cfg-indice{overflow:visible}
+  .cfg-celulas-todos{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+  .cfg-celulas-suas{display:grid;grid-template-columns:repeat(2,1fr);gap:4px}
+  .cfg-celula{height:auto;min-height:56px;min-width:0}
+  /* Estreito: subtítulos que não cabem numa linha quebram DENTRO
+     da célula (medido em render, P10/P13): «Último estado bom,
+     registo e dicas» mede ≈146 px para ≈96 px úteis na linha das
+     3 do Mestre — cortava; «Volumes, música e som do ambiente»
+     mede 155 px para 150 px úteis na grelha de todos — transbordava
+     5 px. Com a quebra, todos se leem completos, sem sair da folha. */
+  .cfg-celula i{white-space:normal}
+  .cfg-faixa.sticky{position:static}
+  .cfg-mais{display:none}
+  .cfg-mais-conteudo{left:0}
+}
 /* Cartão da desgraça (T-DESGRACA-NADA): o cartão de decisão do
    Mestre sobre a falha crítica — a mesma pele dos painéis da casa
    (fundo denso, linha de ouro), por cima do mundo e por baixo do ⚙. */
@@ -152,13 +222,10 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
    sem rolagem. Fora desta consulta, nada muda. Só CSS: controlos,
    ids e ligações intactos. */
 @media (max-height:560px) and (min-width:600px){
-  #cfgpop{top:max(10px,env(safe-area-inset-top));bottom:64px;max-height:none;
-    left:calc(max(10px,env(safe-area-inset-left)) + 52px);
-    width:524px;max-width:calc(100vw - 72px);
-    display:grid;grid-template-columns:1fr 1fr;column-gap:14px;align-content:start}
-  #cfgpop h3,#cfgpop .stats,#cfgpop .cfg-cabecalho{grid-column:1 / -1}
-  #cfgpop .cfgrow:nth-of-type(-n+2){border-top:0}
-  #sup-alertas,#sup-json,#sup-ultimo,#sup-dicas{grid-column:1 / -1}
+  /* O regime antigo de folha em 2 colunas foi ABSORVIDO pelas abas
+     (SPEC §1.1): em ecrã baixo e largo vale a geometria Largo — a
+     folha encosta ao topo e o conteúdo rola dentro da aba activa. */
+  #cfgpop{top:max(10px,env(safe-area-inset-top));max-height:calc(100vh - 74px)}
 }
 
 /* ---------- ficha fechada: chip flutuante (só a própria) ---------- */
@@ -352,9 +419,8 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 .amb-ponto{position:absolute;top:3px;right:3px;width:10px;height:10px;border-radius:50%;
   background:var(--ouro-vivo);box-shadow:0 0 6px rgba(255,217,77,.8);pointer-events:none}
 .amb-ponto[hidden]{display:none}
-@media (max-height:560px) and (min-width:600px){
-  .amb-estado{grid-column:1 / -1}
-}
+/* (a regra de grelha da .amb-estado morreu com o regime de 2 colunas
+   absorvido pelas abas — SPEC §1.1) */
 
 /* ---------- Câmera livre do Mestre (tranche t-camera-livre, desenho v2) ----------
    A HUD de andar: os elementos e tamanhos da sala/museu (manípulo

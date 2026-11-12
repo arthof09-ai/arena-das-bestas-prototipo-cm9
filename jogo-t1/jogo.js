@@ -4956,6 +4956,7 @@
   bandaCfg.className = 'cfg-cabecalho';
   const tituloCfgOriginal = cfgEl.querySelector('h3');
   if (tituloCfgOriginal) bandaCfg.appendChild(tituloCfgOriginal);
+  if (tituloCfgOriginal) tituloCfgOriginal.textContent = 'Configurações';
   const btnFecharCfg = document.createElement('button');
   btnFecharCfg.type = 'button';
   btnFecharCfg.id = 'cfg-fechar';
@@ -5131,7 +5132,7 @@
     linhaAuto.className = 'cfgrow';
     const rotuloAuto = document.createElement('span');
     rotuloAuto.className = 'cl';
-    rotuloAuto.textContent = 'Modo automático';
+    rotuloAuto.innerHTML = 'Modo automático<small>joga a vez da Ong por si: anda e ataca com o ataque básico. Se o ligar a meio da vez dela, começa já nessa vez; se for a vez de outra figura, começa quando a vez dela chegar. Não usa Transformação nem consumíveis, nunca acaba a batalha e espera por si nas decisões que são suas. Só nesta sessão — não fica guardado.</small>';
     botaoAuto = document.createElement('button');
     botaoAuto.type = 'button';
     botaoAuto.id = 'tog-auto';
@@ -6873,12 +6874,16 @@
     const e = ambientePartida;
     if (ambUI.estadoEl) {
       let txt = ambTextoEstado(e);
-      if (ambDegrau > 0) txt += ` · apresentação reduzida: ${AMB_DEGRAUS[ambDegrau]}`;
+      if (ambDegrau > 0) txt += ' · apresentação reduzida para o aparelho aguentar';
       ambUI.estadoEl.textContent = txt;
     }
     if (ambUI.ponto) ambUI.ponto.hidden = (e.hora === AMBIENTE_RITUAL.hora && e.chuva === 0 && e.raios === false && e.precip === 'chuva');
     for (const reg of ambUI.botoesHora) reg.b.classList.toggle('on', Math.abs(e.hora - reg.hora) < 0.051);
     for (const reg of ambUI.botoesPrecip) reg.b.classList.toggle('on', e.precip === reg.precip);
+    /* Sub-rótulo dinâmico da linha «Quanta chuva cai» (SPEC §5.5):
+       diz chuva ou neve conforme o que cai do céu. */
+    const subChuvaEl = document.getElementById('amb-chuva-sub');
+    if (subChuvaEl) subChuvaEl.textContent = e.precip === 'neve' ? 'quanto de neve cai' : 'quanto de chuva cai';
     if (ambUI.notaNeve) ambUI.notaNeve.hidden = e.precip !== 'neve';
     for (const reg of ambUI.botoesChuva) {
       reg.b.classList.toggle('on', e.chuva === reg.chuva);
@@ -6981,7 +6986,7 @@
       ambAplicarVista({ hora: h, chuva: ambientePartida.chuva, raios: ambientePartida.raios }, false);
       if (ambUI.estadoEl) {
         let txt = ambTextoEstado({ hora: h, chuva: ambientePartida.chuva, raios: ambientePartida.raios });
-        if (ambDegrau > 0) txt += ` · apresentação reduzida: ${AMB_DEGRAUS[ambDegrau]}`;
+        if (ambDegrau > 0) txt += ' · apresentação reduzida para o aparelho aguentar';
         ambUI.estadoEl.textContent = txt;
       }
     });
@@ -6995,7 +7000,7 @@
     linhaAmbChuva.className = 'cfgrow vel';
     const rotuloAmbChuva = document.createElement('span');
     rotuloAmbChuva.className = 'cl';
-    rotuloAmbChuva.textContent = 'Chuva';
+    rotuloAmbChuva.innerHTML = 'Quanta chuva cai<small id="amb-chuva-sub">quanto de chuva cai</small>';
     const grupoAmbChuva = document.createElement('div');
     grupoAmbChuva.className = 'seg amb-seg';
     grupoAmbChuva.setAttribute('role', 'group');
@@ -7024,7 +7029,7 @@
     linhaAmbPrecip.className = 'cfgrow vel';
     const rotuloAmbPrecip = document.createElement('span');
     rotuloAmbPrecip.className = 'cl';
-    rotuloAmbPrecip.textContent = 'Precipitação';
+    rotuloAmbPrecip.innerHTML = 'Chuva ou neve<small>o que cai do céu</small>';
     const grupoAmbPrecip = document.createElement('div');
     grupoAmbPrecip.className = 'seg amb-seg';
     grupoAmbPrecip.setAttribute('role', 'group');
@@ -7104,7 +7109,7 @@
     linhaAmbTrem.className = 'cfgrow';
     const rotuloAmbTrem = document.createElement('span');
     rotuloAmbTrem.className = 'cl';
-    rotuloAmbTrem.innerHTML = 'Tremulação do fogo<small>o fogo e a luz dele a tremular, só neste aparelho</small>';
+    rotuloAmbTrem.innerHTML = 'A luz do fogo a piscar<small>o fogo e a luz dele a tremular, só neste aparelho</small>';
     const togAmbTrem = document.createElement('button');
     togAmbTrem.type = 'button';
     togAmbTrem.id = 'amb-tremulacao';
@@ -7423,7 +7428,7 @@
     linhaEsc.className = 'cfgrow';
     const rotuloEsc = document.createElement('span');
     rotuloEsc.className = 'cl';
-    rotuloEsc.innerHTML = 'Casa<small>quanto vale cada casa</small>';
+    rotuloEsc.innerHTML = 'Casa<small>quanto mede cada quadrado do chão</small>';
     const grupoEsc = document.createElement('div');
     grupoEsc.className = 'seg';
     grupoEsc.setAttribute('role', 'group');
@@ -7478,7 +7483,7 @@
     linhaSupA.className = 'cfgrow';
     const rotuloSupA = document.createElement('span');
     rotuloSupA.className = 'cl';
-    rotuloSupA.textContent = 'Supervisor do Comestre';
+    rotuloSupA.textContent = 'Último estado bom';
     const botaoVoltarSup = document.createElement('button');
     botaoVoltarSup.type = 'button';
     botaoVoltarSup.id = 'sup-voltar';
@@ -7627,7 +7632,7 @@
     linhaCrit.className = 'cfgrow';
     const rotuloCrit = document.createElement('span');
     rotuloCrit.className = 'cl';
-    rotuloCrit.textContent = 'Dicas do Supervisor';
+    rotuloCrit.textContent = 'Dicas da batalha';
     /* Correcções T1.7 (R-EXP-4a): o botão «Limpar histórico» NÃO apaga
        dicas — a explicação vai no <small> do rótulo, no padrão das
        linhas «Ajuda do grid»/«Números de dano». */
@@ -8670,6 +8675,79 @@
     passoSeta(dir[0], dir[1]);
   });
 
+  /* ---------- Teclas a funcionar (t-config-abas, SPEC §6.2) ----------
+   * Handler NOVO e único para as teclas da tabela de Controles.
+   * Coexiste com os handlers de sempre e NÃO os reescreve: o das
+   * setas/Escape (acima) fica intacto, e o da câmera livre (registado
+   * antes, com stopImmediatePropagation) continua a mandar nela.
+   * ÂMBITO ESCRITO:
+   * - foco num input/textarea/select/contenteditable → ignora tudo;
+   * - atalhos do navegador (Ctrl/Meta/Alt) → ignora;
+   * - câmera livre activa → NÃO actua (as teclas lá são do
+   *   CAM_LIVRE_TECLAS, incl. Q/E com outro significado);
+   * - com o ⚙ aberto, só o O actua (fecha); o Esc é do handler de
+   *   sempre; letras, Espaço e Q/E ficam inertes;
+   * - com outro modal/cartão por cima (ficha aberta, cartão de
+   *   desgraça visível), letras e Espaço inertes; Esc como hoje;
+   * - e.repeat é ignorado nas acções discretas (Q/E podem repetir:
+   *   rodar é contínuo).
+   * A/M/C/Espaço/F NÃO duplicam lógica: disparam o CLIQUE do botão
+   * gémeo (a barra, o chip da ficha) e herdam todas as suas guardas.
+   * A tecla I fica INERTE de propósito: no vivo não existe nenhuma
+   * superfície de inventário/mochila (prova no relatório da
+   * construção) — inventar um sistema estava proibido pela SPEC. */
+  const PASSO_OLHAR = Math.PI / 12;   // 15° por toque de Q/E (sem precedente de passo: SPEC §6.2)
+  document.addEventListener('keydown', e => {
+    const alvo = e.target;
+    if (alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA' ||
+      alvo.tagName === 'SELECT' || alvo.isContentEditable)) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (camLivreActiva()) return;
+    const tecla = e.key;
+    if (!cfgEl.hidden) {
+      if (tecla === 'o' || tecla === 'O') { e.preventDefault(); fecharCfg(); }
+      return;
+    }
+    if (tecla === 'Escape') return;   // comportamento de hoje, no handler de sempre
+    const modalAberto = !!fichaAberta || (dgCartaoEl && !dgCartaoEl.hidden);
+    if (modalAberto) return;
+    const minuscula = tecla.length === 1 ? tecla.toLowerCase() : tecla;
+    const botaoAcao = acao => $('acoes') ? $('acoes').querySelector('button[data-acao="' + acao + '"]') : null;
+    if (minuscula === 'o') { e.preventDefault(); $('btn-config').click(); return; }
+    if (minuscula === 'q' || minuscula === 'e') {
+      /* Olhar à volta: roda SÓ a câmera deste aparelho (offset local
+         na cena), a qualquer momento — a frente da personagem e o
+         campo de visão (o véu) não se tocam. Q = esquerda (+passo,
+         o mesmo sentido do arrasto para a esquerda no orbit). */
+      view.rodarOlhar(minuscula === 'q' ? PASSO_OLHAR : -PASSO_OLHAR);
+      return;
+    }
+    if (e.repeat) return;
+    if (minuscula === 'a' || minuscula === 'm' || minuscula === 'c') {
+      const b = botaoAcao(minuscula === 'a' ? 'atacar' : minuscula === 'm' ? 'mover' : 'consumivel');
+      if (b) { e.preventDefault(); b.click(); }
+      return;
+    }
+    if (tecla === ' ') {
+      const b = botaoAcao('encerrar');   // o botão só existe na vez dela, no estado base
+      if (b) { e.preventDefault(); b.click(); }
+      return;
+    }
+    if (minuscula === 'f') { if (!fichaAberta) chipEl.click(); return; }
+    if (minuscula === 'i') return;       // sem superfície de inventário no vivo — inerte (ver relatório)
+    if (minuscula === 'v') {
+      const botoes = ['cam-fixa', 'cam-seguir', 'cam-360'].map(id => $(id)).filter(Boolean);
+      const actual = botoes.findIndex(b => b.id === 'cam-' + view.getState().camera);
+      if (botoes.length && actual >= 0) botoes[(actual + 1) % botoes.length].click();
+      return;
+    }
+    if (tecla === '+' || tecla === '=' || tecla === '-' || tecla === '_') {
+      const zb = $(tecla === '+' || tecla === '=' ? 'zoom-mais' : 'zoom-menos');
+      if (zb && !zb.disabled) zb.click();
+      return;
+    }
+  });
+
   addEventListener('resize', () => renderAcoes());
 
   /* ---------- arranque ---------- */
@@ -9239,12 +9317,27 @@
       visaoUI.estadoEl.textContent = 'Modo ' + VISAO_MODO_NOMES[e.modo] + ' · ' + VISAO_FORMA_NOMES[e.forma] +
         ' · ao redor ' + (e.anel ? 'ligado' : 'desligado') +
         ' · lembrança ' + (e.prazo === 'off' ? 'sem prazo' : 'com prazo de ' + e.prazo + ' min') +
-        (visaoPreviaMestre ? ' · pré-vista ligada' : '');
+        (visaoPreviaMestre ? ' · vendo como as jogadoras' : '');
     for (const reg of visaoUI.botoesModo) reg.b.classList.toggle('on', e.modo === reg.v);
     for (const reg of visaoUI.botoesForma) reg.b.classList.toggle('on', e.forma === reg.v);
     for (const reg of visaoUI.botoesAnel) reg.b.classList.toggle('on', e.anel === reg.v);
     for (const reg of visaoUI.botoesPrazo) reg.b.classList.toggle('on', e.prazo === reg.v);
     for (const reg of visaoUI.botoesPrevia) reg.b.classList.toggle('on', visaoPreviaMestre === reg.v);
+    /* Lembrança fora do Ultra (SPEC §5.6/P12): a linha nasce
+       DESACTIVADA e imóvel, com «Só funciona no modo Ultra.» no
+       lugar do sub-rótulo — desactivar é só de superfície: o valor
+       em hudt1-lembranca-prazo nunca se apaga aqui. Trocar o Modo
+       actualiza na hora, por este mesmo sincronizador. */
+    const ultraCfg = e.modo === 'ultra';
+    for (const reg of visaoUI.botoesPrazo) {
+      reg.b.disabled = !ultraCfg;
+      const segLemb = reg.b.closest('.seg');
+      if (segLemb) segLemb.classList.toggle('disabled', !ultraCfg);
+    }
+    const subLemb = document.getElementById('visao-lembranca-sub');
+    if (subLemb) subLemb.textContent = ultraCfg
+      ? 'Quanto tempo o mapa lembra o que já foi visto.'
+      : 'Só funciona no modo Ultra.';
   }
   if (MODO_MESTRE) {
     const tituloVisao = document.createElement('h3');
@@ -9255,12 +9348,13 @@
     estadoVisaoEl.className = 'amb-estado';
     cfgEl.insertBefore(estadoVisaoEl, $('stats'));
     visaoUI.estadoEl = estadoVisaoEl;
-    const visaoLinha = (rotulo, aria, opcoes, registro, chave) => {
+    const visaoLinha = (rotulo, aria, opcoes, registro, chave, sub) => {
       const linha = document.createElement('div');
       linha.className = 'cfgrow vel';
       const rot = document.createElement('span');
       rot.className = 'cl';
-      rot.textContent = rotulo;
+      if (sub) rot.innerHTML = rotulo + '<small' + (chave === 'prazo' ? ' id="visao-lembranca-sub"' : '') + '>' + sub + '</small>';
+      else rot.textContent = rotulo;
       const grupo = document.createElement('div');
       grupo.className = 'seg';
       grupo.setAttribute('role', 'group');
@@ -9285,18 +9379,21 @@
       cfgEl.insertBefore(linha, $('stats'));
     };
     visaoLinha('Modo', 'Modo de visão das jogadoras',
-      [['zero', 'Zero'], ['parcial', 'Parcial'], ['total', 'Total'], ['ultra', 'Ultra']], visaoUI.botoesModo, 'modo');
+      [['zero', 'Zero'], ['parcial', 'Parcial'], ['total', 'Total'], ['ultra', 'Ultra']], visaoUI.botoesModo, 'modo',
+      'Quanto do mapa fica escondido de cada jogadora.');
     visaoLinha('Forma', 'Forma do campo de visão',
-      [['larga', 'Larga 180°'], ['maqueta', 'Maqueta 120°'], ['cone', 'Cone 120°']], visaoUI.botoesForma, 'forma');
+      [['larga', 'Larga 180°'], ['maqueta', 'Maqueta 120°'], ['cone', 'Cone 120°']], visaoUI.botoesForma, 'forma',
+      'O formato do que cada uma vê à frente.');
     visaoLinha('Ver ao redor', 'Ver as casas ao redor da personagem',
       [[false, 'Desligado'], [true, 'Ligado']], visaoUI.botoesAnel, 'anel');
     visaoLinha('Lembrança', 'Prazo da lembrança (só Ultra)',
-      [['off', 'Desligado'], ['1', '1 min'], ['2', '2 min']], visaoUI.botoesPrazo, 'prazo');
+      [['off', 'Desligado'], ['1', '1 min'], ['2', '2 min']], visaoUI.botoesPrazo, 'prazo',
+      'Quanto tempo o mapa lembra o que já foi visto.');
     const linhaPrevia = document.createElement('div');
     linhaPrevia.className = 'cfgrow vel';
     const rotPrevia = document.createElement('span');
     rotPrevia.className = 'cl';
-    rotPrevia.textContent = 'Ver como as jogadoras';
+    rotPrevia.innerHTML = 'Ver como as jogadoras<small>Mostra no seu ecrã o campo como uma jogadora o vê.</small>';
     const grupoPrevia = document.createElement('div');
     grupoPrevia.className = 'seg';
     grupoPrevia.setAttribute('role', 'group');
@@ -9307,8 +9404,8 @@
       b.textContent = nome;
       b.addEventListener('click', () => {
         if (visaoPreviaDefinir(v))
-          say(v ? 'Pré-vista ligada: vês o campo como as jogadoras.'
-                : 'Pré-vista desligada: vista completa do Mestre.');
+          say(v ? 'Ver como as jogadoras ligado: vês o campo como as jogadoras.'
+                : 'Ver como as jogadoras desligado: vista completa do Mestre.');
       });
       grupoPrevia.appendChild(b);
       visaoUI.botoesPrevia.push({ v, b });
@@ -9318,6 +9415,465 @@
     cfgEl.insertBefore(linhaPrevia, $('stats'));
     visaoSincronizarPainel();
   }
+
+  /* ==================================================================
+   * CONFIGURAÇÕES EM ABAS (t-config-abas — SPEC-CONSTRUCAO fusão v1+v2)
+   * ==================================================================
+   * Montagem FINAL do ⚙: todas as linhas acima nasceram como sempre
+   * (mesmos ids, mesmas chaves, mesmos ouvintes, mesmas portas) e
+   * foram inseridas planas antes de #stats. Aqui RECOLHEM-SE os nós
+   * — appendChild MOVE o nó e conserva os ouvintes — para dentro da
+   * estrutura de abas. Nenhum controlo é recriado: muda só a casa.
+   * Os títulos h3 de secção antigos («Som», «Ambiente», «Câmera
+   * livre», «Escala», «Visão») fundem-se nos títulos de aba/grupo e
+   * são removidos como elementos soltos (mapa §5.8 no relatório).
+   * #stats fica FORA da rolagem, como faixa de 22 px no fundo. */
+  const CFG_ABAS_TODOS = [
+    { id: 'jogo', nome: 'Jogo', subP: 'Câmera, zoom e ajuda do grid', subM: 'Câmera, velocidade e automático' },
+    { id: 'graficos', nome: 'Gráficos', subP: 'Qualidade, números e tela vermelha', subM: 'O seu ecrã e a luz do fogo' },
+    { id: 'som', nome: 'Som', subP: 'Volumes, música, efeitos e mudo', subM: 'Volumes, música e som do ambiente' },
+    { id: 'controles', nome: 'Controles', subP: 'As teclas para jogar no computador', subM: 'As teclas para jogar no computador' }
+  ];
+  const CFG_ABAS_SUAS = [
+    { id: 'ceu', nome: 'Céu', subM: 'Hora, chuva e raios' },
+    { id: 'visao', nome: 'Visão', subM: 'O que as jogadoras veem' },
+    { id: 'voltar', nome: 'Voltar atrás', subM: 'Último estado bom, registo e dicas' },
+    { id: 'testes', nome: 'Testes', subM: 'Coisas em teste para analisar' }
+  ];
+  cfgEl.classList.add('com-abas');
+  const corpoCfg = document.createElement('div'); corpoCfg.className = 'cfg-corpo';
+  const indiceWrapCfg = document.createElement('div'); indiceWrapCfg.className = 'cfg-indice-wrap';
+  const indiceCfg = document.createElement('nav'); indiceCfg.className = 'cfg-indice';
+  indiceCfg.setAttribute('aria-label', 'Abas das configurações');
+  const maisCfg = document.createElement('div'); maisCfg.className = 'cfg-mais'; maisCfg.textContent = 'Há mais abas ↓';
+  indiceWrapCfg.appendChild(indiceCfg); indiceWrapCfg.appendChild(maisCfg);
+  const conteudoCfg = document.createElement('div'); conteudoCfg.className = 'cfg-conteudo';
+  corpoCfg.appendChild(indiceWrapCfg); corpoCfg.appendChild(conteudoCfg);
+  const maisConteudoCfg = document.createElement('div'); maisConteudoCfg.className = 'cfg-mais-conteudo'; maisConteudoCfg.textContent = 'Há mais abaixo ↓';
+  corpoCfg.appendChild(maisConteudoCfg);
+  cfgEl.insertBefore(corpoCfg, $('stats'));
+  const paineisCfg = {}, celulasCfg = {};
+  let cfgAbaActual = 'jogo';   // memória da última aba DESTA superfície (só variável — nenhuma chave nova)
+  function activarAbaCfg(id) {
+    if (!paineisCfg[id]) id = 'jogo';
+    cfgAbaActual = id;
+    for (const k in paineisCfg) paineisCfg[k].classList.toggle('activa', k === id);
+    for (const k in celulasCfg) celulasCfg[k].classList.toggle('on', k === id);
+    conteudoCfg.scrollTop = 0;
+    cfgMaisCheck();
+    cfgConteudoCheck();
+  }
+  function cfgMaisCheck() {
+    const precisa = indiceCfg.scrollHeight > indiceCfg.clientHeight + 1 &&
+      indiceCfg.scrollTop + indiceCfg.clientHeight < indiceCfg.scrollHeight - 2;
+    maisCfg.classList.toggle('on', precisa);
+  }
+  function cfgConteudoCheck() {
+    const precisa = conteudoCfg.scrollHeight > conteudoCfg.clientHeight + 1 &&
+      conteudoCfg.scrollTop + conteudoCfg.clientHeight < conteudoCfg.scrollHeight - 2;
+    maisConteudoCfg.classList.toggle('on', precisa);
+  }
+  indiceCfg.addEventListener('scroll', cfgMaisCheck);
+  conteudoCfg.addEventListener('scroll', cfgConteudoCheck);
+  conteudoCfg.addEventListener('click', cfgConteudoCheck);
+  $('btn-config').addEventListener('click', () => requestAnimationFrame(() => cfgConteudoCheck()));
+  addEventListener('resize', () => { cfgMaisCheck(); cfgConteudoCheck(); });
+  function faixaCfg(texto, extra) {
+    const f = document.createElement('div');
+    f.className = 'cfg-faixa' + (extra || '');
+    f.textContent = texto;
+    return f;
+  }
+  function novaAbaCfg(def, celulasEl) {
+    const sec = document.createElement('section');
+    sec.className = 'cfg-aba'; sec.dataset.aba = def.id; sec.setAttribute('aria-label', def.nome);
+    conteudoCfg.appendChild(sec); paineisCfg[def.id] = sec;
+    const cel = document.createElement('button');
+    cel.type = 'button'; cel.className = 'cfg-celula'; cel.dataset.aba = def.id;
+    const b = document.createElement('b'); b.textContent = def.nome;
+    const i = document.createElement('i'); i.textContent = MODO_MESTRE ? def.subM : (def.subP || def.subM);
+    cel.appendChild(b); cel.appendChild(i);
+    cel.addEventListener('click', () => activarAbaCfg(def.id));
+    celulasEl.appendChild(cel); celulasCfg[def.id] = cel;
+  }
+  const celulasTodosCfg = document.createElement('div'); celulasTodosCfg.className = 'cfg-celulas-todos';
+  indiceCfg.appendChild(faixaCfg('PARA TODOS'));
+  indiceCfg.appendChild(celulasTodosCfg);
+  for (const def of CFG_ABAS_TODOS) novaAbaCfg(def, celulasTodosCfg);
+  if (MODO_MESTRE) {
+    indiceCfg.appendChild(faixaCfg('SÓ SUAS — PARA COMANDAR A BATALHA', ' sticky'));
+    const celulasSuasCfg = document.createElement('div'); celulasSuasCfg.className = 'cfg-celulas-suas';
+    indiceCfg.appendChild(celulasSuasCfg);
+    for (const def of CFG_ABAS_SUAS) novaAbaCfg(def, celulasSuasCfg);
+  }
+  function cfgGrupo(pane, titulo, frase) {
+    const g = document.createElement('div'); g.className = 'cfg-grupo';
+    if (titulo) { const h = document.createElement('h3'); h.className = 'cfg-grupo-titulo'; h.textContent = titulo; g.appendChild(h); }
+    if (frase) { const p = document.createElement('p'); p.className = 'cfg-frase'; p.textContent = frase; g.appendChild(p); }
+    pane.appendChild(g); return g;
+  }
+  function cfgFraseAba(pane, texto) {
+    const p = document.createElement('p'); p.className = 'cfg-aba-frase'; p.textContent = texto;
+    pane.appendChild(p); return p;
+  }
+  function cfgPFrase(texto) {
+    const p = document.createElement('p'); p.className = 'cfg-frase'; p.textContent = texto; return p;
+  }
+  function cfgZonaRestaurar(pane, linha) {
+    const z = document.createElement('div'); z.className = 'cfg-restaurar-zona';
+    z.appendChild(cfgPFrase('Repõe só as definições de Gráficos e Som.'));
+    z.appendChild(linha); pane.appendChild(z); return z;
+  }
+  function cfgRotuloCam(id) {
+    const b = $(id); if (!b) return null;
+    return b.textContent.replace(/^[^\p{L}\p{N}]+/u, '').trim();
+  }
+  function cfgFraseVista() {
+    /* I-3: a lista de modos da frase do V nasce dos rótulos dos
+       próprios botões da Câmera que existirem no DOM. */
+    const nomes = ['cam-fixa', 'cam-seguir', 'cam-360'].map(cfgRotuloCam).filter(Boolean);
+    return 'Vista: troca a câmera — ' + nomes.join(', ') + '.';
+  }
+  function cfgTabelaTeclas() {
+    const linhas = [
+      ['A', 'Atacar', 'Atacar: escolha o alvo no mapa.'],
+      ['M', 'Mover', 'Mover: depois ande com as setas, casa a casa.'],
+      ['C', 'Consumível', 'Consumível: escolha o item para usar.'],
+      ['Espaço', 'Encerrar vez', 'Encerra a sua vez e passa ao próximo. Só na sua vez.'],
+      ['F', 'Ficha', 'Ficha: abre a ficha da sua personagem.'],
+      ['I', 'Inventário', 'Inventário: abre a mochila da sua personagem.'],
+      ['O', 'Configurações', 'Configurações: abre e fecha este painel.'],
+      ['V', 'Câmera', cfgFraseVista()],
+      ['+ / −', 'Zoom', 'Zoom: aproxima e afasta a câmera.'],
+      ['↑ ↓ ← →', 'Andar', 'Setas: andam casa a casa, só dentro do Mover, na sua vez, com nada aberto por cima.'],
+      ['Q / E', 'Olhar à volta', 'Olhar: Q roda a câmera para a esquerda, E para a direita. Pode olhar a qualquer momento, mesmo fora da sua vez. Olhar não vira a personagem. Não se vê nada que o véu esconda.'],
+      ['Esc', 'Fechar/cancelar', 'Fecha o que está aberto e cancela o modo activo.']
+    ];
+    const t = document.createElement('table'); t.className = 'cfg-keys';
+    const tb = document.createElement('tbody'); t.appendChild(tb);
+    for (const [tecla, accao, tut] of linhas) {
+      const tr = document.createElement('tr');
+      const td1 = document.createElement('td');
+      const chip = document.createElement('span'); chip.className = 'cfg-chip'; chip.textContent = tecla;
+      td1.appendChild(chip);
+      const td2 = document.createElement('td'); td2.className = 'cfg-kact'; td2.textContent = accao;
+      const td3 = document.createElement('td'); td3.className = 'cfg-ktut'; td3.textContent = tut;
+      tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tb.appendChild(tr);
+    }
+    return t;
+  }
+  function cfgSubTabelaLivre() {
+    const t = document.createElement('table'); t.className = 'cfg-keys cfg-keys-livre';
+    const tb = document.createElement('tbody'); t.appendChild(tb);
+    const linhas = [['W A S D e setas', 'andar'], ['PageUp / PageDown', 'subir e descer'],
+      ['Q / E', 'rodar a vista'], ['Shift', 'mais depressa']];
+    for (const [teclas, accao] of linhas) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td'); td.className = 'cfg-ktut';
+      const b = document.createElement('b'); b.textContent = teclas;
+      const resto = document.createElement('span'); resto.textContent = ' — ' + accao;
+      td.appendChild(b); td.appendChild(resto);
+      tr.appendChild(td); tb.appendChild(tr);
+    }
+    return t;
+  }
+  /* ---------- recolha das linhas existentes, por ordem e por sinal ---------- */
+  const R = {};
+  /* Nos DOMs de ensaio da casa, className e classList não estão
+     sincronizados (o classList nasce vazio e o código atribui
+     className) — temClasse lê os dois, como o navegador lê um só. */
+  /* textoCfg: nos DOMs de ensaio o textContent não agrega os
+     filhos; a procura profunda encontra o prefixo em qualquer
+     descendente, como o textContent agregado do navegador. */
+  const temTextoCfg = (el, prefixo) => {
+    let sim = false;
+    const andar = n => {
+      if (sim || !n || typeof n !== 'object') return;
+      if (typeof n.textContent === 'string' && n.textContent.indexOf(prefixo) === 0) { sim = true; return; }
+      if (n.children) for (const f of n.children) andar(f);
+    };
+    andar(el);
+    return sim;
+  };
+  const temClasse = (n, nome) => !!n && (
+    (n.classList && n.classList.contains && n.classList.contains(nome)) ||
+    (typeof n.className === 'string' && n.className.split(/\s+/).includes(nome)));
+  const temCfg = (el, sel) => {
+    const directo = el.querySelector ? el.querySelector(sel) : null;
+    if (directo) return directo;
+    /* Recurso de varredura profunda: nos DOMs de ensaio da casa o
+       querySelector é um stub que devolve sempre null — sem isto a
+       recolha classificava ZERO linhas nesses DOMs e lavrava «sem
+       casa» por todas (falso positivo medido na bateria de parques).
+       A varredura reconhece exactamente os selectores usados abaixo
+       e devolve o mesmo nó que o querySelector devolveria. */
+    const mId = /^#([\w-]+)$/.exec(sel);
+    const mSeg = /^\.seg\[aria-label="(.+)"\]$/.exec(sel);
+    const mInp = /^input\[aria-label="(.+)"\]$/.exec(sel);
+    let achado = null;
+    const andar = n => {
+      if (achado || !n || typeof n !== 'object') return;
+      if (mId && n.id === mId[1]) achado = n;
+      else if (sel === '[data-qualidade]' && n.dataset && n.dataset.qualidade) achado = n;
+      else if (mSeg && temClasse(n, 'seg') &&
+        n.getAttribute && n.getAttribute('aria-label') === mSeg[1]) achado = n;
+      else if (mInp && n.tagName === 'INPUT' &&
+        n.getAttribute && n.getAttribute('aria-label') === mInp[1]) achado = n;
+      if (!achado && n.children) for (const f of n.children) andar(f);
+    };
+    andar(el);
+    return achado;
+  };
+  for (const el of [...cfgEl.children]) {
+    if (el === bandaCfg || el === corpoCfg || el.id === 'stats') continue;
+    if (el.tagName === 'H3') { el.remove(); continue; }   // títulos de secção → títulos de aba/grupo
+    if (temCfg(el, '#cam-fixa')) R.cam = el;
+    else if (temCfg(el, '#zoom-menos')) R.zoom = el;
+    else if (temCfg(el, '#tog-grid')) R.grid = el;
+    else if (temCfg(el, '#tog-danos')) R.danos = el;
+    else if (temCfg(el, '[data-qualidade]')) R.qualidade = el;
+    else if (temCfg(el, '#cfg-terminar')) R.terminar = el;
+    else if (temCfg(el, '#tog-auto')) R.auto = el;
+    else if (temCfg(el, '.seg[aria-label="Velocidade"]')) R.velocidade = el;
+    else if (temCfg(el, '#tog-vermelha-piscar')) R.piscar = el;
+    else if (temCfg(el, '#tog-vermelha')) R.vermelha = el;
+    else if (temCfg(el, '#tog-som-mudo')) R.mudo = el;
+    else if (temCfg(el, '#cfg-restaurar')) R.restaurar = el;
+    else if (temCfg(el, '#tog-contador-vantagem')) R.vd = el;
+    else if (el.id === 'amb-estado') R.ambEstado = el;
+    else if (temCfg(el, '#amb-hora')) R.ambHoraFina = el;
+    else if (temCfg(el, '.seg[aria-label="Hora do dia"]')) R.ambHora = el;
+    else if (temCfg(el, '.seg[aria-label="Chuva"]')) R.ambChuva = el;
+    else if (temCfg(el, '.seg[aria-label="Tipo de precipitação"]')) R.ambPrecip = el;
+    else if (temCfg(el, '#amb-raios')) R.ambRaios = el;
+    else if (temCfg(el, '#amb-raio-agora')) R.ambRaio = el;
+    else if (temCfg(el, '#amb-som')) R.ambSom = el;
+    else if (temCfg(el, '#amb-tremulacao')) R.ambTrem = el;
+    else if (temCfg(el, '#amb-voltar-ritual')) R.ambVoltar = el;
+    else if (temCfg(el, '#cam-livre-entrar')) R.camLivre = el;
+    else if (temCfg(el, '#esc-1')) R.escala = el;
+    else if (temCfg(el, '#esc-vigente')) R.escalaParty = el;
+    else if (temCfg(el, '#sup-voltar')) R.supVoltar = el;
+    else if (temCfg(el, '#sup-exportar')) R.supExportar = el;
+    else if (el.id === 'sup-alertas') R.supAlertas = el;
+    else if (el.id === 'sup-json') R.supJson = el;
+    else if (el.id === 'sup-ultimo') R.supUltimo = el;
+    else if (temCfg(el, '#sup-limpar-analises')) R.crit = el;
+    else if (el.id === 'sup-dicas') R.supDicas = el;
+    else if (el.id === 'visao-estado') R.visaoEstado = el;
+    else if (temCfg(el, '.seg[aria-label="Modo de visão das jogadoras"]')) R.visaoModo = el;
+    else if (temCfg(el, '.seg[aria-label="Forma do campo de visão"]')) R.visaoForma = el;
+    else if (temCfg(el, '.seg[aria-label="Ver as casas ao redor da personagem"]')) R.visaoAnel = el;
+    else if (temCfg(el, '.seg[aria-label="Prazo da lembrança (só Ultra)"]')) R.visaoPrazo = el;
+    else if (temCfg(el, '.seg[aria-label="Ver como as jogadoras"]')) R.visaoPrevia = el;
+    else if (temClasse(el, 'cfg-nota')) R.notaSom = el;
+    else if (temCfg(el, 'input[aria-label="Volume geral"]')) R.volGeral = el;
+    else if (temCfg(el, 'input[aria-label="Música"]')) R.volMusica = el;
+    else if (temCfg(el, 'input[aria-label="Efeitos"]')) R.volEfeitos = el;
+    else if (temClasse(el, 'amb-estado')) R.notaNeve = el;
+    else if (temTextoCfg(el, 'Você anda e voa dentro do mapa')) R.camLivreAjuda = el;
+    else console.error('abas: elemento do ⚙ sem casa:', el.tagName, el.className, el.textContent.slice(0, 40));
+  }
+  /* ---------- Jogo ---------- */
+  {
+    const pane = paineisCfg.jogo;
+    if (MODO_MESTRE) cfgFraseAba(pane, 'Aqui manda na câmera da batalha e em como ela anda.');
+    const g = cfgGrupo(pane, 'Vista da batalha', null);
+    if (R.cam) g.appendChild(R.cam);
+    if (R.zoom) g.appendChild(R.zoom);
+    if (R.grid) g.appendChild(R.grid);
+    /* Fusão REF_76 (emenda da cadeia): a linha só-leitura da
+       escala da Party (RN-4, REF_70) também nasceu depois das
+       abas — mora na aba Jogo, junto à vista da batalha. */
+    if (R.escalaParty) g.appendChild(R.escalaParty);
+    if (MODO_MESTRE) {
+      const g2 = cfgGrupo(pane, 'Andamento e medidas — só do Mestre',
+        'Quão depressa a batalha anda, se ela joga sozinha e quanto mede o chão.');
+      if (R.velocidade) g2.appendChild(R.velocidade);
+      if (R.auto) g2.appendChild(R.auto);
+      if (R.escala) g2.appendChild(R.escala);
+    }
+    /* Fusão REF_76 (emenda da cadeia): a linha do «Terminar» da
+       F-09 (REF_75) nasceu depois das abas e não tinha casa no
+       classificador — mora na aba Jogo, no grupo com o nome dela. */
+    const g3 = cfgGrupo(pane, 'Batalha', null);
+    if (R.terminar) g3.appendChild(R.terminar);
+  }
+  /* ---------- Gráficos ---------- */
+  {
+    const pane = paineisCfg.graficos;
+    const g = cfgGrupo(pane, 'O seu ecrã', null);
+    if (R.qualidade) g.appendChild(R.qualidade);
+    if (R.danos) g.appendChild(R.danos);
+    if (R.vermelha) g.appendChild(R.vermelha);
+    if (R.piscar) g.appendChild(R.piscar);
+    if (R.vd) g.appendChild(R.vd);
+    if (MODO_MESTRE) {
+      const g2 = cfgGrupo(pane, 'Só do Mestre',
+        'Só neste aparelho: não muda a partida nem o que as jogadoras veem.');
+      if (R.ambTrem) g2.appendChild(R.ambTrem);
+    }
+    if (R.restaurar) cfgZonaRestaurar(pane, R.restaurar);
+  }
+  /* ---------- Som ---------- */
+  {
+    const pane = paineisCfg.som;
+    if (R.volGeral) pane.appendChild(R.volGeral);
+    if (R.volMusica) pane.appendChild(R.volMusica);
+    if (R.volEfeitos) pane.appendChild(R.volEfeitos);
+    if (R.mudo) pane.appendChild(R.mudo);
+    if (R.notaSom) pane.appendChild(R.notaSom);
+    if (MODO_MESTRE) {
+      const g2 = cfgGrupo(pane, 'Só do Mestre',
+        'Só neste aparelho: não muda a partida nem o que as jogadoras veem.');
+      if (R.ambSom) g2.appendChild(R.ambSom);
+    }
+    if (R.restaurar) {
+      /* O MESMO item «Restaurar o padrão» no fundo de Gráficos e de
+         Som (sentença J4): o botão histórico fica em Gráficos; o
+         gémeo do Som dispara o clique do histórico — um só caminho,
+         uma só lista branca. */
+      const btnOrig = temCfg(R.restaurar, '#cfg-restaurar');
+      const linhaSom = document.createElement('div'); linhaSom.className = 'cfgrow';
+      /* cloneNode pode não existir nos DOMs de ensaio da casa —
+         aí o gémeo nasce como botão novo com a mesma face. */
+      const btnSom = btnOrig.cloneNode
+        ? btnOrig.cloneNode(true)
+        : Object.assign(document.createElement('button'),
+          { type: 'button', className: btnOrig.className, textContent: btnOrig.textContent });
+      btnSom.id = 'cfg-restaurar-som';
+      btnSom.addEventListener('click', () => btnOrig.click());
+      linhaSom.appendChild(btnSom);
+      cfgZonaRestaurar(pane, linhaSom);
+    }
+  }
+  /* ---------- Controles ---------- */
+  {
+    const pane = paineisCfg.controles;
+    cfgFraseAba(pane, 'Esquema fixo do computador — igual para todos. As teclas não se mudam aqui.');
+    pane.appendChild(cfgTabelaTeclas());
+  }
+  if (MODO_MESTRE) {
+    /* ---------- Céu ---------- */
+    {
+      const pane = paineisCfg.ceu;
+      if (R.ambEstado) pane.appendChild(R.ambEstado);
+      cfgFraseAba(pane, 'Aqui manda no céu da batalha: a hora, a chuva, a neve e os raios.');
+      const g1 = cfgGrupo(pane, 'Céu pronto', 'O céu da noite do ritual, posto de uma vez.');
+      if (R.ambVoltar) {
+        const rot = R.ambVoltar.querySelector('.cl'); if (rot) rot.remove();
+        const btn = R.ambVoltar.querySelector('#amb-voltar-ritual');
+        if (btn) { btn.textContent = 'Noite do ritual (23h, sem chuva, sem raios)'; btn.classList.add('cfg-restaurar'); }
+        g1.appendChild(R.ambVoltar);
+      }
+      g1.appendChild(cfgPFrase('Repõe o céu do ritual: noite (23h), nada a cair, o que cair volta a ser chuva (não neve), raios desligados.'));
+      const g2 = cfgGrupo(pane, 'A hora do dia',
+        'A que horas a batalha acontece. Pôr só «Noite» não é a noite do ritual — o botão pronto está no topo desta aba.');
+      if (R.ambHora) g2.appendChild(R.ambHora);
+      if (R.ambHoraFina) g2.appendChild(R.ambHoraFina);
+      const g3 = cfgGrupo(pane, 'A chuva, a neve e os raios',
+        'Quanto cai do céu, o que cai, e os raios que você chama.');
+      if (R.ambChuva) g3.appendChild(R.ambChuva);
+      if (R.ambPrecip) g3.appendChild(R.ambPrecip);
+      if (R.notaNeve) g3.appendChild(R.notaNeve);
+      if (R.ambRaios) g3.appendChild(R.ambRaios);
+      if (R.ambRaio) g3.appendChild(R.ambRaio);
+    }
+    /* ---------- Visão ---------- */
+    {
+      const pane = paineisCfg.visao;
+      if (R.visaoEstado) pane.appendChild(R.visaoEstado);
+      cfgFraseAba(pane, 'Aqui manda no que cada jogadora consegue ver no mapa.');
+      const g1 = cfgGrupo(pane, 'O que as jogadoras veem',
+        'Isto manda no que elas veem; o último botão mostra-lhe a si o campo como elas o veem.');
+      if (R.visaoModo) g1.appendChild(R.visaoModo);
+      if (R.visaoForma) g1.appendChild(R.visaoForma);
+      const gloss = document.createElement('p');
+      gloss.className = 'cfg-nota cfg-glossario';
+      gloss.innerHTML = '<b>Ultra</b> = esconder ao máximo. <b>Larga</b> = ela vê para a frente e para os lados (180°). <b>Maqueta</b> = ela vê para a frente, num leque mais estreito (120°). <b>Cone</b> = o mesmo leque de 120°, e nunca muda. <b>Ver ao redor</b> (nasce desligado): ligado, com a Larga e com a Maqueta ela vê também as casas mesmo encostadas a ela, de todos os lados, até atrás; com o Cone, não muda nada. Sem o Ver ao redor, a Maqueta e o Cone veem exactamente o mesmo. Do que menos esconde ao que mais esconde: Zero, Parcial, Total, Ultra.';
+      g1.appendChild(gloss);
+      if (R.visaoAnel) g1.appendChild(R.visaoAnel);
+      if (R.visaoPrazo) g1.appendChild(R.visaoPrazo);
+      if (R.visaoPrevia) g1.appendChild(R.visaoPrevia);
+      const g2 = cfgGrupo(pane, 'Ver o mapa todo',
+        'Só no seu ecrã: andar e voar pelo mapa para o analisar.');
+      if (R.camLivre) g2.appendChild(R.camLivre);
+      if (R.camLivreAjuda) g2.appendChild(R.camLivreAjuda);
+      g2.appendChild(cfgSubTabelaLivre());
+    }
+    /* ---------- Voltar atrás ---------- */
+    {
+      const pane = paineisCfg.voltar;
+      cfgFraseAba(pane, 'Aqui volta atrás, guarda a batalha e lê os avisos e as dicas.');
+      const g1 = cfgGrupo(pane, 'Avisos', 'O último aviso e a última acção, para ver sem procurar.');
+      if (R.supAlertas) g1.appendChild(R.supAlertas);
+      if (R.supUltimo) g1.appendChild(R.supUltimo);
+      const g2 = cfgGrupo(pane, 'Guardar e voltar atrás',
+        'O estado guarda-se ao começo de cada vez. Voltar repõe o começo da vez anterior — na primeira vez da batalha ainda não há vez anterior para onde voltar. Aqui também guarda o registo da batalha.');
+      if (R.supVoltar) g2.appendChild(R.supVoltar);
+      if (R.supExportar) g2.appendChild(R.supExportar);
+      if (R.supJson) g2.appendChild(R.supJson);
+      const g3 = cfgGrupo(pane, 'As dicas', 'Dicas para mestrar melhor, escritas durante a batalha.');
+      if (R.supDicas) g3.appendChild(R.supDicas);
+      if (R.crit) g3.appendChild(R.crit);
+    }
+    /* ---------- Testes (t-aba-testes — só do Mestre) ----------
+       Aba nova, nascida vazia de itens recolhidos: cada coisa em
+       teste ganha aqui o seu grupo, com os seus controlos, para o
+       Mestre ligar, desligar e mudar durante a partida. Os estados
+       dos testes vivem em variáveis da sessão e NÃO se gravam em
+       chave nenhuma — é um banco de ensaio, não uma definição: ao
+       recarregar a página, tudo nasce desligado. Na vista da Party
+       esta aba nem sequer nasce (a montagem inteira está dentro de
+       MODO_MESTRE, como as outras abas suas). */
+    {
+      const pane = paineisCfg.testes;
+      cfgFraseAba(pane, 'Aqui ficam as coisas em teste, para você analisar dentro do jogo. Desligadas, o jogo fica como está hoje.');
+      /* — Chuva nova (teste): o efeito do dossiê 052 — */
+      const g1 = cfgGrupo(pane, 'Chuva nova (teste)',
+        'A chuva nova cai com anéis e respingos no chão, para a chuva se ver de cima. Ligue e veja na batalha; desligue e volta a chuva de hoje.');
+      let testeChuva052Ligada = false;   // nasce DESLIGADA
+      let testeChuva052Nivel = 2;        // nasce no Forte, o nível já provado
+      const linhaTog052 = document.createElement('div'); linhaTog052.className = 'cfgrow';
+      const rotTog052 = document.createElement('span'); rotTog052.className = 'cl';
+      rotTog052.innerHTML = 'Chuva nova<small>anéis e respingos no chão</small>';
+      const tog052 = document.createElement('button');
+      tog052.type = 'button'; tog052.id = 'teste-chuva052'; tog052.className = 'tog';
+      linhaTog052.appendChild(rotTog052); linhaTog052.appendChild(tog052);
+      g1.appendChild(linhaTog052);
+      const linhaNivel052 = document.createElement('div'); linhaNivel052.className = 'cfgrow vel';
+      const rotNivel052 = document.createElement('span'); rotNivel052.className = 'cl';
+      rotNivel052.textContent = 'Nível';
+      const grupoNivel052 = document.createElement('div');
+      grupoNivel052.className = 'seg'; grupoNivel052.setAttribute('role', 'group');
+      grupoNivel052.setAttribute('aria-label', 'Nível da chuva nova');
+      const btnFraco052 = document.createElement('button');
+      btnFraco052.type = 'button'; btnFraco052.textContent = 'Fraco';
+      const btnForte052 = document.createElement('button');
+      btnForte052.type = 'button'; btnForte052.textContent = 'Forte';
+      grupoNivel052.appendChild(btnFraco052); grupoNivel052.appendChild(btnForte052);
+      linhaNivel052.appendChild(rotNivel052); linhaNivel052.appendChild(grupoNivel052);
+      g1.appendChild(linhaNivel052);
+      const sinc052 = () => {
+        tog052.classList.toggle('on', testeChuva052Ligada);
+        tog052.textContent = testeChuva052Ligada ? 'Ligada' : 'Desligada';
+        tog052.setAttribute('aria-pressed', String(testeChuva052Ligada));
+        btnFraco052.classList.toggle('on', testeChuva052Nivel === 1);
+        btnForte052.classList.toggle('on', testeChuva052Nivel === 2);
+      };
+      const aplicar052 = () => {
+        if (view && typeof view.setTesteChuva052 === 'function') {
+          try { view.setTesteChuva052(testeChuva052Ligada, testeChuva052Nivel); } catch (_) {}
+        }
+        sinc052();
+      };
+      tog052.addEventListener('click', () => { testeChuva052Ligada = !testeChuva052Ligada; aplicar052(); });
+      btnFraco052.addEventListener('click', () => { testeChuva052Nivel = 1; aplicar052(); });
+      btnForte052.addEventListener('click', () => { testeChuva052Nivel = 2; aplicar052(); });
+      sinc052();
+    }
+  }
+  activarAbaCfg('jogo');
 
   /* ---------- eventos discretos + a vigia da lembrança ---------- */
   view.on('moveend', () => { visaoAplicar(); });

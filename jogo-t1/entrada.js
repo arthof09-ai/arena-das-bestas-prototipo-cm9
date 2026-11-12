@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_72';
+  var VERSAO_JOGO = 'REF_76';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -457,6 +457,128 @@
    * (o ouvinte de captura junto a esta vista) ou no ✕ do cabeçalho. */
   raiz.appendChild(vistaConfig);
 
+  /* ---------- Configurações em ABAS na entrada (t-config-abas,
+   * SPEC §3): a vista ganha 3 abas — Gráficos · Som · Controles —
+   * com a geometria v1 (coluna no Largo, grelha 2+1 no Estreito,
+   * sem faixas-régua) e a zona Conta separada depois das abas.
+   * NADA do Mestre nasce aqui. A aba por omissão é Gráficos; a
+   * última aba fica lembrada numa variável desta superfície. */
+  var entAbaActual = 'graficos';
+  vistaConfig.classList.add('com-abas');
+  var corpoEnt = el('div', 'entab-corpo');
+  var indiceEnt = el('nav', 'entab-indice');
+  indiceEnt.setAttribute('aria-label', 'Abas das configurações');
+  var conteudoEnt = el('div', 'entab-conteudo');
+  corpoEnt.appendChild(indiceEnt);
+  corpoEnt.appendChild(conteudoEnt);
+  vistaConfig.insertBefore(corpoEnt, btnRestaurar);
+  var paineisEnt = {}, celulasEnt = {};
+  function activarAbaEnt(id) {
+    if (!paineisEnt[id]) id = 'graficos';
+    entAbaActual = id;
+    for (var k in paineisEnt) paineisEnt[k].classList.toggle('activa', k === id);
+    for (var k2 in celulasEnt) celulasEnt[k2].classList.toggle('on', k2 === id);
+    conteudoEnt.scrollTop = 0;
+  }
+  var ABAS_ENT = [
+    ['graficos', 'Gráficos', 'Qualidade, números e tela vermelha'],
+    ['som', 'Som', 'Volumes, música, efeitos e mudo'],
+    ['controles', 'Controles', 'As teclas para jogar no computador']
+  ];
+  ABAS_ENT.forEach(function (def) {
+    var sec = el('section', 'entab-aba');
+    sec.dataset.aba = def[0];
+    sec.setAttribute('aria-label', def[1]);
+    conteudoEnt.appendChild(sec);
+    paineisEnt[def[0]] = sec;
+    var cel = el('button', 'entab-celula');
+    cel.type = 'button';
+    cel.dataset.aba = def[0];
+    var b = el('b', null, def[1]);
+    var i = el('i', null, def[2]);
+    cel.appendChild(b); cel.appendChild(i);
+    cel.addEventListener('click', function () { activarAbaEnt(def[0]); });
+    indiceEnt.appendChild(cel);
+    celulasEnt[def[0]] = cel;
+  });
+  /* Aba Gráficos: grupo «O seu ecrã» + Restaurar no fundo. */
+  paineisEnt.graficos.appendChild(el('h3', 'ent-subtitulo', 'O seu ecrã'));
+  var linhasDefG = el('div');
+  paineisEnt.graficos.appendChild(linhasDefG);
+  var zonaRestG = el('div', 'ent-restaurar-zona');
+  zonaRestG.appendChild(el('p', 'ent-frase', 'Repõe só as definições de Gráficos e Som.'));
+  zonaRestG.appendChild(btnRestaurar);
+  paineisEnt.graficos.appendChild(zonaRestG);
+  /* Aba Som: as linhas do som + a nota + Restaurar no fundo (o MESMO
+     item nas duas abas, sentença J4: o gémeo dispara o clique do
+     botão histórico — um só caminho, uma só lista branca). */
+  var linhasDefS = el('div');
+  paineisEnt.som.appendChild(linhasDefS);
+  var zonaRestS = el('div', 'ent-restaurar-zona');
+  zonaRestS.appendChild(el('p', 'ent-frase', 'Repõe só as definições de Gráficos e Som.'));
+  var btnRestaurarSom = el('button', 'ent-esquecer', 'Restaurar o padrão');
+  btnRestaurarSom.id = 'ent-restaurar-som'; btnRestaurarSom.type = 'button';
+  btnRestaurarSom.addEventListener('click', function () { btnRestaurar.click(); });
+  zonaRestS.appendChild(btnRestaurarSom);
+  paineisEnt.som.appendChild(zonaRestS);
+  /* Aba Controles: frase de abertura + a tabela de teclas (esquema
+     FIXO, só-leitura — a mesma tabela do ⚙; a frase do V gera-se
+     dos rótulos dos botões da Câmera do ⚙, I-3). */
+  function fraseVistaEnt() {
+    var nomes = [];
+    ['cam-fixa', 'cam-seguir', 'cam-360'].forEach(function (id) {
+      var b = document.getElementById(id);
+      if (b) nomes.push(b.textContent.replace(/^[^\p{L}\p{N}]+/u, '').trim());
+    });
+    return 'Vista: troca a câmera — ' + nomes.join(', ') + '.';
+  }
+  function tabelaTeclasEnt() {
+    var linhas = [
+      ['A', 'Atacar', 'Atacar: escolha o alvo no mapa.'],
+      ['M', 'Mover', 'Mover: depois ande com as setas, casa a casa.'],
+      ['C', 'Consumível', 'Consumível: escolha o item para usar.'],
+      ['Espaço', 'Encerrar vez', 'Encerra a sua vez e passa ao próximo. Só na sua vez.'],
+      ['F', 'Ficha', 'Ficha: abre a ficha da sua personagem.'],
+      ['I', 'Inventário', 'Inventário: abre a mochila da sua personagem.'],
+      ['O', 'Configurações', 'Configurações: abre e fecha este painel.'],
+      ['V', 'Câmera', fraseVistaEnt()],
+      ['+ / −', 'Zoom', 'Zoom: aproxima e afasta a câmera.'],
+      ['↑ ↓ ← →', 'Andar', 'Setas: andam casa a casa, só dentro do Mover, na sua vez, com nada aberto por cima.'],
+      ['Q / E', 'Olhar à volta', 'Olhar: Q roda a câmera para a esquerda, E para a direita. Pode olhar a qualquer momento, mesmo fora da sua vez. Olhar não vira a personagem. Não se vê nada que o véu esconda.'],
+      ['Esc', 'Fechar/cancelar', 'Fecha o que está aberto e cancela o modo activo.']
+    ];
+    var t = el('table', 'cfg-keys');
+    var tb = el('tbody');
+    t.appendChild(tb);
+    linhas.forEach(function (lin) {
+      var tr = el('tr');
+      var td1 = el('td');
+      td1.appendChild(el('span', 'cfg-chip', lin[0]));
+      var td2 = el('td', 'cfg-kact', lin[1]);
+      var td3 = el('td', 'cfg-ktut', lin[2]);
+      tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+      tb.appendChild(tr);
+    });
+    return t;
+  }
+  var fraseCtrlEnt = el('p', 'ent-aba-frase',
+    'Esquema fixo do computador — igual para todos. As teclas não se mudam aqui.');
+  paineisEnt.controles.appendChild(fraseCtrlEnt);
+  paineisEnt.controles.appendChild(tabelaTeclasEnt());
+  /* O contentor plano antigo sai: as linhas pintam-se por aba. */
+  linhasDef.remove();
+  /* Zona Conta — depois das abas, com divisória: nota do aparelho
+     no topo, título e os três botões com as visibilidades de sempre
+     (quem as pinta continua a ser pintarConfig). */
+  var contaEnt = el('div', 'ent-conta');
+  contaEnt.appendChild(notaAparelho);
+  contaEnt.appendChild(el('h3', 'ent-subtitulo', 'Conta guardada neste aparelho'));
+  contaEnt.appendChild(btnOutraConta);
+  contaEnt.appendChild(btnTrocar);
+  contaEnt.appendChild(btnEsquecer);
+  vistaConfig.appendChild(contaEnt);
+  activarAbaEnt('graficos');
+
   /* ---------- RESTAURAR O PADRÃO (sentença J4) ----------
    * Lista branca EXPLÍCITA, chave a chave — a mesma do ⚙ do jogo.
    * Proibido repor por prefixo, por enumeração do armazenamento ou
@@ -481,6 +603,24 @@
     somGeral = 100; somMusica = 100; somEfeitos = 100; somMudo = false;
     if (typeof aplicarVolumeTrilha === 'function') aplicarVolumeTrilha();
     pintarConfig();
+  });
+
+  /* Tecla O na entrada (SPEC §6.2): alterna a vista Configurações
+     pelo MESMO caminho dos botões — mostrar('config')/('botoes').
+     Âmbito: ignora foco em campos (a senha escreve-se sem sustos),
+     atalhos do navegador e repetições; só actua da vista de botões
+     ou da própria vista de configurações; depois do arranque do
+     jogo a vista sai do documento e esta tecla fica inerte (no
+     jogo manda o handler do ⚙). */
+  document.addEventListener('keydown', function (e) {
+    if (!vistaConfig.isConnected) return;
+    var alvo = e.target;
+    if (alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA' ||
+      alvo.tagName === 'SELECT' || alvo.isContentEditable)) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    if (e.key !== 'o' && e.key !== 'O') return;
+    if (!vistaConfig.hidden) { e.preventDefault(); mostrar('botoes'); }
+    else if (!vistaBotoes.hidden) { e.preventDefault(); mostrar('config'); }
   });
 
   /* ---------- SAIR DAS CONFIGURAÇÕES: apertar fora fecha ----------
@@ -523,15 +663,17 @@
     if (typeof aplicarVolumeTrilha === 'function') aplicarVolumeTrilha();
   }
   function pintarConfig() {
-    linhasDef.textContent = '';
-    var seccaoActual = null;
+    /* Abas (SPEC §3): cada definição pinta-se na SUA aba — as do som
+       (chaves hudt1-som-*) e a nota na aba Som; as outras na aba
+       Gráficos. O título de secção antigo fundiu-se nos títulos das
+       abas/grupos. */
+    linhasDefG.textContent = '';
+    linhasDefS.textContent = '';
     DEFINICOES.forEach(function (def) {
-      if (def.seccao && def.seccao !== seccaoActual) {
-        seccaoActual = def.seccao;
-        linhasDef.appendChild(el('h3', 'ent-subtitulo', def.seccao));
-      }
+      var destino = (def.tipo === 'nota' || (def.chave || '').indexOf('hudt1-som-') === 0)
+        ? linhasDefS : linhasDefG;
       if (def.tipo === 'nota') {
-        linhasDef.appendChild(el('p', 'ent-nota som-nota', def.texto));
+        destino.appendChild(el('p', 'ent-nota som-nota', def.texto));
         return;
       }
       var linha = el('div', 'cfgrow');
@@ -586,7 +728,7 @@
         });
         linha.appendChild(tog);
       }
-      linhasDef.appendChild(linha);
+      destino.appendChild(linha);
     });
     var p = perfilGuardado();
     var notas = [];
