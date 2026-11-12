@@ -8847,9 +8847,34 @@
      teoria ela não deveria tá vendo não?») — defeito medido e correcção
      custada em t-veu-suave/DEFEITO-CIRCULO-PEDRAS.md §6-A. As pedras e
      ruínas restantes continuam decoração fora do registo. Resíduo
-     declarado: a LOS V2 permissiva vaza 1 casa longe do miolo em
-     geometrias a olhar E (fechar esse resíduo é a opção C, por decidir). */
+     declarado: a LOS V2 permissiva vaza casas do miolo em algumas
+     geometrias — o vazamento continua a existir na calculadora, mas
+     a zona fechada (Opção C, logo abaixo) retira a casa que vaza do
+     campo de quem está fora, e tudo o resto do campo de quem está
+     dentro. */
   function visaoOpacos() { return [[4, 2], [5, 2], [4, 3], [5, 3]]; }
+  /* ZONA FECHADA DO CÍRCULO (Opção C — palavra do Mestre, 2026-11-11
+     15:15: «Se ela nunca tiver visto, é para ficar no escuro e não
+     mostrar»): o interior do círculo de pedras é zona fechada nos dois
+     sentidos — quem está fora nunca vê o miolo, de ângulo nenhum; quem
+     está dentro não vê para fora. A zona é a pegada medida do disco do
+     miolo (r < 1,35 m à volta do (0,0) do mundo): 6 casas, colunas
+     4–5 × filas 2–4 — porque o mapa de cena (cena.js) põe o (0,0) ao
+     centro da fila 3, não no canto das 4 casas do registo de opacos.
+     O registo de opacos fica o da REF_63 (4 casas); a zona é maior do
+     que ele pelas duas casas do miolo sul, (4,4) e (5,4). Mecanismo:
+     filtro puro sobre o campo calculado, depois de máscara + LOS e
+     antes da cache, chamado nos únicos três sítios onde o campo nasce
+     ou se lê (visaoCampo, visaoCampoOlho e o gancho de prova). Sem
+     estado novo: a zona é constante e o filtro só depende do campo e
+     da casa de quem olha. Desenho + bancada: t-zona-fechada-circulo. */
+  const VISAO_ZONA_FECHADA = new Set(['4,2', '5,2', '4,3', '5,3', '4,4', '5,4']);
+  function visaoZonaFiltrar(campo, x, y) {
+    const dentro = VISAO_ZONA_FECHADA.has(x + ',' + y);
+    const out = new Set();
+    for (const k of campo) if (VISAO_ZONA_FECHADA.has(k) === dentro) out.add(k);
+    return out;
+  }
   function visaoFrenteGraus(id) {
     const m = (view.getStats().models || []).find(m => m.id === id);
     return m ? m.frente : 0;
@@ -8875,7 +8900,8 @@
     const chaveCache = [ong.posicao.x, ong.posicao.y, olhar, modelo].join('|');
     if (visaoCache.has(chaveCache)) return visaoCache.get(chaveCache);
     const t0 = performance.now();
-    const s = window.Visao.campo(AREA.cols, AREA.rows, [ong.posicao.x, ong.posicao.y], olhar, visaoOpacos(), 'V2', modelo);
+    const bruto = window.Visao.campo(AREA.cols, AREA.rows, [ong.posicao.x, ong.posicao.y], olhar, visaoOpacos(), 'V2', modelo);
+    const s = visaoZonaFiltrar(bruto, ong.posicao.x, ong.posicao.y);
     visaoMs = performance.now() - t0;
     visaoCache.set(chaveCache, s);
     return s;
@@ -9187,7 +9213,7 @@
     const modelo = visaoModelo();
     const chaveCache = [x, y, olhar, modelo].join('|');
     if (visaoPrevCache.has(chaveCache)) return visaoPrevCache.get(chaveCache);
-    const s = window.Visao.campo(AREA.cols, AREA.rows, [x, y], olhar, visaoOpacos(), 'V2', modelo);
+    const s = visaoZonaFiltrar(window.Visao.campo(AREA.cols, AREA.rows, [x, y], olhar, visaoOpacos(), 'V2', modelo), x, y);
     visaoPrevCache.set(chaveCache, s);
     return s;
   }
@@ -9980,7 +10006,7 @@
       if (MODO_MESTRE || !window.Visao) return null;
       const ong = unidade(PROPRIA);
       if (!ong) return null;
-      return [...window.Visao.campo(AREA.cols, AREA.rows, [ong.posicao.x, ong.posicao.y], visaoOlharDerivado(), visaoOpacos(), 'V2', visaoModelo())];
+      return [...visaoZonaFiltrar(window.Visao.campo(AREA.cols, AREA.rows, [ong.posicao.x, ong.posicao.y], visaoOlharDerivado(), visaoOpacos(), 'V2', visaoModelo()), ong.posicao.x, ong.posicao.y)];
     },
     campoPrevia: () => {
       if (!MODO_MESTRE || !window.Visao) return null;
