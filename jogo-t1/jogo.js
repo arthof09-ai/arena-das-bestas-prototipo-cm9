@@ -6425,8 +6425,13 @@
                   : o.danoSofrido < FICHAS.ong.vida.total) return INV;
     if (!inteiro(o.paGasto) || o.paGasto < 0 || o.paGasto > FICHAS.ong.alma.total) return INV;
     if (typeof o.transformada !== 'boolean' || typeof o.atacou !== 'boolean') return INV;
+    /* RN-3: o tecto é o DOBRO do deslocamento — o Correr dobra
+       os 9 m da ficha (18 m), como o invariante do Supervisor
+       (2 * DESLOCAMENTO_ONG_M). A escala (CASA_M) NÃO entra:
+       ela muda o preço da casa, nunca os metros da reserva —
+       medido às escalas 1/1,5/2: o Correr emite sempre 18. */
     if (!finito(o.reservaMovimento) || o.reservaMovimento < 0
-      || o.reservaMovimento > DESLOCAMENTO_ONG_M + 1e-9) return INV;
+      || o.reservaMovimento > 2 * DESLOCAMENTO_ONG_M + 1e-9) return INV;
     /* VOLTA 2 (S-CONF-03): a reserva anda casa a casa — tem de ser
        MÚLTIPLO do preço da casa (tolerância 1e-9); 7,3 é inválido.
        Tranche ESCALA: com o campo 'escala' presente, a reserva pode
