@@ -201,10 +201,23 @@
              * traço 0,016 m (cheio até 0,005 m) · queda 17 m/s. */
             const CHUVA_TRACO_INCLINACAO = .16;
             const CHUVA_TRACO_LARGURA = .016;
+            /* AMBIENTE VIVO - PASSO 1 (desenho FASE 2, SS1-SS3): escala
+             * ortografica dos sprites. A formula antiga pressupunha
+             * perspectiva e colapsava o sprite ao minimo de 2 px nas
+             * camaras ortograficas (Fixa/360/Seguir). Ramo uOrto:
+             * ortografica = pixeis-por-metro (uAlturaPx/uFrustumAltM);
+             * perspectiva (Livre) = a formula antiga, que la esta certa.
+             * uAlturaPx/uFrustumAltM/uOrto escritos POR FOTOGRAMA em
+             * ambQuadro (pos-updateProjectionMatrix, pre-render); os
+             * valores nos uniformes sao so o pre-1o fotograma. Clamps
+             * fechados: chuva [2,512] - neve [2,256]. As brasas do fogo
+             * e do ritual NAO sao tocadas (desenho SS1.5). */
+            const DIR_VENTO = { x: .94, z: .34 };   // direccao unica do mundo (chuva e neve), SS2.1/SS3
+            const CHUVA_VENTO_M = [0, 2.0, 3.0];    // vento da chuva, m/s por nivel [Sem, Fraca, Forte], SS2.1
             const chuvaMat = new T.ShaderMaterial({
-                uniforms: { uTempo: { value: 0 }, uComp: { value: .58 }, uAlturaPx: { value: 800 }, uInclinacao: { value: CHUVA_TRACO_INCLINACAO }, uLargura: { value: CHUVA_TRACO_LARGURA }, uOpacidade: { value: 0 } },
-                vertexShader: 'uniform float uTempo; uniform float uComp; uniform float uAlturaPx; varying float vComp; void main() { vec3 p = position; p.y = mod(p.y - uTempo * 17.0, 30.0); vec4 mv = modelViewMatrix * vec4(p, 1.0); float dist = max(0.1, -mv.z); float escala = uAlturaPx * 0.5 * projectionMatrix[1][1] / dist; vComp = uComp; gl_PointSize = clamp(uComp * 1.30 * escala, 2.0, 900.0); gl_Position = projectionMatrix * mv; }',
-                fragmentShader: 'uniform float uOpacidade; uniform float uInclinacao; uniform float uLargura; varying float vComp; void main() { float S = vComp * 1.30; vec2 pm = (gl_PointCoord - vec2(0.5)) * S; vec2 dir = normalize(vec2(uInclinacao, 1.0)); vec2 nrm = vec2(dir.y, -dir.x); float d = abs(dot(pm, nrm)); float s = dot(pm, dir); float lat = smoothstep(uLargura, uLargura * 0.31, d); float lon = smoothstep(vComp * 0.52, vComp * 0.40, abs(s)); float a = lat * lon * uOpacidade; if (a < 0.012) discard; gl_FragColor = vec4(0.78, 0.85, 0.92, a); }',
+                uniforms: { uTempo: { value: 0 }, uComp: { value: .58 }, uAlturaPx: { value: 800 }, uFrustumAltM: { value: 10 }, uOrto: { value: 1 }, uVento: { value: new T.Vector2(0, 0) }, uInclinacao: { value: CHUVA_TRACO_INCLINACAO }, uLargura: { value: CHUVA_TRACO_LARGURA }, uOpacidade: { value: 0 } },
+                vertexShader: 'uniform float uTempo; uniform float uComp; uniform float uAlturaPx; uniform float uFrustumAltM; uniform float uOrto; uniform vec2 uVento; varying float vComp; varying vec2 vDirTraco; void main() { vec3 p = position; p.x = mod(p.x + uTempo * uVento.x + 46.0, 92.0) - 46.0; p.z = mod(p.z + uTempo * uVento.y + 46.0, 92.0) - 46.0; p.y = mod(p.y - uTempo * 17.0, 30.0); vec4 mv = modelViewMatrix * vec4(p, 1.0); float dist = max(0.1, -mv.z); float escala = (uOrto > 0.5) ? uAlturaPx / max(0.1, uFrustumAltM) : uAlturaPx * 0.5 * projectionMatrix[1][1] / dist; vComp = uComp; vec4 pv = projectionMatrix * modelViewMatrix * vec4(vec3(uVento.x, -17.0, uVento.y), 0.0); vec2 dirE = vec2(pv.x, -pv.y); float ld = length(dirE); vDirTraco = ld > 0.0001 ? dirE / ld : vec2(0.0, 1.0); gl_PointSize = clamp(uComp * 1.30 * escala, 2.0, 512.0); gl_Position = projectionMatrix * mv; }',
+                fragmentShader: 'uniform float uOpacidade; uniform float uInclinacao; uniform float uLargura; varying float vComp; varying vec2 vDirTraco; void main() { float S = vComp * 1.30; vec2 pm = (gl_PointCoord - vec2(0.5)) * S; vec2 dir = normalize(vDirTraco); if (dir.y < 0.0) dir = -dir; float sgn = dir.x < 0.0 ? -1.0 : 1.0; float rot = -uInclinacao * sgn; float cr = cos(rot); float sr = sin(rot); dir = vec2(cr * dir.x - sr * dir.y, sr * dir.x + cr * dir.y); vec2 nrm = vec2(dir.y, -dir.x); float d = abs(dot(pm, nrm)); float s = dot(pm, dir); float lat = smoothstep(uLargura, uLargura * 0.31, d); float lon = smoothstep(vComp * 0.52, vComp * 0.40, abs(s)); float a = lat * lon * uOpacidade; if (a < 0.012) discard; gl_FragColor = vec4(0.78, 0.85, 0.92, a); }',
                 transparent: true, depthWrite: false
             });
             const chuvaPts = new T.Points(chuvaGeo, chuvaMat);
@@ -226,14 +239,21 @@
              * menos pontos que a chuva. Nunca visível ao mesmo
              * tempo que a chuva: ambEscrever acende um sistema ou
              * o outro, conforme o tipo (ambActual.precip). */
-            const NEVE_CONT = [0, 800, 2000];
-            const NEVE_OPACIDADE = [0, .55, .92];
+            const NEVE_MAX = 3000;   // buffer proprio da neve, desacoplado de CHUVA_MAX (SS3.5). INVARIANTE: qualquer tabela de contagens da neve <= NEVE_MAX e a da chuva <= CHUVA_MAX - exceder corta o drawRange em silencio.
+            const NEVE_CONT = [0, 2000, 3000];        // qualidade alta [Sem, Fraca, Forte], SS3.3 - Fraca := a Forte antiga (2000/.92/.075/1,3), SS3.1
+            const NEVE_CONT_MEDIA = [0, 1200, 2000];  // qualidade media, SS3.3
+            const NEVE_CONT_BAIXA = [0, 800, 1200];   // qualidade baixa, SS3.3 (a neve ganha a variante por qualidade)
+            const NEVE_TAM = [.075, .075, .10];       // uTam por nivel: Fraca .075 - Forte (nevasca) .10, SS3.1/SS3.2
+            const NEVE_QUEDA = [1.3, 1.3, 1.5];       // queda m/s por nivel: Fraca 1,3 - nevasca 1,5, SS3.2
+            const NEVE_VENTO_M = [0, 1.0, 5.0];       // vento coerente m/s por nivel: Fraca 1,0 - nevasca 5,0 medios com rajadas em ambQuadro, SS3.1/SS3.2
+            const NEVOA_EXTRA_MAX = .012;             // nevoa de tempo contida da nevasca: adicao maxima de densidade, SS3.4
+            const NEVE_OPACIDADE = [0, .92, .95];     // Fraca := .92 (a Forte antiga) - nevasca .95, SS3.1/SS3.2
             const neveGeo = new T.BufferGeometry();
             {
-                const pos = new Float32Array(CHUVA_MAX * 3);
+                const pos = new Float32Array(NEVE_MAX * 3);
                 let s = 41713;
                 const rr = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
-                for (let i = 0; i < CHUVA_MAX; i++) {
+                for (let i = 0; i < NEVE_MAX; i++) {
                     const r = Math.sqrt(rr()) * 46, a = rr() * Math.PI * 2;
                     pos[i * 3] = Math.cos(a) * r; pos[i * 3 + 1] = rr() * 30; pos[i * 3 + 2] = Math.sin(a) * r;
                 }
@@ -241,9 +261,9 @@
                 neveGeo.setDrawRange(0, 0);
             }
             const neveMat = new T.ShaderMaterial({
-                uniforms: { uTempo: { value: 0 }, uAlturaPx: { value: 800 }, uOpacidade: { value: 0 }, uTam: { value: .075 } },
-                vertexShader: 'uniform float uTempo; uniform float uAlturaPx; uniform float uTam; varying float vFase; void main() { vec3 p = position; p.y = mod(p.y - uTempo * 1.30, 30.0); p.x += sin(uTempo * 0.45 + position.y * 0.31 + position.x * 0.17) * 0.9; p.z += cos(uTempo * 0.36 + position.y * 0.23 + position.z * 0.19) * 0.7; vec4 mv = modelViewMatrix * vec4(p, 1.0); float dist = max(0.1, -mv.z); float escala = uAlturaPx * 0.5 * projectionMatrix[1][1] / dist; vFase = fract(position.x * 12.9898 + position.z * 78.233); gl_PointSize = clamp(uTam * (1.4 + vFase * 0.9) * escala, 2.0, 64.0); gl_Position = projectionMatrix * mv; }',
-                fragmentShader: 'uniform float uOpacidade; void main() { vec2 c = gl_PointCoord - vec2(0.5); float d = length(c); float a = smoothstep(0.5, 0.06, d) * uOpacidade; if (a < 0.012) discard; gl_FragColor = vec4(0.93, 0.96, 1.0, a); }',
+                uniforms: { uTempo: { value: 0 }, uAlturaPx: { value: 800 }, uFrustumAltM: { value: 10 }, uOrto: { value: 1 }, uOpacidade: { value: 0 }, uTam: { value: .075 }, uQueda: { value: 1.3 }, uVento: { value: new T.Vector2(0, 0) } },
+                vertexShader: 'uniform float uTempo; uniform float uAlturaPx; uniform float uFrustumAltM; uniform float uOrto; uniform float uTam; uniform float uQueda; uniform vec2 uVento; varying float vFase; varying vec2 vDirTraco; varying float vEstica; void main() { vec3 p = position; p.x = mod(p.x + uTempo * uVento.x + 46.0, 92.0) - 46.0; p.z = mod(p.z + uTempo * uVento.y + 46.0, 92.0) - 46.0; p.y = mod(p.y - uTempo * uQueda, 30.0); p.x += sin(uTempo * 0.45 + position.y * 0.31 + position.x * 0.17) * 0.9; p.z += cos(uTempo * 0.36 + position.y * 0.23 + position.z * 0.19) * 0.7; vec4 mv = modelViewMatrix * vec4(p, 1.0); float dist = max(0.1, -mv.z); float escala = (uOrto > 0.5) ? uAlturaPx / max(0.1, uFrustumAltM) : uAlturaPx * 0.5 * projectionMatrix[1][1] / dist; vFase = fract(position.x * 12.9898 + position.z * 78.233); vec4 pv = projectionMatrix * modelViewMatrix * vec4(vec3(uVento.x, -uQueda, uVento.y), 0.0); vec2 dirE = vec2(pv.x, -pv.y); float ld = length(dirE); vDirTraco = ld > 0.0001 ? dirE / ld : vec2(0.0, 1.0); float vh = length(uVento); vEstica = vh > 3.0 ? clamp(1.0 + 0.3 * (vh - 3.0), 1.0, 2.2) : 1.0; gl_PointSize = clamp(uTam * (1.4 + vFase * 0.9) * escala, 2.0, 256.0); gl_Position = projectionMatrix * mv; }',
+                fragmentShader: 'uniform float uOpacidade; varying vec2 vDirTraco; varying float vEstica; void main() { vec2 c = gl_PointCoord - vec2(0.5); vec2 dir = normalize(vDirTraco); vec2 nrm = vec2(dir.y, -dir.x); float d = length(vec2(dot(c, dir) / max(1.0, vEstica), dot(c, nrm))); float a = smoothstep(0.5, 0.06, d) * uOpacidade; if (a < 0.012) discard; gl_FragColor = vec4(0.93, 0.96, 1.0, a); }',
                 transparent: true, depthWrite: false
             });
             const nevePts = new T.Points(neveGeo, neveMat);
@@ -253,6 +273,7 @@
             let ambActual = { hora: 23, chuva: 0, precip: 'chuva' };
             let ambTrans = null, ambPulsoT0 = -1, ambUltimoRaio = -1e9, ambCapChuva = null;
             let ambDerivados = null, ambUltimaAmostra = null, ambUltimoHor = null;
+            let ambNomGotas = 0, ambNomFlocos = 0, ambNevoaExtra = 0;   // nominais de ambEscrever (a rede de area/quadro le estes) + nevoa contida corrente, SS3.4
             const ambDeltaHora = (de, para) => ((para - de + 36) % 24) - 12;
             function ambEscrever(amostra, cf, pulsoE) {
                 const cinz = ambNivel(AMB_CHUVA.cinzento, cf);
@@ -294,15 +315,21 @@
                 chuvaPts.visible = gotas > 0;
                 chuvaMat.uniforms.uOpacidade.value = ambNivel(AMB_CHUVA.opacidade, cf);
                 chuvaMat.uniforms.uComp.value = quality === 'baixa' ? .42 : quality === 'media' ? .50 : .58;
+                { const vm = deNeve ? 0 : ambNivel(CHUVA_VENTO_M, cf); chuvaMat.uniforms.uVento.value.set(DIR_VENTO.x * vm, DIR_VENTO.z * vm); }
                 chuvaMat.uniforms.uAlturaPx.value = renderer.domElement.height || 800;
-                let flocos = deNeve ? Math.round(ambNivel(NEVE_CONT, cf)) : 0;
+                const tabelaNeve = quality === 'baixa' ? NEVE_CONT_BAIXA : quality === 'media' ? NEVE_CONT_MEDIA : NEVE_CONT;
+                let flocos = deNeve ? Math.round(ambNivel(tabelaNeve, cf)) : 0;
                 if (ambCapChuva != null) flocos = Math.min(flocos, ambCapChuva);
                 neveGeo.setDrawRange(0, flocos);
                 nevePts.visible = flocos > 0;
                 neveMat.uniforms.uOpacidade.value = ambNivel(NEVE_OPACIDADE, cf);
                 neveMat.uniforms.uAlturaPx.value = renderer.domElement.height || 800;
+                neveMat.uniforms.uTam.value = ambNivel(NEVE_TAM, cf);
+                neveMat.uniforms.uQueda.value = ambNivel(NEVE_QUEDA, cf);
+                { const vm = deNeve ? ambNivel(NEVE_VENTO_M, cf) : 0; neveMat.uniforms.uVento.value.set(DIR_VENTO.x * vm, DIR_VENTO.z * vm); }
+                ambNomGotas = gotas; ambNomFlocos = flocos;
                 if (world.ground && world.ground.material && world.ground.material.color) world.ground.material.color.setScalar(ambNivel(AMB_CHUVA.molhado, cf));
-                ambDerivados = { exposicao: amostra.exp, hemiInt: amostra.hemiInt, solInt: amostra.solInt, fogueiraBase: amostra.fogueira, tochasBase: world.ambienteBases.tochas, chamas: amostra.chamas, gotas };
+                ambDerivados = { exposicao: amostra.exp, hemiInt: amostra.hemiInt, solInt: amostra.solInt, fogueiraBase: amostra.fogueira, tochasBase: world.ambienteBases.tochas, chamas: amostra.chamas, gotas, flocos, nevoaExtra: ambNevoaExtra };
                 ambUltimaAmostra = amostra; ambUltimoHor = horFinal;
             }
             function ambAplicarPulso(e) {
@@ -340,6 +367,50 @@
                 ambActual.precip = ambAlvo.precip;
                 ambTrans = { deHora: ambActual.hora, deChuva: ambActual.chuva, t0: performance.now() };
                 return { ...ambAlvo };
+            }
+            /* Escrita POR FOTOGRAMA (SS1.2): escala, vento com rajadas
+             * e nevoa contida. Chamada em animate depois de
+             * updateProjectionMatrix e antes do render - nesse ponto
+             * top-bottom ja desconta o hudShift (subtrai igual aos
+             * dois e cancela). uAlturaPx = renderer.domElement.height
+             * (pixeis do drawing buffer, DPR-correcto), nunca a
+             * variavel CSS. A VERDADE DA DEGRADACAO (SS4): a escada
+             * vigente (jogo.js) capa a precipitacao 1200-400-0 com
+             * FPS <24 sustentado, so desce por sessao e e cega ao
+             * tipo; este desenho NAO a muda - a neve degrada com
+             * graca porque os flocos ficam ao tamanho certo. */
+            function ambQuadro(now, dt) {
+                const cam = camaraActiva(), orto = mode !== 'livre';
+                const alturaPx = renderer.domElement.height || 800;
+                const frustumAlt = orto ? Math.max(0.1, cam.top - cam.bottom) : 1;
+                for (const m of [chuvaMat, neveMat]) {
+                    m.uniforms.uAlturaPx.value = alturaPx;
+                    m.uniforms.uFrustumAltM.value = frustumAlt;
+                    m.uniforms.uOrto.value = orto ? 1 : 0;
+                }
+                const t = now / 1000, cf = ambActual.chuva, deNeve = ambActual.precip === 'neve';
+                const vmC = deNeve ? 0 : ambNivel(CHUVA_VENTO_M, cf);
+                chuvaMat.uniforms.uVento.value.set(DIR_VENTO.x * vmC, DIR_VENTO.z * vmC);
+                let vmN = deNeve ? ambNivel(NEVE_VENTO_M, cf) : 0;
+                if (deNeve && cf > 1) {
+                    const g = clamp(1 + 0.28 * Math.sin(2 * Math.PI * t / 3.7) + 0.12 * Math.sin(2 * Math.PI * t / 2.3 + 1.7), 0.6, 1.4);
+                    vmN *= 1 + (g - 1) * Math.min(1, cf - 1);   // rajadas 3-7 m/s a Forte cheia (5,0 x 0,6-1,4), SS3.2
+                }
+                neveMat.uniforms.uVento.value.set(DIR_VENTO.x * vmN, DIR_VENTO.z * vmN);
+                neveMat.uniforms.uQueda.value = ambNivel(NEVE_QUEDA, cf);
+                /* Nevoa contida (SS3.4): alvo proporcional a intensidade
+                 * interpolada da neve Forte; subida/descida ~4 s; snap
+                 * literal a 0,0 quando a neve e 0. A adicao vive so
+                 * durante o render (em animate) e a ancora e restaurada
+                 * bit-exacta - cor do fog e luzes nunca sao reescritas
+                 * por esta tranche. Clausula de morte na SS3.4. */
+                const alvoNevoa = deNeve ? NEVOA_EXTRA_MAX * clamp(cf - 1, 0, 1) : 0;
+                if (dt > 0) {
+                    const passo = NEVOA_EXTRA_MAX * dt / 4;
+                    ambNevoaExtra += clamp(alvoNevoa - ambNevoaExtra, -passo, passo);
+                    if (alvoNevoa === 0 && ambNevoaExtra < 0.00005) ambNevoaExtra = 0;
+                }
+                if (ambDerivados) ambDerivados.nevoaExtra = ambNevoaExtra;
             }
             function ambTick(now) {
                 chuvaMat.uniforms.uTempo.value = now / 1000;
@@ -744,12 +815,23 @@
                     transparent: true, blending: T.AdditiveBlending, depthWrite: false, side: T.FrontSide, fog: false
                 });
             }
+            /* TRANCHE BRASAS (R2 da Ambiente Vivo, 11/11): a escala
+             * das brasas tinha a mesma doença da chuva/neve — a
+             * fórmula de `esc` pressupunha perspectiva e a câmera de
+             * jogo é ortográfica, por isso TODAS as brasas viviam
+             * colapsadas no mínimo de 1,2 px. Ramo uOrto (a lei da §1
+             * do desenho da mãe): ortográfica → px/m do frustum
+             * (uAlturaPx/uFrustumAltM); perspectiva (Livre) → a
+             * fórmula antiga, que lá está certa. Os uniformes novos
+             * escreve-os fogoTremular por fotograma, de
+             * camaraActiva(). Só o TAMANHO muda: contagem, ciclo,
+             * cores, tremulação e estágios ficam os aprovados. */
             function fogoMatBrasas(semente, altura) {
                 return new T.ShaderMaterial({
-                    uniforms: { uTempo: { value: 0 }, uEnv: { value: 0 }, uAltura: { value: altura }, uAlturaPx: { value: 800 }, uTamM: { value: .05 } },
+                    uniforms: { uTempo: { value: 0 }, uEnv: { value: 0 }, uAltura: { value: altura }, uAlturaPx: { value: 800 }, uTamM: { value: .05 }, uFrustumAltM: { value: 9 }, uOrto: { value: 1 } },
                     vertexShader: [
                         'attribute float aSemente;',
-                        'uniform float uTempo; uniform float uAltura; uniform float uAlturaPx; uniform float uTamM;',
+                        'uniform float uTempo; uniform float uAltura; uniform float uAlturaPx; uniform float uTamM; uniform float uFrustumAltM; uniform float uOrto;',
                         'varying float vCiclo; varying float vSem;',
                         'void main() { vSem = aSemente;',
                         '  float vel = 0.10 + fract(aSemente * 7.13) * 0.11;',
@@ -763,7 +845,7 @@
                         '  p.z += cos(uTempo * 1.6 + aSemente * 31.9 + p.y * 1.1) * 0.05 * (0.4 + ciclo);',
                         '  vec4 mv = modelViewMatrix * vec4(p, 1.0);',
                         '  float dist = max(0.1, -mv.z);',
-                        '  float esc = uAlturaPx * 0.5 * projectionMatrix[1][1] / dist;',
+                        '  float esc = (uOrto > 0.5) ? uAlturaPx / max(0.1, uFrustumAltM) : uAlturaPx * 0.5 * projectionMatrix[1][1] / dist;',
                         '  gl_PointSize = clamp(uTamM * (0.7 + fract(aSemente * 3.31) * 0.8) * (1.0 - ciclo * 0.45) * esc, 1.2, 42.0);',
                         '  gl_Position = projectionMatrix * mv; }'
                     ].join('\n'),
@@ -895,6 +977,9 @@
                     f.brasasMat.uniforms.uTempo.value = ts;
                     f.brasasMat.uniforms.uEnv.value = env;
                     f.brasasMat.uniforms.uAlturaPx.value = renderer.domElement.height || 800;
+                    const camB = camaraActiva();
+                    f.brasasMat.uniforms.uOrto.value = camB.isOrthographicCamera ? 1 : 0;
+                    f.brasasMat.uniforms.uFrustumAltM.value = camB.isOrthographicCamera ? (camB.top - camB.bottom) : 1;
                 }
                 if (f.luz) {
                     const tr = ruidoJS(ts * 2.3 + f.semente) * .62 + ruidoJS(ts * 6.3 + f.semente * 1.7) * .38;
@@ -1603,7 +1688,10 @@
                 scene.fog.far = distance + 240;
                 }
                 ambTick(now);
-                renderer.render(scene, camaraActiva());
+                ambQuadro(now, dt);
+                let ambFogD0 = null;
+                if (ambNevoaExtra > 0 && scene.fog && typeof scene.fog.density === 'number') { ambFogD0 = scene.fog.density; scene.fog.density = ambFogD0 + ambNevoaExtra; }
+                try { renderer.render(scene, camaraActiva()); } finally { if (ambFogD0 !== null) scene.fog.density = ambFogD0; }
                 const boxes = [];
                 const bodies = [...units.values()].filter(u => !u.oculto).map(u => unitRect(u)).filter(Boolean);
                 for (const u of [...units.values()].sort((a, b) => (b.id === selected) - (a.id === selected))) {
