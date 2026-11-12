@@ -2809,6 +2809,7 @@
       acoesEl.innerHTML = B('continuar', '', 'Continuar ▸', 'primary');
     }
     sincronizarCartaoDesgraca();
+    atualizarContadorVD();   // C-VD: a caixa segue cada mudança de estado
   }
   function atualizarVez() {
     // O indicador é o que já existe à esquerda da faixa: pinta de quem
@@ -3687,6 +3688,7 @@
        (dano, restauro/cura, transformação, arranque), nos dois
        sentidos. */
     aplicarTelaVermelha();
+    atualizarContadorVD();   // C-VD: a vida dela muda o «fraca» da caixa
   }
   /* Fim de batalha (§1.7): DOIS terminais adjudicados — a queda
      dela (morte/estabilização/queda, como sempre) e, desde o
@@ -3774,6 +3776,7 @@
      Modo automático chamam a MESMA função — o pipeline legal é um
      só; o automático não duplica resolução nenhuma. */
   async function tratarAcao(acao) {
+    fecharPainelVd();   // C-VD (§5.1): ela age — o painel da caixa fecha
     if (!campoPronto) {
       if (acao === 'tentar-modelos' && falhaArranque && !falhaDefinitiva) location.reload();
       else say('');
@@ -4321,8 +4324,9 @@
       ${corpo}`;
     fichaEl.hidden = false;
     chipEl.hidden = true;
+    atualizarContadorVD();   // C-VD: a caixa nasce e morre com a plaquinha
   }
-  function fecharFicha() { fichaAberta = null; fichaEl.hidden = true; chipEl.hidden = false; }
+  function fecharFicha() { fichaAberta = null; fichaEl.hidden = true; chipEl.hidden = false; atualizarContadorVD(); }
   fichaEl.addEventListener('click', e => {
     if (e.target.closest('[data-fechar]')) fecharFicha();
     else if (e.target.closest('[data-declarar-defender]')) {
@@ -5244,6 +5248,215 @@
     ambAudioSincronizarChuva();
     say('Configurações repostas no <b>padrão</b> — neste aparelho.');
   });
+
+  /* ---------- Contador de Vantagem/Desvantagem (tranche C-VD) ----------
+   * A caixa da Ong (desenho DESENHO-CONTADOR-VD-v2, adoptado com as
+   * emendas EM-VD-01…19): colada ao lado direito da plaquinha dela,
+   * a palavra do estado (NEUTRO / VANTAGEM / DESVANTAGEM) e o número
+   * de níveis; ao toque (ou com o cursor por cima), o painel explica
+   * o porquê, fonte a fonte. A conta é a do motor: as fontes de
+   * estado lêem-se por derivação pura dos mesmos sítios onde o
+   * adaptador as vai buscar (vlabEstadosDe + desvantagemAtaque) —
+   * o adaptador NÃO se chama em prévia, porque chamar
+   * vlabResolverAtaqueCompleto rola dados, consome a reacção do
+   * alvo e limpa armaCaida (bancada prévia desta tranche; a
+   * excepção à conta única de §7.1 fica lavrada como dívida: no dia
+   * em que houver uma leitura pura da conta, a caixa passa a ela).
+   * Fontes posicionais NÃO entram hoje: o flanco dela e o livro do
+   * tiro não estão fiados na conta dela (o adaptador só fia o
+   * flanco contra ela) — uma caixa que mostrasse o que o recibo não
+   * aplica mentia (período intermédio de §4.4). A caixa mostra a
+   * aritmética inteira, sem tecto (EM-VD-18); a linha «a rolagem
+   * usa 4, o máximo» NÃO se constrói enquanto a P-VD-1 não for
+   * respondida (sentença da bancada prévia desta tranche).
+   * Privacidade: a caixa só lê a PROPRIA — nenhum número de outra
+   * figura é lido nem mostrado, em nenhum modo. A caixa nasce e
+   * morre com a plaquinha (espelha chipEl.hidden). */
+  var vdMontado = false;   // os ganchos anteriores a esta secção lêem-no desarmado
+  let contadorVdLigado = true;
+  try { contadorVdLigado = localStorage.getItem('hudt1-contador-vantagem') !== 'desligado'; } catch (_) {}
+
+  const caixaVd = document.createElement('button');
+  caixaVd.type = 'button';
+  caixaVd.id = 'contadorvd';
+  caixaVd.setAttribute('aria-label', 'Vantagem e Desvantagem da Ong — aperte para ver o porquê');
+  const caixaVdPalavra = document.createElement('span');
+  caixaVdPalavra.className = 'cvd-palavra';
+  const caixaVdNum = document.createElement('span');
+  caixaVdNum.className = 'cvd-num';
+  caixaVd.appendChild(caixaVdPalavra);
+  caixaVd.appendChild(caixaVdNum);
+  document.body.appendChild(caixaVd);   // depois do chip no DOM (guarda de camada: z 20)
+
+  const painelVd = document.createElement('div');
+  painelVd.id = 'cvd-painel';
+  painelVd.hidden = true;
+  document.body.appendChild(painelVd);
+
+  /* As fontes de estado DELA, com os nomes do mundo. O nome da
+     quebra corporal é o da frase que a jogadora já vê quando ela
+     acontece («quebrou algo no corpo» — bancada prévia, Q6). */
+  function vdFontesEstado() {
+    const fontes = [];
+    const estados = vlabEstadosDe(PROPRIA);
+    if (estados.includes('caido')) fontes.push({ nome: 'caída', niveis: 1, lado: 'D' });
+    if (estados.includes('fraco')) fontes.push({ nome: 'fraca', niveis: 1, lado: 'D' });
+    const n = ESTADO_VLAB.ong ? (ESTADO_VLAB.ong.desvantagemAtaque | 0) : 0;
+    if (n > 0) fontes.push({ nome: 'quebrou algo no corpo', niveis: n, lado: 'D' });
+    return fontes;
+  }
+  function vdConta() {
+    const fontes = vdFontesEstado();
+    let v = 0, d = 0;
+    for (const f of fontes) { if (f.lado === 'V') v += f.niveis; else d += f.niveis; }
+    const bruto = v - d;
+    return { fontes, v, d, bruto,
+      palavra: bruto > 0 ? 'VANTAGEM' : bruto < 0 ? 'DESVANTAGEM' : 'NEUTRO',
+      numero: Math.abs(bruto) };
+  }
+  /* Declaração = a gaveta do ataque aberta contra um alvo marcado,
+     ou a rolagem do Chicote já rolada e por confirmar; o resto é
+     repouso. (Hoje os dois modos lêem as mesmas fontes de estado —
+     as posicionais ainda não estão na conta dela.) */
+  function vdModo() {
+    if (estado === 'rolagem' && ataquePendente && ataquePendente.tipo === 'chicote') return 'declaracao';
+    if (estado === 'atacar' && alvo && alvo !== PROPRIA) {
+      const u = unidade(alvo);
+      if (u && u.vivo !== false) return 'declaracao';
+    }
+    return 'repouso';
+  }
+  function vdTextoPainel(conta, modo) {
+    const cor = conta.bruto > 0 ? 'vd-vantagem' : conta.bruto < 0 ? 'vd-desvantagem' : '';
+    let html = `<div class="cvd-titulo ${cor}">${conta.palavra} ${conta.numero}</div>`;
+    for (const f of conta.fontes)
+      html += `<div class="cvd-linha">— ${f.nome} · ${f.lado === 'V' ? 'Vantagem' : 'Desvantagem'} ${f.niveis}</div>`;
+    if (conta.v > 0 && conta.d > 0) {
+      const anula = Math.min(conta.v, conta.d);
+      html += `<div class="cvd-linha">— a Vantagem ${conta.v} anula ${anula} da Desvantagem ${conta.d}</div>`;
+    }
+    if (modo === 'repouso')
+      html += '<div class="cvd-linha">O flanco e o que estiver no caminho contam quando escolheres um alvo.</div>';
+    html += `<div class="cvd-linha">— Fica: <b class="${cor}">${conta.palavra} ${conta.numero}</b></div>`;
+    return html;
+  }
+  /* O painel tem dois donos de abertura (§5.1): o cursor por cima
+     (transitório) e o toque (fixado). Sem esta separação, o toque
+     num ecrã táctil — que dispara a entrada do cursor antes do
+     clique — abriria e fecharia no mesmo gesto. */
+  let vdHover = false, vdFixado = false;
+  function fecharPainelVd() {
+    if (!vdMontado) return;
+    vdHover = false; vdFixado = false;
+    painelVd.hidden = true;
+  }
+  function abrirPainelVd() {
+    if (!vdMontado || caixaVd.hidden) return;
+    painelVd.innerHTML = vdTextoPainel(vdConta(), vdModo());
+    painelVd.hidden = false;
+    try {
+      const r = caixaVd.getBoundingClientRect();
+      const largura = Math.min(280, window.innerWidth - 20);
+      let left = r.left;
+      if (left + largura > window.innerWidth - 10) left = window.innerWidth - 10 - largura;
+      if (left < 10) left = 10;
+      painelVd.style.left = left + 'px';
+      painelVd.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+      /* Nunca cruza a linha do meio do ecrã (EM-VD-12): o que não
+         couber rola dentro do painel. */
+      painelVd.style.maxHeight = Math.max(90, (r.top - 8) - window.innerHeight / 2) + 'px';
+    } catch (_) {}
+  }
+  let vdUltimo = null;   // { modo, vezKey, chave } — realce e fechos do painel
+  function atualizarContadorVD() {
+    if (!vdMontado) return;
+    const vezKey = rodada + ':' + indiceVez;
+    const modo = vdModo();
+    /* Fechos do painel (§5.1): a vez muda, o modo muda, ou entra o
+       cartão da desgraça (guarda da bancada) — o painel nunca fica
+       a explicar uma conta velha. */
+    if (vdUltimo && (vdUltimo.vezKey !== vezKey || vdUltimo.modo !== modo || estado === 'desgraca-lista'))
+      fecharPainelVd();
+    caixaVd.hidden = !contadorVdLigado || !!chipEl.hidden;
+    if (caixaVd.hidden) { fecharPainelVd(); vdUltimo = { modo, vezKey, chave: null }; return; }
+    const conta = vdConta();
+    const chave = conta.palavra + ' ' + conta.numero;
+    caixaVdPalavra.textContent = conta.palavra;
+    caixaVdNum.textContent = String(conta.numero);
+    caixaVd.classList.toggle('vd-vantagem', conta.bruto > 0);
+    caixaVd.classList.toggle('vd-desvantagem', conta.bruto < 0);
+    if (vdUltimo && vdUltimo.chave !== null && vdUltimo.chave !== chave) {
+      caixaVd.classList.remove('cvd-pulso');
+      void caixaVd.offsetWidth;   // reinicia a animação do realce breve (§1.5)
+      caixaVd.classList.add('cvd-pulso');
+    }
+    if (!painelVd.hidden) painelVd.innerHTML = vdTextoPainel(conta, modo);
+    vdUltimo = { modo, vezKey, chave };
+  }
+  /* Rato e toque têm leis diferentes (§5.1): o rato manda pelo
+     cursor (entra abre, sai fecha; o clique do rato não fixa
+     nada); o toque manda pelo toque (toca abre, toca fecha).
+     Num toque, o navegador dispara uma «entrada do cursor» e um
+     clique sintéticos: duas bandeiras de uso único marcam a
+     origem para esses dois serem lidos como toque, nunca como
+     rato — sem depender de relógios. */
+  let vdHoverSintetico = false, vdOrigemClique = '';
+  caixaVd.addEventListener('pointerdown', e => {
+    if (!e) return;
+    if (e.pointerType === 'touch') { vdHoverSintetico = true; vdOrigemClique = 'toque'; }
+    else if (e.pointerType === 'mouse') vdOrigemClique = 'rato';
+  });
+  caixaVd.addEventListener('mouseenter', () => {
+    if (vdHoverSintetico) { vdHoverSintetico = false; return; }
+    vdHover = true; abrirPainelVd();
+  });
+  caixaVd.addEventListener('mouseleave', () => { vdHover = false; if (!vdFixado) painelVd.hidden = true; });
+  caixaVd.addEventListener('click', () => {
+    const origem = vdOrigemClique; vdOrigemClique = '';
+    if (origem === 'rato') return; /* clique de rato: quem manda é o cursor */
+    /* toque — ou clique sem pressão (teclado/leitor de ecrã): alterna */
+    vdFixado = !vdFixado;
+    if (vdFixado) abrirPainelVd();
+    else if (!vdHover) painelVd.hidden = true;
+  });
+  document.addEventListener('pointerdown', e => {
+    if (painelVd.hidden || typeof painelVd.contains !== 'function') return;
+    if (e.target !== caixaVd && !painelVd.contains(e.target) && !caixaVd.contains(e.target)) fecharPainelVd();
+  });
+
+  /* O interruptor (§8 / EM-VD-14): nasce Ligado, vive no ⚙ junto
+     aos outros interruptores de apresentação; desligado esconde a
+     caixa E o painel. A explicação das fontes é desta caixa — com
+     ela desligada, o líquido continua na frase de cada rolagem. */
+  const linhaVd = document.createElement('div');
+  linhaVd.className = 'cfgrow';
+  const rotuloVd = document.createElement('span');
+  rotuloVd.className = 'cl';
+  rotuloVd.innerHTML = 'Contador de Vantagem<small>a Vantagem e a Desvantagem dela, junto à ficha</small>';
+  const togVd = document.createElement('button');
+  togVd.id = 'tog-contador-vantagem';
+  togVd.className = 'tog';
+  togVd.type = 'button';
+  linhaVd.appendChild(rotuloVd);
+  linhaVd.appendChild(togVd);
+  cfgEl.insertBefore(linhaVd, $('stats'));
+  function marcarVd() {
+    togVd.classList.toggle('on', contadorVdLigado);
+    togVd.textContent = contadorVdLigado ? 'Ligado' : 'Desligado';
+    togVd.setAttribute('aria-pressed', String(contadorVdLigado));
+  }
+  togVd.addEventListener('click', () => {
+    contadorVdLigado = !contadorVdLigado;
+    try { localStorage.setItem('hudt1-contador-vantagem', contadorVdLigado ? 'ligado' : 'desligado'); } catch (_) {}
+    marcarVd();
+    atualizarContadorVD();
+    say(contadorVdLigado
+      ? 'Contador de Vantagem <b>ligado</b> — junto à ficha dela, a caixa mostra a Vantagem ou a Desvantagem das rolagens dela; aperte a caixa para ver o porquê.'
+      : 'Contador de Vantagem <b>desligado</b> — a caixa esconde-se; o líquido continua na frase de cada rolagem.');
+  });
+  marcarVd();
+  vdMontado = true;
+  atualizarContadorVD();
 
   function definirModoAutomatico(ligado) {
     modoAutomatico = !!ligado;
@@ -6890,6 +7103,7 @@
       const livre = camLivreActiva();
       $('faixa').hidden = livre;
       chipEl.hidden = livre;
+      atualizarContadorVD();   // C-VD: a caixa segue a plaquinha também aqui
       $('cantos').hidden = livre;
       for (const el of hudCamLivre) el.hidden = !livre;
       if (livre) camLivreAcordarDica();
