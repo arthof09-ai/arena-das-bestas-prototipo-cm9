@@ -854,14 +854,35 @@
         }
         const geoBrasas = new T.BufferGeometry();
         geoBrasas.setAttribute('position', new T.BufferAttribute(posBrasas, 3));
+        /* Véu por casa dos motes (t-veu-brilhos, volta 2, S2-9):
+           cor por ponto — (1,1,1) vista, (0,0,0) nunca (o aditivo
+           apaga), dessaturado em memoria. */
+        geoBrasas.setAttribute('color', new T.BufferAttribute(new Float32Array(N_BRASAS * 3).fill(1), 3));
         const brasasPts = new T.Points(geoBrasas, new T.PointsMaterial({
             map: new T.CanvasTexture(pc3), color: 0xffc46b, size: 0.17, transparent: true, opacity: 0.38,
-            depthWrite: false, blending: T.AdditiveBlending, sizeAttenuation: true
+            depthWrite: false, blending: T.AdditiveBlending, sizeAttenuation: true, vertexColors: true
         }));
         brasasPts.renderOrder = 4; brasasPts.name = 'visual2-brasas-ritual';
         /* TRANCHE CIRCORA (04/11/2026): banda ×1,5 — as brasas acompanham
          * o anel novo (escala 1,83×1,5, a da variante medida circfora). */
         brasasPts.scale.set(1.83, 1, 1.5); scene.add(brasasPts);
+        /* Objecto partilhado dos estados dos motes: a cena (dona de
+           setCamadas) muta os dois conjuntos no lugar a cada
+           reaplicação; este ciclo lê-os por casa. Sem cena a
+           aplicá-los, ficam vazios = tudo vista, como hoje. */
+        world.veuMotes = { nunca: new Set(), memoria: new Set() };
+        /* Cinzento possível em aditivo: multiplicar por um escalar
+           cinzento NÃO dessatura (mantém o laranja); divide-se a
+           luminância alvo (0,45 × L) por cada canal da cor do
+           material — o produto cor × vértice fica cinzento a 0,45L. */
+        const corMoteMat = brasasPts.material.color;
+        const lumMote = 0.299 * corMoteMat.r + 0.587 * corMoteMat.g + 0.114 * corMoteMat.b;
+        const corMoteMemoria = [Math.min(1, 0.45 * lumMote / corMoteMat.r), Math.min(1, 0.45 * lumMote / corMoteMat.g), Math.min(1, 0.45 * lumMote / corMoteMat.b)];
+        /* Casa de um ponto do mundo: contenção no rectângulo da
+           arena pela inversa de wx/wz (a forma Math.round equivale
+           à contenção); fora do rectângulo, a chave não existe nos
+           conjuntos = vista. */
+        const casaMote = (px, pz) => Math.round(px / 1.5 + (area.cols - 1) / 2) + area.origin.x + ',' + (Math.round(pz / 1.5 + (area.rows - 1) / 2) + area.origin.y);
         /* Pulsação lenta ligada ao relógio da cena (período ≈7,4 s). */
         const updateMundoRitual = world.update.bind(world);
         world.update = time => {
@@ -875,13 +896,23 @@
             for (let k = 0; k < cunhas.length; k++) // C7: sectores dessincronizados
                 cunhas[k].material.opacity = Math.pow(Math.max(0, Math.sin(time * 0.85 - k * 2.09)), 3) * 0.5;
             const posAttr = geoBrasas.attributes.position;
+            const corAttr = geoBrasas.attributes.color;
             for (let i = 0; i < N_BRASAS; i++) {
                 const b = brasas[i], subida = (b.base + time * b.vel) % 3.1;
                 posAttr.array[i * 3] = b.x + Math.sin(time * 0.35 + b.fase) * b.deriva;
                 posAttr.array[i * 3 + 1] = 0.14 + subida;
                 posAttr.array[i * 3 + 2] = b.z + Math.cos(time * 0.29 + b.fase * 1.3) * b.deriva;
+                /* Cor do mote pelo estado da sua casa (S2-9): a
+                   posição do mundo é a local × escala do objecto
+                   (1,83 × 1,5), deriva incluída. */
+                const chaveMote = casaMote(posAttr.array[i * 3] * 1.83, posAttr.array[i * 3 + 2] * 1.5);
+                let crM = 1, cgM = 1, cbM = 1;
+                if (world.veuMotes.nunca.has(chaveMote)) { crM = 0; cgM = 0; cbM = 0; }
+                else if (world.veuMotes.memoria.has(chaveMote)) { crM = corMoteMemoria[0]; cgM = corMoteMemoria[1]; cbM = corMoteMemoria[2]; }
+                corAttr.array[i * 3] = crM; corAttr.array[i * 3 + 1] = cgM; corAttr.array[i * 3 + 2] = cbM;
             }
             posAttr.needsUpdate = true;
+            corAttr.needsUpdate = true;
         };
 
         /* CÍRCULO PINTADO: desligam-se o disco, o halo e as cunhas

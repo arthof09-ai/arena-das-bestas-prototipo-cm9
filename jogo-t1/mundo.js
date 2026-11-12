@@ -32,6 +32,7 @@ window.CampoWorld = function (T, scene, area) {
         mesh.frustumCulled = false;
         scene.add(mesh);
         batches.push({ mesh, count: items.length });
+        return mesh;
     }
     const geo = new T.PlaneGeometry(360, 360, 72, 72);
     geo.rotateX(-Math.PI / 2);
@@ -83,13 +84,18 @@ window.CampoWorld = function (T, scene, area) {
     // Cinza integrada no material do terreno; não há discos transparentes sobrepostos.
     // Foco central: fogueira extinta, pedras gastas e brasas entre cinzas.
     const embers = new T.MeshBasicMaterial({color: C(0xe76c29), toneMapped:false});
+    const pecasFogueira = [];
     for (let i=0;i<26;i++) {
         const a=i*Math.PI*2/26, r=1.35+rnd()*.3;
-        part(ico, i%3 ? rock : rust, [Math.cos(a)*r,.09,Math.sin(a)*r], [.22+rnd()*.15,.12+rnd()*.12,.18], [rnd(),a,rnd()]);
+        pecasFogueira.push(part(ico, i%3 ? rock : rust, [Math.cos(a)*r,.09,Math.sin(a)*r], [.22+rnd()*.15,.12+rnd()*.12,.18], [rnd(),a,rnd()]));
     }
+    const brasasFogueira = [];
     for (let i=0;i<32;i++) {
         const a=rnd()*Math.PI*2, r=Math.sqrt(rnd())*1.1;
-        part(ico, i%4 ? wood : embers, [Math.cos(a)*r,.035,Math.sin(a)*r], [.05+rnd()*.18,.035,.06+rnd()*.14], [0,a,0]).castShadow=false;
+        const peca = part(ico, i%4 ? wood : embers, [Math.cos(a)*r,.035,Math.sin(a)*r], [.05+rnd()*.18,.035,.06+rnd()*.14], [0,a,0]);
+        peca.castShadow=false;
+        pecasFogueira.push(peca);
+        if (!(i%4)) brasasFogueira.push(peca);
     }
     const hearth = new T.PointLight(0xff6724,6.0,8,2); hearth.position.set(0,.45,0); scene.add(hearth);
     const stones = [];
@@ -109,7 +115,7 @@ window.CampoWorld = function (T, scene, area) {
         const s=.5+rnd()*1.15;
         stones.push({p:[x,height(x,z)+s*.28,z],s:[s*1.3,s*.75,s],r:[rnd()*.3,rnd()*6,rnd()*.3]});
     }
-    batch(ico, rock, stones);
+    const lotePedrasMesh = batch(ico, rock, stones);
     const ruins = [];
     for (let i = 0; i < 15; i++) {
         const x = -radius + i * 1.05, z = -radius * .8 + Math.sin(i*.8)*.35;
@@ -119,6 +125,64 @@ window.CampoWorld = function (T, scene, area) {
     // Icosaedros achatados: cantos quebrados, juntas irregulares, tons intercalados.
     batch(new T.IcosahedronGeometry(1,1), rock, ruins.filter((_,i)=>i%2));
     batch(new T.IcosahedronGeometry(1,1), mat(0x777369), ruins.filter((_,i)=>!(i%2)));
+    /* ---------- PEDRAS SOB O VÉU (t-veu-brilhos, volta 2, S2-4) ----------
+       Lote fantasma gémeo das pedras instanciadas: mesma geometria
+       (ico partilhada, vértices +0), construído à parte do registo
+       batches[] porque a sua contagem é dos ESTADOS, não da
+       qualidade — quem manda nos dois counts é recomputarPedras,
+       sobre um RETRATO do instanceMatrix capturado preguiçosamente
+       na primeira recomputação (portanto depois do traverse do
+       visual.js: as instâncias que ele matou a escala 0 estão
+       mortas no retrato e nunca ressuscitam, e o relevo dy dele
+       fica). Casa por contenção no rectângulo da arena (inversa de
+       wx/wz com CELL=1,5); fora = sem casa = sempre viva. */
+    const loteFantasmaPedras = new T.InstancedMesh(ico, new T.MeshBasicMaterial({ color: 0x9aa7b4, transparent: true, opacity: .45, depthWrite: false }), stones.length);
+    loteFantasmaPedras.count = 0;
+    loteFantasmaPedras.castShadow = false;
+    loteFantasmaPedras.receiveShadow = false;
+    loteFantasmaPedras.frustumCulled = false;
+    scene.add(loteFantasmaPedras);
+    let retratoPedras = null, casasPedras = null, mortasPedras = null, fatorQualidadeMundo = 1;
+    let pedrasContagem = { vivas: stones.length, fantasmas: 0 };
+    function capturarRetratoPedras() {
+        const arr = lotePedrasMesh.instanceMatrix.array, n = stones.length;
+        retratoPedras = new Float32Array(arr);
+        casasPedras = new Array(n); mortasPedras = new Array(n);
+        for (let i = 0; i < n; i++) {
+            const e = i * 16;
+            const sx = Math.hypot(arr[e], arr[e + 1], arr[e + 2]), sy = Math.hypot(arr[e + 4], arr[e + 5], arr[e + 6]), sz = Math.hypot(arr[e + 8], arr[e + 9], arr[e + 10]);
+            mortasPedras[i] = Math.max(sx, sy, sz) < 1e-6;
+            const hx = Math.floor(arr[e + 12] / 1.5 + area.cols / 2) + area.origin.x, hz = Math.floor(arr[e + 14] / 1.5 + area.rows / 2) + area.origin.y;
+            casasPedras[i] = (hx >= area.origin.x && hx < area.origin.x + area.cols && hz >= area.origin.y && hz < area.origin.y + area.rows) ? hx + ',' + hz : null;
+        }
+    }
+    function recomputarPedras(nunca, memoria) {
+        if (!retratoPedras) capturarRetratoPedras();
+        const L = Math.ceil(stones.length * fatorQualidadeMundo), arrV = lotePedrasMesh.instanceMatrix.array, arrF = loteFantasmaPedras.instanceMatrix.array;
+        let nv = 0, nf = 0;
+        for (let i = 0; i < stones.length; i++) {
+            if (i >= L || mortasPedras[i]) continue;
+            const casa = casasPedras[i];
+            if (casa && memoria && memoria.has(casa)) { arrF.set(retratoPedras.subarray(i * 16, i * 16 + 16), nf * 16); nf++; }
+            else if (casa && nunca && nunca.has(casa)) { /* engolida: em nenhum lote */ }
+            else { arrV.set(retratoPedras.subarray(i * 16, i * 16 + 16), nv * 16); nv++; }
+        }
+        lotePedrasMesh.count = nv;
+        loteFantasmaPedras.count = nf;
+        lotePedrasMesh.instanceMatrix.needsUpdate = true;
+        loteFantasmaPedras.instanceMatrix.needsUpdate = true;
+        pedrasContagem = { vivas: nv, fantasmas: nf };
+    }
+    function definirFantasmaPedras(mat) { if (mat) loteFantasmaPedras.material = mat; }
+    /* Janela de prova (S2-14): retrato e lotes correntes, por índice. */
+    function pedrasDiagnostico() {
+        if (!retratoPedras) capturarRetratoPedras();
+        return { total: stones.length, casas: casasPedras.slice(), mortas: mortasPedras.slice(), retrato: Array.from(retratoPedras),
+            vivas: Array.from(lotePedrasMesh.instanceMatrix.array.subarray(0, lotePedrasMesh.count * 16)),
+            fantasmas: Array.from(loteFantasmaPedras.instanceMatrix.array.subarray(0, loteFantasmaPedras.count * 16)),
+            nv: lotePedrasMesh.count, nf: loteFantasmaPedras.count };
+    }
+    const posFires = [];
     for (const [x, z] of [[-area.cols * .75 - 1, -2], [area.cols * .75 + 1, 1], [1, -area.rows * .75 - 1]]) {
         const y = height(x, z), g = new T.Group();
         g.position.set(x, y, z);
@@ -133,9 +197,15 @@ window.CampoWorld = function (T, scene, area) {
         const light = new T.PointLight(0xff792b, 7.5, 11, 2);
         light.position.set(x, y + 1.8, z);
         scene.add(light);
-        fires.push({ flame, core, light });
+        fires.push({ flame, core, light }); posFires.push([x, z]);
         // O solo recebe luz real; sem discos que se leiam como tapetes.
     }
+    /* Braseiros nomeados para o véu (t-veu-brilhos, volta 2, S2-10):
+       chamas/miolo, luz própria e o factor de visão que a cena
+       escreve (factorLuzVista sobre o raio 11 da luz); o update
+       multiplica a intensidade composta de sempre por ele — com
+       factor 1, o histórico fica ao bit. */
+    const braseiros = fires.map((f, i) => ({ chamas: [f.flame, f.core], luz: f.light, x: posFires[i][0], z: posFires[i][1], fatorVisao: 1 }));
     /* D-AMB-01 (tranche AMBIENTE): interface nomeada de fontes — a
        fogueira, as tochas e as chamas do mundo, e as BASES que o
        aplicarAmbiente da cena escreve. O update lê as bases: tochas =
@@ -149,20 +219,21 @@ window.CampoWorld = function (T, scene, area) {
        estáticas (escala .65, sem rotação) e tochas na base. */
     let ambTremulacao = true;
     const fontes = { fogueira: hearth, tochas: fires.map(f => f.light), chamas: fires.flatMap(f => [f.flame, f.core]) };
-    return { ground, height, radius, fontes, ambienteBases, setTremulacao(on) {
+    return { ground, height, radius, fontes, ambienteBases, brasasFogueira, pecasFogueira, braseiros, recomputarPedras, definirFantasmaPedras, pedrasDiagnostico, setTremulacao(on) {
             ambTremulacao = !!on;
         }, update(time) {
             fires.forEach(({ flame, light }, i) => {
                 const f = ambTremulacao ? Math.sin(time * 9 + i) * .1 + Math.sin(time * 17) * .06 : 0;
                 flame.scale.y = .65 + f;
                 if (ambTremulacao) flame.rotation.y = time * .4;
-                light.intensity = ambienteBases.tochas + f * (ambienteBases.tochas * 0.4);
+                light.intensity = (ambienteBases.tochas + f * (ambienteBases.tochas * 0.4)) * braseiros[i].fatorVisao;
             });
         }, quality(nivel) {
             /* Densidade do cenário por perfil de qualidade:
                baixa 45% · média 72% · alta 100%. (Aceita o booleano
                antigo: true = baixa.) */
             const factor = nivel === 'baixa' || nivel === true ? .45 : nivel === 'media' ? .72 : 1;
-            batches.forEach(({ mesh, count }) => mesh.count = Math.ceil(count * factor));
+            fatorQualidadeMundo = factor;
+            batches.forEach(({ mesh, count }) => { if (mesh !== lotePedrasMesh) mesh.count = Math.ceil(count * factor); });
         } };
 };

@@ -164,13 +164,51 @@
                Guardam-se as bases; o ambiente só as escala pelo factor
                de chama (1 no ritual = valores intactos). */
             let ambDecor = null;
+            /* Estado do véu lido pelo ambiente (volta 2): o factor
+               da hearth e o registo dos braseiros vivem aqui porque
+               ambEscrever os compõe a cada escrita; os conjuntos e
+               o mecanismo estão no bloco do véu, mais abaixo. As
+               casas dos braseiros são as da sentença: clamp da
+               posição à arena («0,2» oeste · «9,4» este · «5,0»
+               sul, na área 10×7 de origem 0,0). */
+            let veuFactorHearth = 1;
+            const veuBraseirosReg = (world.braseiros || []).map((b, i) => {
+                const clampCasa = (v, origem, n) => Math.min(origem + n - 1, Math.max(origem, Math.round(v / CELL + (n - 1) / 2) + origem));
+                /* Âncora = posição MUNDO efectiva da chama: o embrulho
+                   visual MOVE os braseiros ~7,5–8,2 m para a elipse
+                   BANDA_R=13,73 (medido 11/11: (−8,5,−2)→(−16,3,−3,1) ·
+                   (8,5,1)→(16,6,1,6) · (1,−6,25)→(2,7,−13,6)); com as
+                   posições de registo do mundo, a casa por clamp e a
+                   associação do decor caíam em geografia errada. */
+                let ax = b.x, az = b.z;
+                try { const wp = new T.Vector3(); if (b.chamas && b.chamas[0]) { b.chamas[0].getWorldPosition(wp); ax = wp.x; az = wp.z; } } catch (_) {}
+                return { b, i, ax, az, chave: clampCasa(ax, area.origin.x, area.cols) + ',' + clampCasa(az, area.origin.y, area.rows), estado: 'vista', factorDecor: 1, mats: b.chamas.map(m => m.material) };
+            });
             function ambCapturarDecor() {
                 const posTochas = world.fontes ? world.fontes.tochas.map(l => l.position) : [];
                 const luzes = [], sprites = [];
                 scene.traverse(o => {
                     if (o.isPointLight && o.color.getHex() === 0xff8f3f && Math.abs(o.distance - 6.5) < .01) luzes.push({ o, base: o.intensity });
-                    else if (o.isSprite && posTochas.some(p => Math.abs(o.position.x - p.x) < 1.2 && Math.abs(o.position.z - p.z) < 1.2)) sprites.push({ o, base: o.material.opacity });
+                    else if (o.isSprite && (posTochas.some(p => Math.abs(o.position.x - p.x) < 1.2 && Math.abs(o.position.z - p.z) < 1.2) || veuBraseirosReg.some(r => Math.abs(o.position.x - r.ax) < 2.5 && Math.abs(o.position.z - r.az) < 2.5))) sprites.push({ o, base: o.material.opacity });
                 });
+                /* Volta 2 (S2-10): cada luz/sprite decorativo fica
+                   associado ao seu braseiro (o mais próximo em x/z
+                   até 2,5 m) e os sprites classificam-se halo
+                   (aditivo) / fumo. Material de sprite partilhado
+                   por mais de um sprite é clonado aqui, uma vez,
+                   para a tinta por estado não vazar entre
+                   braseiros. */
+                const brasDec = veuBraseirosReg.map(r => ({ x: r.ax, z: r.az }));
+                const donoDec = (x, z) => { let bi = null, bd = 2.5; brasDec.forEach((b, i) => { const d = Math.hypot(x - b.x, z - b.z); if (d < bd) { bd = d; bi = i; } }); return bi; };
+                for (const d of luzes) d.braseiro = donoDec(d.o.position.x, d.o.position.z);
+                const usoMatDec = new Map();
+                for (const d of sprites) usoMatDec.set(d.o.material, (usoMatDec.get(d.o.material) || 0) + 1);
+                for (const d of sprites) {
+                    if (usoMatDec.get(d.o.material) > 1) d.o.material = d.o.material.clone();
+                    d.braseiro = donoDec(d.o.position.x, d.o.position.z);
+                    d.tipo = d.o.material.blending === T.AdditiveBlending ? 'halo' : 'fumo';
+                    d.corBase = d.o.material.color ? d.o.material.color.getHex() : 0xffffff;
+                }
                 ambDecor = { luzes, sprites };
             }
             const CHUVA_MAX = 3000;
@@ -342,12 +380,26 @@
                 sun.position.set(amostra.solPos[0], amostra.solPos[1], amostra.solPos[2]);
                 scene.fog.color.copy(horFinal).lerp(ambCor(0xd7dee8), .55 * pulsoE);
                 world.ambienteBases.fogueira = amostra.fogueira;
-                if (world.fontes) world.fontes.fogueira.intensity = amostra.fogueira;
+                /* A base guarda-se CRUA (S2-7); o factor do véu só
+                   multiplica a escrita, nunca o valor guardado —
+                   esconder e revelar devolve exactamente a base. */
+                if (world.fontes) world.fontes.fogueira.intensity = amostra.fogueira * veuFactorHearth;
                 world.ambienteBases.tochas = amostra.tochas * ambNivel(AMB_CHUVA.tochas, cf);
-                if (world.fontes) for (const m of world.fontes.chamas) m.visible = amostra.chamas > .02;
+                if (world.braseiros) for (const r of veuBraseirosReg) for (const m of r.b.chamas) m.visible = amostra.chamas > .02 && r.estado !== 'nunca';
+                else if (world.fontes) for (const m of world.fontes.chamas) m.visible = amostra.chamas > .02;
                 if (ambDecor) {
-                    for (const d of ambDecor.luzes) d.o.intensity = d.base * amostra.chamas;
-                    for (const d of ambDecor.sprites) { d.o.material.opacity = d.base * amostra.chamas; d.o.visible = amostra.chamas > .02; }
+                    for (const d of ambDecor.luzes) d.o.intensity = d.base * amostra.chamas * (d.braseiro != null && veuBraseirosReg[d.braseiro] ? veuBraseirosReg[d.braseiro].factorDecor : 1);
+                    for (const d of ambDecor.sprites) {
+                        const estDec = d.braseiro != null && veuBraseirosReg[d.braseiro] ? veuBraseirosReg[d.braseiro].estado : 'vista';
+                        if (estDec === 'nunca') { d.o.visible = false; continue; }
+                        d.o.visible = amostra.chamas > .02;
+                        let opDec = d.base * amostra.chamas;
+                        if (estDec === 'memoria') {
+                            opDec *= .45;
+                            if (d.tipo === 'halo' && d.o.material.color) d.o.material.color.setHex(0x9aa7b4);
+                        } else if (d.tipo === 'halo' && d.o.material.color) d.o.material.color.setHex(d.corBase);
+                        d.o.material.opacity = opDec;
+                    }
                 }
                 if (!ambTrans && cf === 0 && ambAlvo.hora === 23 && pulsoE === 0) {
                     if (ambFundoOriginal !== undefined && scene.background !== ambFundoOriginal) scene.background = ambFundoOriginal;
@@ -749,23 +801,48 @@
                 'float n1(float x) { float i = floor(x); float f = fract(x); f = f * f * (3.0 - 2.0 * f);',
                 '  return mix(hash21(vec2(i, 7.7)), hash21(vec2(i + 1.0, 7.7)), f); }'
             ].join('\n');
+            /* Corpo da chama em GLSL partilhado (t-veu-brilhos,
+               volta 2, S2-6(c)): a MESMA conta que faz a silhueta
+               da chama viva faz a do gémeo fantasma — uma só fonte,
+               sem duplicação literal. fogoCorpo devolve
+               vec3(corpo, d, nF); a saída do shader vivo não muda
+               (as expressões são as mesmas, na mesma ordem). */
+            const FOGO_VERT_CHAMA = [
+                'uniform float uTempo; uniform float uSemente;',
+                'varying vec2 vUv;',
+                FOGO_GLSL_RUIDO,
+                'void main() { vUv = uv; vec3 p = position;',
+                '  float h = uv.y;',
+                '  float ond = sin(h * 4.3 - uTempo * 3.1 + uSemente) * 0.6 + sin(h * 8.9 - uTempo * 5.3 + uSemente * 1.7) * 0.4;',
+                '  p.x += ond * 0.055 * h * h; p.z += cos(h * 3.7 - uTempo * 2.6 + uSemente * 2.3) * 0.045 * h * h;',
+                '  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }'
+            ].join('\n');
+            const FOGO_GLSL_CORPO = [
+                'vec3 fogoCorpo(vec2 uv, float t, float uSemente, float ext, float uCasa) {',
+                '  float nG = fbm(vec2(uv.x * 3.0 + uSemente * 1.37, uv.y * 2.1 - t * 1.45 + uSemente * 0.71));',
+                '  float nF = fbm(vec2(uv.x * 7.0 - uSemente * 0.53, uv.y * 6.0 - t * 2.7 + uSemente * 1.93));',
+                        /* ORFAS DO LEDGER (11/11) - a ESTRELA da base das casas: ruido fino
+                         * extra, so nas casas (uCasa) e corroendo por baixo (o termo em
+                         * erode some aos 42% da altura): parte os raios direitos dos
+                         * planos cruzados que desenham a estrela de 4 pontas. */
+                        '  float nB = fbm(vec2(uv.x * 11.0 - uSemente * 0.71, uv.y * 9.0 - t * 3.1 + uSemente * 2.57));',
+                '  float bal = (nG - 0.5) * (0.50 + 0.55 * ext) * uv.y;',
+                '  float cx = abs(uv.x * 2.0 - 1.0 + bal * 2.0);',
+                        '  float meiaL = mix(0.68, 0.14, pow(uv.y, 0.7)) * (1.0 - uCasa * 0.22 * (1.0 - smoothstep(0.0, 0.35, uv.y)));',  /* ORFAS: nas casas a base estreita 22% junto ao chao - raios da estrela mais curtos */
+                        '  float erode = (nG - 0.5) * (0.30 + 1.10 * uv.y + 0.30 * ext) + (nF - 0.5) * 0.34 + uCasa * (nB - 0.5) * 1.35 * (1.0 - smoothstep(0.02, 0.50, uv.y));',
+                '  float d = cx / max(meiaL, 0.001) + erode * 1.35;',
+                '  float corpo = 1.0 - smoothstep(0.50, 1.02, d);',
+                '  return vec3(corpo, d, nF); }'
+            ].join('\n');
             function fogoMatChama(semente, camada, casa) {
                 return new T.ShaderMaterial({
                     uniforms: { uTempo: { value: 0 }, uEnv: { value: 0 }, uSemente: { value: semente }, uCamada: { value: camada }, uCasa: { value: casa ? 1 : 0 } },
-                    vertexShader: [
-                        'uniform float uTempo; uniform float uSemente;',
-                        'varying vec2 vUv;',
-                        FOGO_GLSL_RUIDO,
-                        'void main() { vUv = uv; vec3 p = position;',
-                        '  float h = uv.y;',
-                        '  float ond = sin(h * 4.3 - uTempo * 3.1 + uSemente) * 0.6 + sin(h * 8.9 - uTempo * 5.3 + uSemente * 1.7) * 0.4;',
-                        '  p.x += ond * 0.055 * h * h; p.z += cos(h * 3.7 - uTempo * 2.6 + uSemente * 2.3) * 0.045 * h * h;',
-                        '  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }'
-                    ].join('\n'),
+                    vertexShader: FOGO_VERT_CHAMA,
                     fragmentShader: [
                         'uniform float uTempo; uniform float uEnv; uniform float uSemente; uniform float uCamada; uniform float uCasa;',
                         'varying vec2 vUv;',
                         FOGO_GLSL_RUIDO,
+                        FOGO_GLSL_CORPO,
                         'vec3 rampa(float h) {',
                         '  vec3 c = mix(vec3(0.42, 0.045, 0.008), vec3(0.85, 0.17, 0.02), smoothstep(0.0, 0.38, h));',
                         '  c = mix(c, vec3(1.0, 0.44, 0.06), smoothstep(0.38, 0.62, h));',
@@ -776,21 +853,11 @@
                         '  vec2 uv = vUv;',
                         '  float t = uTempo;',
                         '  float ext = uCamada > 0.5 ? 1.0 : 0.0;',
-                        '  float nG = fbm(vec2(uv.x * 3.0 + uSemente * 1.37, uv.y * 2.1 - t * 1.45 + uSemente * 0.71));',
-                        '  float nF = fbm(vec2(uv.x * 7.0 - uSemente * 0.53, uv.y * 6.0 - t * 2.7 + uSemente * 1.93));',
-                        /* ORFAS DO LEDGER (11/11) - a ESTRELA da base das casas: ruido fino
-                         * extra, so nas casas (uCasa) e corroendo por baixo (o termo em
-                         * erode some aos 42% da altura): parte os raios direitos dos
-                         * planos cruzados que desenham a estrela de 4 pontas. */
-                        '  float nB = fbm(vec2(uv.x * 11.0 - uSemente * 0.71, uv.y * 9.0 - t * 3.1 + uSemente * 2.57));',
-                        '  float bal = (nG - 0.5) * (0.50 + 0.55 * ext) * uv.y;',
-                        '  float cx = abs(uv.x * 2.0 - 1.0 + bal * 2.0);',
-                        '  float meiaL = mix(0.68, 0.14, pow(uv.y, 0.7)) * (1.0 - uCasa * 0.22 * (1.0 - smoothstep(0.0, 0.35, uv.y)));',  /* ORFAS: nas casas a base estreita 22% junto ao chao - raios da estrela mais curtos */
-                        '  float erode = (nG - 0.5) * (0.30 + 1.10 * uv.y + 0.30 * ext) + (nF - 0.5) * 0.34 + uCasa * (nB - 0.5) * 1.35 * (1.0 - smoothstep(0.02, 0.50, uv.y));',
-                        '  float d = cx / max(meiaL, 0.001) + erode * 1.35;',
-                        '  float corpo = 1.0 - smoothstep(0.50, 1.02, d);',
+                        '  vec3 fco = fogoCorpo(uv, t, uSemente, ext, uCasa);',
+                        '  float d = fco.y;',
+                        '  float corpo = fco.x;',
                         '  if (corpo <= 0.004) discard;',
-                        '  float calor = clamp(1.10 - d * 0.80 - uv.y * 0.55 + (nF - 0.5) * 0.36 - ext * 0.22, 0.0, 1.0);',
+                        '  float calor = clamp(1.10 - d * 0.80 - uv.y * 0.55 + (fco.z - 0.5) * 0.36 - ext * 0.22, 0.0, 1.0);',
                         '  vec3 cor = rampa(calor);',
                         '  float trem = 0.80 + 0.38 * n1(t * 2.2 + uSemente * 2.31) + 0.14 * n1(t * 6.7 + uSemente * 0.97);',
                         '  float alfa = corpo * uEnv * mix(0.85, 0.50, ext);',
@@ -799,6 +866,60 @@
                     ].join('\n'),
                     transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide
                 });
+            }
+            /* GÉMEO FANTASMA DO FOGO DE CASA (volta 2, S2-6 — F1):
+               a chama lembrada não arde: é a silhueta da chama no
+               instante da passagem a memória, congelada (uTempo
+               escrito uma vez), ao cinzento dos fantasmas
+               (0x9aa7b4), blending normal, alfa = corpo × 0,45 ×
+               envCongelado. Sem disco de brilho, sem luz, sem
+               brasas a subir. Grupo PRÓPRIO na scene (fora de
+               f.grupo): a escala congela-se na estrutura, imune ao
+               deslize de escActual do vivo. */
+            function fogoMatChamaFantasma(semente, camada) {
+                return new T.ShaderMaterial({
+                    uniforms: { uTempo: { value: 0 }, uEnv: { value: 0 }, uSemente: { value: semente }, uCamada: { value: camada } },
+                    vertexShader: FOGO_VERT_CHAMA,
+                    fragmentShader: [
+                        'uniform float uTempo; uniform float uEnv; uniform float uSemente; uniform float uCamada;',
+                        'varying vec2 vUv;',
+                        FOGO_GLSL_RUIDO,
+                        FOGO_GLSL_CORPO,
+                        'void main() {',
+                        '  vec2 uv = vUv;',
+                        '  float ext = uCamada > 0.5 ? 1.0 : 0.0;',
+                        '  vec3 fco = fogoCorpo(uv, uTempo, uSemente, ext, 1.0);',
+                        '  float corpo = fco.x;',
+                        '  if (corpo <= 0.004) discard;',
+                        '  gl_FragColor = vec4(vec3(0.604, 0.655, 0.706), corpo * uEnv); }'
+                    ].join('\n'),
+                    transparent: true, depthWrite: false, side: T.DoubleSide
+                });
+            }
+            function fogoCriarGeemeo(f) {
+                const grupo = new T.Group();
+                const mats = [];
+                const matIn = fogoMatChamaFantasma(f.semente, 0); mats.push(matIn);
+                const mIn = new T.Mesh(fogoGeo(), matIn);
+                mIn.scale.copy(f.pecas[0].scale);
+                mIn.frustumCulled = false;
+                grupo.add(mIn);
+                const matOut = fogoMatChamaFantasma(f.semente + 37.7, 1); mats.push(matOut);
+                const mOut = new T.Mesh(fogoGeo(), matOut);
+                mOut.rotation.y = Math.PI / 6;
+                mOut.scale.copy(f.pecas[1].scale);
+                mOut.frustumCulled = false;
+                grupo.add(mOut);
+                grupo.visible = false;
+                return { grupo, mats };
+            }
+            /* Dono único da morte de um fogo de casa (S2-6(f)):
+               liberta o grupo vivo E o gémeo — extinção e
+               limparFogos passam os dois por aqui, e nenhum gémeo
+               fica órfão na scene. */
+            function fogoCasaLibertar(f) {
+                raioLibertar(f.grupo);
+                if (f.geemeo) { raioLibertar(f.geemeo.grupo); f.geemeo = null; }
             }
                         /* CASCA DA PESSOA A ARDER (volta 4; REFEITA na volta 5):
              * cilindro de chama À VOLTA do corpo — a ideia da volta 4
@@ -1039,7 +1160,7 @@
                 }
                 grupo.rotation.y = semente * 2.39996;   /* ângulo de ouro × semente: cada fogo com a sua
                  * orientação — quebra o padrão repetido dos planos cruzados */
-                return { grupo, luz, matsChama: mats, brasasMat: matB, semente, pontosB: pontos, nBrasas: nB };
+                return { grupo, luz, matsChama: mats, brasasMat: matB, semente, pontosB: pontos, nBrasas: nB, pecas: [mIn, mOut, pontos] };
             }
             function fogoTremular(f, env, now) {
                 const ts = now / 1000;
@@ -1072,8 +1193,22 @@
                 f.brilho = brilho;
                 f.t0 = performance.now(); f.apagar = 0;
                 f.estagio = 1; f.escAlvo = 1; f.escActual = 1; f.fatorLuz = 1; f.fatorBrilho = 1;
+                f.pecas.push(brilho);
+                f.estadoVisao = veuNunca.has(chave) ? 'nunca' : veuMemoria.has(chave) ? 'memoria' : 'vista';
+                f.vistoAArder = f.estadoVisao === 'vista';
+                f.ocultoVisao = f.estadoVisao !== 'vista';
+                if (f.ocultoVisao) for (const p of f.pecas) p.visible = false;
+                f.geemeo = fogoCriarGeemeo(f);
                 scene.add(f.grupo);
+                scene.add(f.geemeo.grupo);
                 fogosCasas.set(chave, f);
+                /* Pré-compilação do programa do gémeo (S2-6(d)):
+                   visível só dentro desta chamada síncrona —
+                   nenhum frame é apresentado entre os dois estados,
+                   e a primeira entrada em memória não compila. */
+                f.geemeo.grupo.visible = true;
+                try { renderer.compile(scene, camaraActiva()); } catch (_) {}
+                f.geemeo.grupo.visible = false;
             }
             function apagarFogoCasa(x, z) {
                 const f = fogosCasas.get(x + ',' + z);
@@ -1109,7 +1244,7 @@
                 }
             }
             function limparFogos() {
-                for (const f of fogosCasas.values()) raioLibertar(f.grupo);
+                for (const f of fogosCasas.values()) fogoCasaLibertar(f);
                 fogosCasas.clear();
                 for (const f of fogosPessoas.values()) raioLibertar(f.grupo);
                 fogosPessoas.clear();
@@ -1129,9 +1264,11 @@
                     fx.disco.material.opacity = .5 * e;
                 }
                 for (const [chave, f] of fogosCasas) {
-                    let env = Math.min(1, (now - f.t0) / 150);
-                    if (f.apagar) env = Math.min(env, Math.max(0, 1 - (now - f.apagar) / 400));
-                    if (f.apagar && env <= 0) { raioLibertar(f.grupo); fogosCasas.delete(chave); continue; }
+                    let envVida = Math.min(1, (now - f.t0) / 150);
+                    if (f.apagar) envVida = Math.min(envVida, Math.max(0, 1 - (now - f.apagar) / 400));
+                    f.envVidaUltimo = envVida;
+                    if (f.apagar && envVida <= 0) { fogoCasaLibertar(f); fogosCasas.delete(chave); continue; }
+                    const envDesenho = f.ocultoVisao ? 0 : envVida;
                     /* a escala do estágio desce suave: a chama
                      * encolhe a olhos vistos na virada de ronda,
                      * sem salto (emenda 10/11) */
@@ -1140,8 +1277,8 @@
                     f.escActual += (escAlvoF - f.escActual) * 0.06;
                     if (Math.abs(escAlvoF - f.escActual) < 0.003) f.escActual = escAlvoF;
                     f.grupo.scale.setScalar(f.escActual);
-                    fogoTremular(f, env, now);
-                    if (f.brilho) f.brilho.material.opacity = .20 * env * (f.fatorBrilho == null ? 1 : f.fatorBrilho) * (.75 + .4 * ruidoJS(now / 1000 * 2.6 + f.semente));
+                    fogoTremular(f, envDesenho, now);
+                    if (f.brilho) f.brilho.material.opacity = .20 * envDesenho * (f.fatorBrilho == null ? 1 : f.fatorBrilho) * (.75 + .4 * ruidoJS(now / 1000 * 2.6 + f.semente));
                 }
                 for (const f of fogosPessoas.values())
                     fogoTremular(f, Math.min(1, (now - f.t0) / 150), now);
@@ -1595,6 +1732,7 @@
                 renderer.shadowMap.enabled = q !== 'baixa';
                 sun.castShadow = q !== 'baixa';
                 world.quality(q);
+                if (world.recomputarPedras) world.recomputarPedras(veuNunca, veuMemoria);
                 ambReaplicar();
                 resize();
                 renderer.shadowMap.needsUpdate = true;
@@ -1808,6 +1946,15 @@
                 emit('error', { message: 'Contexto gráfico perdido. Atualize a página.' });
             };
             renderer.domElement.addEventListener('webglcontextlost', contextLost);
+            /* [VÉU-BRILHOS v2] Estado do véu declarado ANTES da
+               chamada ao setQualidade: ela lê veuNunca/veuMemoria
+               (recomputarPedras) e corre durante o create, antes
+               do bloco do véu — TDZ apanhado no diag5 de 11/11
+               («Cannot access 'veuNunca' before initialization»,
+               que o jogo mostrava como «WebGL indisponível»). */
+            let veuNunca = new Set(), veuMemoria = new Set(), veuEscondidas = new Set();
+            const veuChavesIgnoradas = [];
+            const veuTemposCamadas = [];
             setQualidade(options.qualidade || 'alta');
             raf = requestAnimationFrame(animate);
             /* ---------- MODOS DE VISÃO (integração): verbos aditivos ----------
@@ -1915,19 +2062,131 @@
                 g.setIndex(idx);
                 return g;
             }
+            /* ---------- O VÉU SOBRE O MUNDO (t-veu-brilhos) ----------
+               Volta 1 (palavra do Mestre, 11/11/2026 12:26):
+               «Esconde também o que brilha na zona escondida.»
+               Volta 2 (emenda 11/11 12:59; sentença JUIZ-VOLTA2,
+               itens S2-1…S2-15): o véu trata o MUNDO INTEIRO por
+               casa — nunca vista: nada do mundo aparece; lembrada:
+               tudo como lembrança, ao tom dos fantasmas; vista:
+               tudo normal. Os estados derivam por NOME de chave em
+               setCamadas ({total, nunca} → veuNunca · {memoria} →
+               veuMemoria · veuEscondidas = união, para os fogos) e
+               os tratamentos são TOTAIS: reaplicados por inteiro a
+               cada chamada, incluindo null. Os conjuntos nascem
+               vazios: ao arrancar, tudo à vista (A6). */
+            const brasaCasa = (v, origem, n) => Math.round(v / CELL + (n - 1) / 2) + origem;
+            const pecasFogueiraRegisto = (world.pecasFogueira || []).map(mesh => ({ mesh, chave: brasaCasa(mesh.position.x, area.origin.x, area.cols) + ',' + brasaCasa(mesh.position.z, area.origin.y, area.rows), mat: mesh.material, sombra: mesh.castShadow }));
+            const veuEstadoCasa = chave => veuNunca.has(chave) ? 'nunca' : veuMemoria.has(chave) ? 'memoria' : 'vista';
+            /* Regra geral anti-D3 para luzes de área (S2-7): o
+               factor é 1 se ALGUMA casa vista tiver o centro dentro
+               do raio da luz; a memória não conta como vista. */
+            function veuFactorLuzVista(px, pz, R) {
+                for (let x = area.origin.x; x < area.origin.x + area.cols; x++) for (let z = area.origin.y; z < area.origin.y + area.rows; z++) {
+                    const chave = x + ',' + z;
+                    if (veuNunca.has(chave) || veuMemoria.has(chave)) continue;
+                    const dx = wx(x) - px, dz = wz(z) - pz;
+                    if (dx * dx + dz * dz <= R * R) return 1;
+                }
+                return 0;
+            }
+            function veuAplicarBraseiros() {
+                let mudou = false;
+                for (const r of veuBraseirosReg) {
+                    const est = veuEstadoCasa(r.chave);
+                    r.b.fatorVisao = veuFactorLuzVista(r.ax, r.az, 11);
+                    r.factorDecor = veuFactorLuzVista(r.ax, r.az, 6.5);
+                    if (est !== r.estado) {
+                        r.estado = est; mudou = true;
+                        r.b.chamas.forEach((m, jj) => { m.material = est === 'memoria' ? ghostMat : r.mats[jj]; });
+                    }
+                }
+                if (mudou) ambReaplicar();
+            }
+            function veuAplicarMundo() {
+                for (const r of pecasFogueiraRegisto) {
+                    const est = veuEstadoCasa(r.chave);
+                    if (est === 'nunca') r.mesh.visible = false;
+                    else if (est === 'memoria') { r.mesh.visible = true; r.mesh.material = ghostMat; r.mesh.castShadow = false; }
+                    else { r.mesh.visible = true; r.mesh.material = r.mat; r.mesh.castShadow = r.sombra; }
+                }
+                if (world.recomputarPedras) world.recomputarPedras(veuNunca, veuMemoria);
+                for (const [chave, f] of fogosCasas) {
+                    const est = veuEstadoCasa(chave), anterior = f.estadoVisao || 'vista';
+                    if (est === 'vista') f.vistoAArder = true;
+                    if (est === 'memoria' && anterior !== 'memoria' && f.geemeo && f.vistoAArder) {
+                        /* Snapshot da passagem a memória (S2-6(b)):
+                           tempo, escala e envelope congelados uma
+                           vez; sem vistoAArder não há snapshot nem
+                           gémeo (D4). */
+                        const tCong = performance.now() / 1000, envCong = f.envVidaUltimo == null ? 1 : f.envVidaUltimo;
+                        for (const m of f.geemeo.mats) { m.uniforms.uTempo.value = tCong; m.uniforms.uEnv.value = .45 * envCong; }
+                        f.geemeo.grupo.position.copy(f.grupo.position);
+                        f.geemeo.grupo.rotation.y = f.grupo.rotation.y;
+                        f.geemeo.grupo.scale.setScalar(f.escActual == null ? 1 : f.escActual);
+                    }
+                    f.estadoVisao = est;
+                    f.ocultoVisao = est !== 'vista';
+                    for (const p of f.pecas || []) p.visible = est === 'vista';
+                    if (f.geemeo) f.geemeo.grupo.visible = est === 'memoria' && !!f.vistoAArder;
+                }
+                const novoFactorH = veuFactorLuzVista(0, 0, 8);
+                if (novoFactorH !== veuFactorHearth) { veuFactorHearth = novoFactorH; ambReaplicar(); }
+                veuAplicarBraseiros();
+                if (world.veuMotes) {
+                    world.veuMotes.nunca.clear(); for (const c of veuNunca) world.veuMotes.nunca.add(c);
+                    world.veuMotes.memoria.clear(); for (const c of veuMemoria) world.veuMotes.memoria.add(c);
+                }
+            }
+            /* Janela de prova da bancada (S2-13/S2-14): o estado do
+               véu e do mundo, item a item, para a varredura. */
+            function getVeuEstado() {
+                const tempos = [...veuTemposCamadas].sort((a, b) => a - b);
+                return {
+                    nunca: [...veuNunca], memoria: [...veuMemoria], chavesIgnoradas: [...veuChavesIgnoradas], factorHearth: veuFactorHearth,
+                    temposCamadas: { n: tempos.length, p95: tempos.length ? tempos[Math.min(tempos.length - 1, Math.floor(tempos.length * .95))] : 0, lista: veuTemposCamadas.slice(-40).map(v => Math.round(v * 100) / 100) },
+                    pecas: pecasFogueiraRegisto.map(r => ({ chave: r.chave, visivel: r.mesh.visible, fantasma: r.mesh.material === ghostMat, sombra: r.mesh.castShadow })),
+                    fogos: [...fogosCasas.entries()].map(([chave, f]) => ({ chave, estado: f.estadoVisao, vistoAArder: !!f.vistoAArder, geemeoVisivel: !!(f.geemeo && f.geemeo.grupo.visible), geemeoNaCena: !!(f.geemeo && f.geemeo.grupo.parent) })),
+                    braseiros: veuBraseirosReg.map(r => ({ chave: r.chave, estado: r.estado, fatorVisao: r.b.fatorVisao, factorDecor: r.factorDecor })),
+                    motes: world.veuMotes ? { nunca: world.veuMotes.nunca.size, memoria: world.veuMotes.memoria.size } : null,
+                    pedras: world.pedrasDiagnostico ? world.pedrasDiagnostico() : null,
+                    decor: ambDecor ? { luzes: ambDecor.luzes.map(d => ({ braseiro: d.braseiro })), sprites: ambDecor.sprites.map(d => ({ braseiro: d.braseiro, tipo: d.tipo, visivel: d.o.visible })) } : null
+                };
+            }
             function setCamadas(defs) {
+                const t0Cam = performance.now();
+                /* Derivação por chaves validadas (S2-1), em TODOS
+                   os caminhos, antes de qualquer return: {total,
+                   nunca, memoria} é o conjunto fechado — outra
+                   chave é ignorada para os estados do mundo e fica
+                   registada em veuChavesIgnoradas. defs null/{} →
+                   conjuntos vazios (Zero, Parcial, pré-vista
+                   desligada, vista normal: tudo à vista). */
+                const novoNunca = new Set(), novoMemoria = new Set();
+                if (defs) for (const nome of Object.keys(defs)) {
+                    const def = defs[nome];
+                    if (nome !== 'total' && nome !== 'nunca' && nome !== 'memoria') { if (!veuChavesIgnoradas.includes(nome)) veuChavesIgnoradas.push(nome); continue; }
+                    const alvo = nome === 'memoria' ? novoMemoria : novoNunca;
+                    for (const p of def.cells || []) { try { valid(p); } catch { continue; } alvo.add(p.x + ',' + p.z); }
+                }
+                veuNunca = novoNunca; veuMemoria = novoMemoria;
+                veuEscondidas = new Set([...novoNunca, ...novoMemoria]);
+                veuAplicarMundo();
+                /* E2: as sombras recozinham em TODOS os caminhos,
+                   incluindo o null — fantasmas do mundo não lançam
+                   sombra e peças restauradas voltam a lançar. */
+                renderer.shadowMap.needsUpdate = true;
                 release(veilLayer);
                 veilLayer.clear();
-                if (!defs)
-                    return;
-                for (const def of Object.values(defs)) {
+                if (defs) for (const def of Object.values(defs)) {
                     const tex = veuMascara(def.cells);
                     if (!tex)
                         continue;
                     const mat = new T.MeshBasicMaterial({ color: def.cor, transparent: true, opacity: def.opacidade, alphaMap: tex, depthWrite: false, side: T.DoubleSide });
                     veilLayer.add(new T.Mesh(veuFolha(), mat));
                 }
-                renderer.shadowMap.needsUpdate = true;
+                veuTemposCamadas.push(performance.now() - t0Cam);
+                if (veuTemposCamadas.length > 400) veuTemposCamadas.shift();
             }
             function setOculto(id, valor) {
                 const u = requireUnit(id);
@@ -1942,6 +2201,7 @@
                 renderer.shadowMap.needsUpdate = true;
             }
             const ghostMat = new T.MeshBasicMaterial({ color: 0x9aa7b4, transparent: true, opacity: .45, depthWrite: false });
+            if (world.definirFantasmaPedras) world.definirFantasmaPedras(ghostMat);
             const fantasmas = new Map();
             function addFantasma(chaveF, idOrigem, x, z, frenteRad) {
                 valid({ x, z });
@@ -2028,7 +2288,7 @@
                     pose(u);
                 }, aplicarAmbiente, getAmbienteAplicado() {
                     return { hora: ambActual.hora, chuva: ambActual.chuva, raios: ambAlvo.raios, emTransicao: !!ambTrans, derivados: ambDerivados };
-                }, dispararRaio, raioArenaVisual, acenderFogoCasa, apagarFogoCasa, definirEstagioFogoCasa, setUnidadeAArder, limparFogos, setCapChuva(n) {
+                }, dispararRaio, raioArenaVisual, acenderFogoCasa, apagarFogoCasa, definirEstagioFogoCasa, setUnidadeAArder, limparFogos, getVeuEstado, setCapChuva(n) {
                     ambCapChuva = n == null ? null : Math.max(0, Math.floor(n));
                     ambReaplicar();
                 }, setTesteChuva052(ligada, nivel) {
