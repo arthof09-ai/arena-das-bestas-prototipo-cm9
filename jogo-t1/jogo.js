@@ -427,11 +427,13 @@
      ════════════════════════════════════════════════════════════════════ */
   const VISAO_MODOS = ['zero', 'parcial', 'total', 'ultra'];
   const VISAO_MODO_NOMES = { zero: 'Zero', parcial: 'Parcial', total: 'Total', ultra: 'Ultra' };
-  /* Formas do desenho: nome da casa → código da calculadora
-     (larga = M3b, 180° + anel · maqueta = M2, 120° + anel ·
-     cone = M1-120, cone puro de 120°). */
+  /* Formas do desenho: nome da casa → código da calculadora COM
+     anel (larga = M3b, 180° + anel · maqueta = M2, 120° + anel ·
+     cone = M1-120, 120°). O anel é interruptor próprio da partida
+     (tranche ANEL OPCIONAL): sem anel, quem resolve o código é o
+     visaoModelo() — larga = M1-180 (180° puro), maqueta = M1-120. */
   const VISAO_FORMAS = { larga: 'M3b', maqueta: 'M2', cone: 'M1-120' };
-  const VISAO_FORMA_NOMES = { larga: 'Larga — 180° + anel', maqueta: 'Maqueta — 120° + anel', cone: 'Cone puro — 120°' };
+  const VISAO_FORMA_NOMES = { larga: 'Larga — 180°', maqueta: 'Maqueta — 120°', cone: 'Cone — 120°' };
   const VISAO_RAD = { N: Math.PI, S: 0, E: Math.PI / 2, W: -Math.PI / 2 };
   const VISAO_PRAZOS = ['off', '1', '2'];
   /* Conjunto a ocultar: as figuras adversárias do elenco actual — o
@@ -446,10 +448,18 @@
      o Capanga. O sensor nunca cria, move nem apaga lembranças:
      sente o LADO (sectores de 90°), nunca a casa. */
   const VISAO_SENSOR = { pb: 60, fb: 50, alvo: 'capanga' };
+  /* Domínio do estado da visão: {modo, forma, prazo} é o legado
+     (saves anteriores à tranche do anel — o anel ausente vale
+     DESLIGADO); com a 4.ª chave, tem de ser exactamente
+     {modo, forma, prazo, anel} com anel booleano. Todo o resto
+     rejeita, com o efeito de sempre na validação de estados. */
   function visaoDominioValido(v) {
     if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
     const chaves = Object.keys(v);
-    if (chaves.length !== 3 || !chaves.includes('modo') || !chaves.includes('forma') || !chaves.includes('prazo')) return false;
+    if (!chaves.includes('modo') || !chaves.includes('forma') || !chaves.includes('prazo')) return false;
+    if (chaves.length === 4) {
+      if (!chaves.includes('anel') || typeof v.anel !== 'boolean') return false;
+    } else if (chaves.length !== 3) return false;
     if (!VISAO_MODOS.includes(v.modo)) return false;
     if (!Object.prototype.hasOwnProperty.call(VISAO_FORMAS, v.forma)) return false;
     if (!VISAO_PRAZOS.includes(v.prazo)) return false;
@@ -476,11 +486,17 @@
      o modo e a forma, como no Ambiente. O prazo da lembrança mora
      na sua chave histórica (hudt1-lembranca-prazo, a da página de
      referência) e lê-se em qualquer papel — é preferência do
-     aparelho onde a vista corre. */
-  let visaoPartida = { modo: 'total', forma: 'maqueta', prazo: 'off' };
+     aparelho onde a vista corre. O anel espelha o prazo: 4.ª chave
+     do estado e chave própria (hudt1-visao-anel), lida ao nascer em
+     qualquer papel e gravada ao assentar; nasce DESLIGADO por
+     natureza (palavra do Mestre, 11/11) — quem quiser, liga. */
+  let visaoPartida = { modo: 'total', forma: 'maqueta', prazo: 'off', anel: false };
   try {
     const p = localStorage.getItem('hudt1-lembranca-prazo');
     if (VISAO_PRAZOS.includes(p)) visaoPartida.prazo = p;
+  } catch (_) {}
+  try {
+    if (localStorage.getItem('hudt1-visao-anel') === 'ligado') visaoPartida.anel = true;
   } catch (_) {}
   {
     const prefVisao = visaoLerPreferencia();
@@ -495,13 +511,25 @@
   function visaoAssentar(novo, opcoes) {
     const ops = opcoes || {};
     if (!visaoDominioValido(novo)) return false;
-    visaoPartida = { modo: novo.modo, forma: novo.forma, prazo: novo.prazo };
+    visaoPartida = { modo: novo.modo, forma: novo.forma, prazo: novo.prazo, anel: novo.anel === true };
     try { localStorage.setItem('hudt1-lembranca-prazo', visaoPartida.prazo); } catch (_) {}
+    try { localStorage.setItem('hudt1-visao-anel', visaoPartida.anel ? 'ligado' : 'desligado'); } catch (_) {}
     visaoGravarPreferencia();
     visaoSincronizarPainel();
     if (ops.limparMemoria) visaoLimparMemoria();
     visaoAplicar();
     return true;
+  }
+  /* O código da calculadora para a forma × anel actuais — um só
+     resolvedor para a vista dela, o campo da pré-vista e o gancho
+     de prova, para os três nunca divergirem em silêncio. A
+     calculadora (visao.js) não se toca: os modelos puros já lá
+     estão. Sem anel: larga = M1-180 (180° puro) · maqueta = M1-120
+     (o mesmo código do cone) · cone = M1-120, como sempre. */
+  function visaoModelo() {
+    if (visaoPartida.forma === 'larga') return visaoPartida.anel ? 'M3b' : 'M1-180';
+    if (visaoPartida.forma === 'maqueta') return visaoPartida.anel ? 'M2' : 'M1-120';
+    return 'M1-120';
   }
 
   /* ---------- Sons do ambiente (WebAudio) ----------
@@ -6073,7 +6101,8 @@
        SAVE_ESTADO_INVALIDO (erro nomeado), nunca clamp silencioso. */
     if ('escala' in e && !ESCALAS_CASA_M.includes(e.escala)) return INV;
     /* VISÃO: presente, tem de trazer o domínio inteiro
-       {modo, forma, prazo} — sem chaves estranhas. */
+       {modo, forma, prazo} ou, com o anel, {…, anel booleano} —
+       sem chaves estranhas (a regra exacta é do visaoDominioValido). */
     if ('visao' in e && !visaoDominioValido(e.visao)) return INV;
     /* PORTA C-23: o bloco do motor confere-se com a mesma régua. */
     return validarVlabParaAplicar(e.vlab);
@@ -8313,10 +8342,11 @@
   function visaoCampo() {
     const ong = unidade(PROPRIA);
     const olhar = visaoOlharDerivado();
-    const chaveCache = [ong.posicao.x, ong.posicao.y, olhar, visaoPartida.forma].join('|');
+    const modelo = visaoModelo();
+    const chaveCache = [ong.posicao.x, ong.posicao.y, olhar, modelo].join('|');
     if (visaoCache.has(chaveCache)) return visaoCache.get(chaveCache);
     const t0 = performance.now();
-    const s = window.Visao.campo(AREA.cols, AREA.rows, [ong.posicao.x, ong.posicao.y], olhar, visaoOpacos(), 'V2', VISAO_FORMAS[visaoPartida.forma]);
+    const s = window.Visao.campo(AREA.cols, AREA.rows, [ong.posicao.x, ong.posicao.y], olhar, visaoOpacos(), 'V2', modelo);
     visaoMs = performance.now() - t0;
     visaoCache.set(chaveCache, s);
     return s;
@@ -8458,7 +8488,7 @@
      'desligado'; nasce desligado, lê-se ao arranque nos dois papéis
      e só se consome na vista do Mestre (a única onde o interruptor
      existe). NUNCA entra em visaoPartida: o domínio dela é fechado
-     (modo/forma/prazo) e viaja na partida — isto é do ecrã, não dela.
+     (modo/forma/prazo/anel) e viaja na partida — isto é do ecrã, não dela.
      ════════════════════════════════════════════════════════════════════ */
   let visaoPreviaMestre = false;
   try { visaoPreviaMestre = localStorage.getItem('hudt1-visao-previa') === 'ligado'; } catch (_) {}
@@ -8480,11 +8510,12 @@
     return olhos;
   }
   /* o campo de UM olho, pela mesma chamada que a vista dela usa,
-     com cache por posição/olhar/forma (paralela à cache dela) */
+     com cache por posição/olhar/modelo (paralela à cache dela) */
   function visaoCampoOlho(x, y, olhar) {
-    const chaveCache = [x, y, olhar, visaoPartida.forma].join('|');
+    const modelo = visaoModelo();
+    const chaveCache = [x, y, olhar, modelo].join('|');
     if (visaoPrevCache.has(chaveCache)) return visaoPrevCache.get(chaveCache);
-    const s = window.Visao.campo(AREA.cols, AREA.rows, [x, y], olhar, visaoOpacos(), 'V2', VISAO_FORMAS[visaoPartida.forma]);
+    const s = window.Visao.campo(AREA.cols, AREA.rows, [x, y], olhar, visaoOpacos(), 'V2', modelo);
     visaoPrevCache.set(chaveCache, s);
     return s;
   }
@@ -8602,15 +8633,17 @@
   }
 
   /* ---------- o ⚙ do Mestre: secção «Visão» (só nesta vista) ---------- */
-  const visaoUI = { botoesModo: [], botoesForma: [], botoesPrazo: [], botoesPrevia: [], estadoEl: null };
+  const visaoUI = { botoesModo: [], botoesForma: [], botoesAnel: [], botoesPrazo: [], botoesPrevia: [], estadoEl: null };
   function visaoSincronizarPainel() {
     const e = visaoPartida;
     if (visaoUI.estadoEl)
       visaoUI.estadoEl.textContent = 'Modo ' + VISAO_MODO_NOMES[e.modo] + ' · ' + VISAO_FORMA_NOMES[e.forma] +
+        ' · ao redor ' + (e.anel ? 'ligado' : 'desligado') +
         ' · lembrança ' + (e.prazo === 'off' ? 'sem prazo' : 'com prazo de ' + e.prazo + ' min') +
         (visaoPreviaMestre ? ' · pré-vista ligada' : '');
     for (const reg of visaoUI.botoesModo) reg.b.classList.toggle('on', e.modo === reg.v);
     for (const reg of visaoUI.botoesForma) reg.b.classList.toggle('on', e.forma === reg.v);
+    for (const reg of visaoUI.botoesAnel) reg.b.classList.toggle('on', e.anel === reg.v);
     for (const reg of visaoUI.botoesPrazo) reg.b.classList.toggle('on', e.prazo === reg.v);
     for (const reg of visaoUI.botoesPrevia) reg.b.classList.toggle('on', visaoPreviaMestre === reg.v);
   }
@@ -8642,6 +8675,7 @@
           prox[chave] = v;
           if (visaoAssentar(prox, {}))
             say('Visão da partida: modo ' + VISAO_MODO_NOMES[visaoPartida.modo] + ', ' + VISAO_FORMA_NOMES[visaoPartida.forma] +
+              ', ao redor ' + (visaoPartida.anel ? 'ligado' : 'desligado') +
               ', lembrança ' + (visaoPartida.prazo === 'off' ? 'sem prazo.' : 'com prazo de ' + visaoPartida.prazo + ' min.'));
         });
         grupo.appendChild(b);
@@ -8654,7 +8688,9 @@
     visaoLinha('Modo', 'Modo de visão das jogadoras',
       [['zero', 'Zero'], ['parcial', 'Parcial'], ['total', 'Total'], ['ultra', 'Ultra']], visaoUI.botoesModo, 'modo');
     visaoLinha('Forma', 'Forma do campo de visão',
-      [['larga', 'Larga 180°+anel'], ['maqueta', 'Maqueta 120°+anel'], ['cone', 'Cone puro 120°']], visaoUI.botoesForma, 'forma');
+      [['larga', 'Larga 180°'], ['maqueta', 'Maqueta 120°'], ['cone', 'Cone 120°']], visaoUI.botoesForma, 'forma');
+    visaoLinha('Ver ao redor', 'Ver as casas ao redor da personagem',
+      [[false, 'Desligado'], [true, 'Ligado']], visaoUI.botoesAnel, 'anel');
     visaoLinha('Lembrança', 'Prazo da lembrança (só Ultra)',
       [['off', 'Desligado'], ['1', '1 min'], ['2', '2 min']], visaoUI.botoesPrazo, 'prazo');
     const linhaPrevia = document.createElement('div');
@@ -8717,7 +8753,7 @@
         return u ? e.id + ':' + u.posicao.x + ',' + u.posicao.y + ':' + (u.vivo ? 1 : 0) : e.id + ':?';
       }).join('|') + '|f' + visaoOlhosJogadoras().map(o => Math.round(visaoFrenteGraus(o.id))).join(',') +
         '|fim' + (batalhaFim ? 1 : 0) +
-        '|' + visaoPartida.modo + '/' + visaoPartida.forma + '/' + visaoPartida.prazo;
+        '|' + visaoPartida.modo + '/' + visaoPartida.forma + '/' + visaoPartida.prazo + '/' + visaoPartida.anel;
       if (visaoPrevUltimoSnapshot === null) visaoPrevUltimoSnapshot = snapP;
       else if (snapP !== visaoPrevUltimoSnapshot) {
         visaoPrevUltimoSnapshot = snapP;
@@ -8752,7 +8788,7 @@
       const u = unidade(e.id);
       return u ? e.id + ':' + u.posicao.x + ',' + u.posicao.y + ':' + (u.vivo ? 1 : 0) : e.id + ':?';
     }).join('|') + '|f' + Math.round(visaoFrenteGraus(PROPRIA)) + '|fim' + (batalhaFim ? 1 : 0) +
-      '|' + visaoPartida.modo + '/' + visaoPartida.forma + '/' + visaoPartida.prazo;
+      '|' + visaoPartida.modo + '/' + visaoPartida.forma + '/' + visaoPartida.prazo + '/' + visaoPartida.anel;
     if (snap !== visaoUltimoSnapshot) {
       visaoUltimoSnapshot = snap;
       visaoAplicar();
@@ -8763,7 +8799,7 @@
   window.__visao = Object.freeze({
     estado: () => ({
       papel: MODO_MESTRE ? 'mestre' : 'jogadora',
-      modo: visaoPartida.modo, forma: visaoPartida.forma, prazo: visaoPartida.prazo,
+      modo: visaoPartida.modo, forma: visaoPartida.forma, prazo: visaoPartida.prazo, anel: visaoPartida.anel,
       olhar: MODO_MESTRE ? null : visaoOlharDerivado(),
       casasVistas: visaoCasasVistas, ms: visaoMs,
       fantasmas: view.listaFantasmas(),
@@ -8780,6 +8816,7 @@
         if ('modo' in parcial) prox.modo = parcial.modo;
         if ('forma' in parcial) prox.forma = parcial.forma;
         if ('prazo' in parcial) prox.prazo = parcial.prazo;
+        if ('anel' in parcial) prox.anel = parcial.anel;
       }
       return visaoAssentar(prox, {});
     },
@@ -8788,7 +8825,7 @@
       if (MODO_MESTRE || !window.Visao) return null;
       const ong = unidade(PROPRIA);
       if (!ong) return null;
-      return [...window.Visao.campo(AREA.cols, AREA.rows, [ong.posicao.x, ong.posicao.y], visaoOlharDerivado(), visaoOpacos(), 'V2', VISAO_FORMAS[visaoPartida.forma])];
+      return [...window.Visao.campo(AREA.cols, AREA.rows, [ong.posicao.x, ong.posicao.y], visaoOlharDerivado(), visaoOpacos(), 'V2', visaoModelo())];
     },
     campoPrevia: () => {
       if (!MODO_MESTRE || !window.Visao) return null;
@@ -8807,7 +8844,7 @@
       const u = unidade(e.id);
       return u ? e.id + ':' + u.posicao.x + ',' + u.posicao.y + ':' + (u.vivo ? 1 : 0) : e.id + ':?';
     }).join('|') + '|f' + Math.round(visaoFrenteGraus(PROPRIA)) + '|fim' + (batalhaFim ? 1 : 0) +
-      '|' + visaoPartida.modo + '/' + visaoPartida.forma + '/' + visaoPartida.prazo;
+      '|' + visaoPartida.modo + '/' + visaoPartida.forma + '/' + visaoPartida.prazo + '/' + visaoPartida.anel;
     visaoAplicar();
   });
 })();
