@@ -1436,6 +1436,12 @@
   /* Tempos da vez da IA (D-13.6): a vez do monstro tem de se ver. */
   const ESPERA_ANUNCIO_MS = 800, ESPERA_ATAQUE_MS = 500, ESPERA_FIM_MS = 1000;
   const GUARDA_IA_MS = 5000;   // relógio de guarda do movimento da IA (G-13.3)
+  /* RN-2 (tranche «Órfãs do Ledger», A-17): tecto de REARMES das
+     guardas de 5 s (a dela e a da IA) — 5 s + 23 × 5 s = 120 s à
+     espera de um moveend legítimo em aparelho lento; passado o
+     tecto sem a figura pousar nem se mover, o movimento trata-se
+     como nunca completou (o caminho anti-bloqueio de sempre). */
+  const GUARDA_REARMES_MAX = 23;
   /* Reserva de movimento DELA (D-13.13): manda a ficha dela —
      Deslocamento 9 m. A casa do motor publicado vale 1,5 m (Q5). */
   const DESLOCAMENTO_ONG_M = 9;
@@ -2584,6 +2590,17 @@
      respectivo pendente vivo, e cada despacho os escreve. */
   let custoPendentePreco = null;
   let passoPreco = null;
+  /* RN-1 (tranche «Órfãs do Ledger», A-16): os preços pendentes
+     morrem SEMPRE com o pendente correspondente. Todo o caminho que
+     anula custoPendente/passoEmCurso (restauro do Supervisor,
+     carregar pela ponte, catch da aplicação, guarda de movimento,
+     ramo de época do moveend tardio, fim da batalha) chama esta
+     limpeza — nenhum preço velho sobrevive para ser relido por um
+     despacho futuro. (Medido na sonda RN-1: na base nenhum caminho
+     de leitura o relia — cada despacho reescreve o preço antes de
+     qualquer leitura e os restauros sobem a época; a limpeza fecha
+     o resíduo teórico nomeado na RN-1 da REF_36.) */
+  function limparPrecosPendentes() { custoPendentePreco = null; passoPreco = null; }
   let contextoIA = null;        // { id, seq, relogio, destino? } do movimento/ataque da IA em voo — consumo único (G-13.3(d)); destino só no movimento (E-1)
   let guardaExpiradaIA = null;  // M-009: { id, seq } da última guarda de 5 s expirada cuja figura ainda vem a caminho — a chegada tardia dela diz-se, não se engole em silêncio
   /* Reserva de destino em voo (tranche do congelamento «Duas figuras
@@ -3440,7 +3457,7 @@
       return;
     }
     guardaExpiradaIA = null;   // M-009: movimento novo desta figura — a marca de expiração anterior já não descreve nada em voo
-    contextoIA = { id, seq, destino: { x: destino.x, y: destino.y }, relogio: setTimeout(() => relogioIA(id, seq), GUARDA_IA_MS) };
+    contextoIA = { id, seq, destino: { x: destino.x, y: destino.y }, rearmes: 0, relogio: setTimeout(() => relogioIA(id, seq), GUARDA_IA_MS) };
     /* Reserva de destino em voo: nasce com o despacho e NÃO morre
        com o contexto — sobrevive à guarda de 5 s, até esta figura
        de facto pousar neste destino (ver o tratador de moveend). */
@@ -3497,10 +3514,32 @@
     // que a guarda faz é fechar a VEZ (e com ela o ataque), não
     // parar a figura. A frase passa a dizer exactamente isso, e a
     // expiração fica marcada: quando o moveend tardio chegar, a
-    // chegada nomeia-se (ver o tratador de moveend). A guarda em si
-    // (5 s fixos, GUARDA_IA_MS) NÃO foi redesenhada nesta correcção.
-    const ctx = consumirContextoIA(id);
-    if (!ctx || ctx.seq !== seq || seqTurno !== seq || batalhaFim) return;
+    // chegada nomeia-se (ver o tratador de moveend).
+    // RN-2 (tranche «Órfãs do Ledger», A-17) — a guarda FOI
+    // redesenhada: medido em aparelho lento (moveend a chegar
+    // depois dos 5 s), ela anulava o ataque legítimo de um monstro
+    // que pousava na mesma. Agora, ao expirar, a guarda pergunta à
+    // cena: a figura ainda se move, ou já pousou no destino e só o
+    // moveend está atrasado? Se sim, REARMA (até GUARDA_REARMES_MAX)
+    // sem consumir o contexto — o moveend tardio liquida a chegada
+    // como completa (ataque incluído), pelo caminho de sempre. Só
+    // quando a figura não se move nem pousou (nunca completou) é
+    // que a guarda fecha a vez sem atacar, como antes.
+    const ctx = (contextoIA && contextoIA.id === id && contextoIA.seq === seq) ? contextoIA : null;
+    if (!ctx || seqTurno !== seq || batalhaFim) return;
+    const uIAg = unidade(id);
+    const pousado = !!(ctx.destino && uIAg
+      && uIAg.posicao.x === ctx.destino.x && uIAg.posicao.y === ctx.destino.y);
+    let aMover = false;
+    try { aMover = !!view.getState().moving; } catch (_) { aMover = false; }
+    if ((aMover || pousado) && (ctx.rearmes || 0) < GUARDA_REARMES_MAX) {
+      ctx.rearmes = (ctx.rearmes || 0) + 1;
+      ctx.relogio = setTimeout(() => relogioIA(id, seq), GUARDA_IA_MS);
+      supRegistar('guarda', { acao: 'mover', actor: id, razao: 'O moveend da IA não chegou em 5 s, mas o movimento ainda decorre ou a figura já pousou — guarda rearmada, contexto intacto' });
+      return;
+    }
+    const consumido = consumirContextoIA(id);
+    if (!consumido || consumido.seq !== seq) return;
     guardaExpiradaIA = { id, seq };
     say(`<b>${nomeCena(id)}</b> demorou a chegar — a vez dele terminou sem atacar.`);
     fimDaVezIA(seq);
@@ -3785,6 +3824,7 @@
        escala, não pela bandeira). */
     if (causa === 'morte') { mortePropriaAdjudicada = true; aplicarTelaVermelha(); }
     continuarAposApresentacao = false;   // R1-Priv: terminal — nenhum Continuar diferido sobrevive ao fim
+    limparPrecosPendentes();   // RN-1: no fim natural nenhum preço pendente sobrevive
     batalhaFim = true;
     seqTurno++;                              // invalida continuações pendentes
     if (contextoIA) consumirContextoIA(contextoIA.id);
@@ -3824,6 +3864,7 @@
        idempotente e a chamada não custa nada fora do parque. */
     fecharDesgracaMonstro({ morta: true });
     continuarAposApresentacao = false;   // terminal — nenhum Continuar diferido sobrevive
+    limparPrecosPendentes();   // RN-1: no fim declarado nenhum preço pendente sobrevive
     batalhaFim = true;
     seqTurno++;                              // invalida continuações pendentes
     if (contextoIA) consumirContextoIA(contextoIA.id);
@@ -4577,6 +4618,7 @@
        animação velha pode ter pousado a figura fora dele). */
     if (u.id === PROPRIA && epocaMovimentoOng !== supEpoca) {
       custoPendente = null; caminhoPendente = null;
+      limparPrecosPendentes();   // RN-1: o preço do voo morto morre com ele
       passoEmCurso = false; parado = false;
       supDesarmarGuardaMovimentoOng();
       if (supRestauroPendente) {
@@ -5724,7 +5766,7 @@
       path: Array.isArray(path) ? path.map(p => ({ x: p.x, y: p.y })) : null });   // T1.7: caminho no evento (decisão registada nas NOTAS)
     supDesarmarGuardaMovimentoOng();
     const epoca = supEpoca;
-    guardaMovimentoOng = { epoca, relogio: setTimeout(() => supRelogioGuardaMovimentoOng(epoca), SUP_GUARDA_MOVIMENTO_MS) };
+    guardaMovimentoOng = { epoca, destino: para ? { x: para.x, y: para.y } : null, rearmes: 0, relogio: setTimeout(() => supRelogioGuardaMovimentoOng(epoca), SUP_GUARDA_MOVIMENTO_MS) };
   }
   function supDesarmarGuardaMovimentoOng() {
     if (guardaMovimentoOng) { clearTimeout(guardaMovimentoOng.relogio); guardaMovimentoOng = null; }
@@ -5735,10 +5777,35 @@
      os pendentes de custo limpam-se e o estado 'movendo' volta à
      base; um passo de seta só perde o passoEmCurso. Fica registo. */
   function supRelogioGuardaMovimentoOng(epoca) {
+    const guarda = guardaMovimentoOng;
     guardaMovimentoOng = null;
     if (supCongelado || epoca !== supEpoca) return;
     if (estado !== 'movendo' && !passoEmCurso) return;
+    /* RN-2 (tranche «Órfãs do Ledger», A-17): ao expirar, a guarda
+       pergunta à cena se o movimento ainda decorre ou se a figura
+       já pousou no destino e só o moveend está atrasado (aparelho
+       lento). Nesse caso REARMA (até GUARDA_REARMES_MAX) com os
+       pendentes INTACTOS — o moveend tardio liquida o movimento
+       como completo, com o débito ao preço do despacho, pelo
+       tratador de sempre. Antes, a guarda limpava os pendentes sem
+       débito e o movimento legítimo que chegava tarde nunca se
+       pagava (medido: voo de 5 casas, reserva intacta nos 9). Só
+       quando a figura não se move nem pousou — o movimento nunca
+       completou — é que corre o destrave anti-bloqueio de sempre. */
+    const uOng = unidade(PROPRIA);
+    const pousada = !!(guarda && guarda.destino && uOng
+      && uOng.posicao.x === guarda.destino.x && uOng.posicao.y === guarda.destino.y);
+    let aMover = false;
+    try { aMover = !!view.getState().moving; } catch (_) { aMover = false; }
+    if ((aMover || pousada) && guarda && (guarda.rearmes || 0) < GUARDA_REARMES_MAX) {
+      guarda.rearmes = (guarda.rearmes || 0) + 1;
+      guarda.relogio = setTimeout(() => supRelogioGuardaMovimentoOng(epoca), SUP_GUARDA_MOVIMENTO_MS);
+      guardaMovimentoOng = guarda;
+      supRegistar('guarda', { acao: 'mover', actor: PROPRIA, razao: 'O moveend dela não chegou em 5 s, mas o movimento ainda decorre ou ela já pousou — guarda rearmada, pendentes intactos' });
+      return;
+    }
     custoPendente = null; caminhoPendente = null; passoEmCurso = false; parado = false;
+    limparPrecosPendentes();   // RN-1: o preço morre com o pendente anulado
     partidaPendente = null;   // pós-Crítico 3 (achado 3): uma partida cuja guarda expirou não resolve AoO tardios
     if (estado === 'movendo') { estado = 'base'; renderAcoes(); }
     supRegistar('guarda', { acao: 'mover', actor: PROPRIA, razao: 'O moveend dela não chegou em 5 s — movimento destravado sem desconto' });
@@ -6076,6 +6143,7 @@
     mortePropriaAdjudicada = false; aplicarTelaVermelha();
     rodada = snap.rodada; indiceVez = snap.indiceVez;
     ataquePendente = null; custoPendente = null; caminhoPendente = null;
+    limparPrecosPendentes();   // RN-1: os preços do voo abandonado morrem no restauro
     continuarAposApresentacao = false;   // R1-Priv: o Continuar diferido morre no restauro — pertencia à linha do tempo abandonada
     passoEmCurso = false; parado = false;
     /* Caso 12 VLAB (medido na sonda de 04/11): um snapshot só
@@ -6563,6 +6631,7 @@
         }
         dadoEstado = e.dados.estado >>> 0; roladasDados = e.dados.roladas;
         ataquePendente = null; custoPendente = null; caminhoPendente = null;
+        limparPrecosPendentes();   // RN-1: os preços do voo substituído morrem no carregar
         continuarAposApresentacao = false;
         passoEmCurso = false; parado = false;
         partidaPendente = null; correrUsado = false;
@@ -6688,6 +6757,7 @@
             batalhaFim = preSave.batalhaFim;
             dadoEstado = preSave.dadoEstado >>> 0; roladasDados = preSave.roladasDados;
             ataquePendente = null; custoPendente = null; caminhoPendente = null;
+            limparPrecosPendentes();   // RN-1: aplicação falhada também não deixa preços velhos
             continuarAposApresentacao = false;
             passoEmCurso = false; parado = false;
             partidaPendente = preSave.partidaPendente;
@@ -7261,9 +7331,14 @@
    * globais). Os três preços oficiais; apertar muda a escala NA
    * HORA, a meio da batalha, sem custo e sem confirmação. O estado
    * vive em CASA_M; esta superfície só o pinta e o pede. */
-  const escUI = { botoes: [] };
+  const escUI = { botoes: [], vigenteParty: null };
   function escSincronizarPainel() {
     for (const reg of escUI.botoes) reg.b.classList.toggle('on', reg.valor === CASA_M);
+    /* RN-4 (tranche «Órfãs do Ledger», A-18): o rótulo só-leitura
+       da Party repinta-se da MESMA fonte que a simulação lê
+       (CASA_M, assentada por escalaAssentar — que chama esta
+       função) — valor do mundo, sem controlo e sem mais nada. */
+    if (escUI.vigenteParty) escUI.vigenteParty.textContent = fmtM(CASA_M) + ' por casa';
   }
   if (MODO_MESTRE) {
     const tituloEsc = document.createElement('h3');
@@ -7290,6 +7365,29 @@
     linhaEsc.appendChild(rotuloEsc);
     linhaEsc.appendChild(grupoEsc);
     cfgEl.insertBefore(linhaEsc, $('stats'));
+    escSincronizarPainel();
+  } else {
+    /* RN-4 (tranche «Órfãs do Ledger», A-18): na vista da Party a
+       escala vigente passa a VER-SE — só-leitura, no mesmo sítio do
+       ⚙ onde o Mestre tem o selector. A escala é parâmetro do mundo
+       (não é segredo do Mestre) e já regia a simulação dela (nasce
+       da preferência do aparelho e dos saves) sem selector, valor
+       nem aviso. Esta linha não tem botões nem ouvintes, não
+       escreve armazenamento nenhum e o texto vem de CASA_M — a
+       fonte única que a simulação lê — por isso o valor mostrado é
+       sempre o valor em vigor. Nenhum outro elemento é criado:
+       nenhum dado/estado do lado do Mestre atravessa para a Party. */
+    const linhaEscParty = document.createElement('div');
+    linhaEscParty.className = 'cfgrow';
+    const rotuloEscParty = document.createElement('span');
+    rotuloEscParty.className = 'cl';
+    rotuloEscParty.innerHTML = 'Escala<small>quanto vale cada casa</small>';
+    const valorEscParty = document.createElement('span');
+    valorEscParty.id = 'esc-vigente';
+    linhaEscParty.appendChild(rotuloEscParty);
+    linhaEscParty.appendChild(valorEscParty);
+    cfgEl.insertBefore(linhaEscParty, $('stats'));
+    escUI.vigenteParty = valorEscParty;
     escSincronizarPainel();
   }
 
