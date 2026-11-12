@@ -688,6 +688,16 @@
        * descodificadas; até lá — ou se um ficheiro falhar —
        * esse canal fica mudo. */
       ambCarregarChuvas(ctx);
+      /* MÚSICA DE BATALHA (t-musica-batalha): o bus da música nasce
+       * com o contexto, ligado DIRECTO ao destino — fora do master
+       * do ambiente, cujo factor é o dos Efeitos — e a faixa carrega
+       * em fundo, como as chuvas. */
+      try {
+        musica.ganho = ctx.createGain();
+        musica.ganho.gain.value = 0;
+        musica.ganho.connect(ctx.destination);
+      } catch (_) { musica.ganho = null; }
+      musCarregar(ctx);
       ambAudio.trovoes = [ambGerarTrovao(ctx, 1.9, 0.05), ambGerarTrovao(ctx, 2.6, 0.03), ambGerarTrovao(ctx, 3.2, 0.02)];
     } catch (_) { ambAudio.ctx = null; }
     return ambAudio.ctx;
@@ -717,6 +727,11 @@
         par[0].gain.linearRampToValueAtTime(par[1], agora + 2.5);
       }
     } catch (_) {}
+    /* A música da batalha sincroniza no mesmo sítio: os reguladores
+     * que chamam esta função (Geral, Efeitos, Mudo, Restaurar, o
+     * assentador do ambiente e o desbloqueio por gesto) são os
+     * mesmos gestos que a podem acordar ou calar. */
+    musSincronizar();
   }
   function ambTentarDesbloquearAmbiente() {
     if (ambAudio.desbloqueado) return;
@@ -758,6 +773,87 @@
       master: ambAudio.master ? ambAudio.master.gain.value : null,
       ganhoPouca: ambAudio.ganhoPouca ? ambAudio.ganhoPouca.gain.value : null,
       ganhoForte: ambAudio.ganhoForte ? ambAudio.ganhoForte.gain.value : null
+    };
+  };
+
+  /* ---------- MÚSICA DE BATALHA (tranche t-musica-batalha) ----------
+   * Palavra do Mestre (12/11/2026 09:32): «Já pode pôr no jogo» — a
+   * faixa «Batalha Calma — Pulso Contido» (Suno, Leva 2; o ficheiro
+   * que ele próprio descarregou e enviou) é a música DA BATALHA:
+   * toca em loop enquanto a batalha decorre e cala quando ela acaba
+   * (fim natural, fim declarado, restauro de save ou Recomeçar —
+   * este recarrega a página). A trilha do título é outra (entrada.js,
+   * rotação da REF_60) e não se toca aqui.
+   * BUS PRÓPRIO: musica.ganho liga DIRECTO ao destino, fora do
+   * master do ambiente — o master carrega o factor dos Efeitos
+   * (somFatorAmbiente) e a música não pode ser atenuada por ele.
+   * O ganho calcula-se NUM SÍTIO SÓ, na fórmula do som pessoal:
+   * 0,9 × G × M × (mudo?0:1), com G/M/mudo lidos das MESMAS chaves
+   * hudt1-som-* e da mesma leitura defensiva. Música a 0 ou Mudo
+   * ligado = batalha sem música, sem erros.
+   * A faixa carrega em fundo como as chuvas (fetch + decode); se o
+   * ficheiro falhar, a batalha fica sem música e nada parte. O
+   * arranque obedece ao desbloqueio por gesto do ambiente: sem
+   * gesto ainda, a música espera pelo primeiro toque, como o resto
+   * dos sons da casa. Parar = fundido curto do bus + stop() diferido
+   * da fonte (uma fonte parada não se reaproveita: ao retomar nasce
+   * outra, do início da faixa).
+   * FONTE E COSTURA DO LOOP: o m4a enviado chegou truncado no
+   * índice do contentor — só os primeiros 2.071 quadros AAC
+   * (44,18 s) se recuperam byte a byte; o musica-batalha.ogg é o
+   * trecho firme dessa recuperação, com a emenda medida e tratada
+   * na sede (ESTADO.md de t-musica-batalha). */
+  const musica = { ganho: null, buffer: null, fonte: null, aTocar: false };
+  function somFatorMusica() {
+    return (somGeral / 100) * (somMusica / 100) * (somMudo ? 0 : 1);
+  }
+  function musCarregar(ctx) {
+    try {
+      fetch('musica-batalha.ogg')
+        .then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.arrayBuffer(); })
+        .then(ab => ctx.decodeAudioData(ab))
+        .then(buf => { musica.buffer = buf; musSincronizar(); })
+        .catch(() => { /* sem faixa: a batalha fica sem música */ });
+    } catch (_) {}
+  }
+  function musSincronizar() {
+    const ctx = ambAudio.ctx;
+    if (!ctx || !musica.ganho) return;
+    try {
+      const deveTocar = ctx.state === 'running' && ambAudio.desbloqueado &&
+        !!musica.buffer && !batalhaFim;
+      const alvo = deveTocar ? 0.9 * somFatorMusica() : 0;
+      const agora = ctx.currentTime;
+      musica.ganho.gain.cancelScheduledValues(agora);
+      musica.ganho.gain.setTargetAtTime(alvo, agora, 0.15);
+      if (deveTocar && !musica.aTocar) {
+        const s = ctx.createBufferSource();
+        s.buffer = musica.buffer;
+        s.loop = true;
+        s.connect(musica.ganho);
+        s.start();
+        musica.fonte = s;
+        musica.aTocar = true;
+      } else if (!deveTocar && musica.aTocar) {
+        const s = musica.fonte;
+        musica.fonte = null;
+        musica.aTocar = false;
+        if (s) { try { s.stop(agora + 0.7); } catch (_) {} }
+      }
+    } catch (_) {}
+  }
+  /* Gancho de prova SÓ-LEITURA da música (o mesmo padrão do
+   * __somEstado, sentença J10.4): só números e booleanos — o factor
+   * calculado, o ganho vivo do bus e o estado da fonte. Sem setters
+   * nem referências ao grafo. */
+  window.__musicaEstado = function () {
+    return {
+      fator: somFatorMusica(),
+      ganho: musica.ganho ? musica.ganho.gain.value : null,
+      aTocar: musica.aTocar,
+      temBuffer: !!musica.buffer,
+      duracaoBuffer: musica.buffer ? musica.buffer.duration : null,
+      loop: musica.fonte ? !!musica.fonte.loop : null
     };
   };
 
@@ -3916,6 +4012,7 @@
       : causa === 'estabilizada'
       ? 'A <b>Ong</b> caiu, mas estabilizou — ela volta com <b>1 de Vida</b> e fica caída, sem lutar, até receber uma cura. A cura soma por cima desse 1.'
       : 'A <b>Ong</b> caiu — fim desta batalha. Aperte <b>Recomeçar</b> para jogar outra vez.');
+    musSincronizar();   // MÚSICA DE BATALHA: a batalha acabou — a música cala
   }
   /* Terminar a batalha (M-014): a saída que a especificação reserva
      à mesa — fecha o encontro a meio, SEM a Ong cair (sem setVivo):
@@ -3940,6 +4037,7 @@
     estado = 'fim';
     atualizarVez(); renderAcoes();
     say('A batalha <b>terminou</b> — a mesa fechou este encontro. Aperte <b>Recomeçar</b> para jogar outra vez.');
+    musSincronizar();   // MÚSICA DE BATALHA: fim declarado — a música cala
   }
 
   /* ---------- acções da faixa ---------- */
@@ -5345,12 +5443,12 @@
    * edita o que o jogo lê; aqui edita-se o mesmo, a valer na hora
    * no que estiver a soar). Na batalha soa o ambiente (chuva e
    * trovão): Geral, Efeitos e Mudo aplicam já no master; a Música
-   * não tem nada a tocar aqui — guarda-se para o título e DECLARA-O
-   * no sub-rótulo (sentença J6: sem sub-rótulo, o reguador saía
-   * desta superfície). Os factores e a fórmula vivem junto ao
+   * toca no título e, desde a tranche t-musica-batalha, também na
+   * batalha — o regulador dela sincroniza o bus da música na hora
+   * (musSincronizar). Os factores e a fórmula vivem junto ao
    * ambAudio («SOM PESSOAL»): master = 0,9 × G × E × mudo ×
    * somDoAmbiente. */
-  const NOTA_SOM = 'Música: só a do título — na batalha não há música. Efeitos: hoje, a chuva e o trovão; os sons da batalha usarão este volume quando existirem.';
+  const NOTA_SOM = 'Música: a do título e a da batalha. Efeitos: hoje, a chuva e o trovão; os sons da batalha usarão este volume quando existirem.';
   const tituloSom = document.createElement('h3');
   tituloSom.textContent = 'Som';
   cfgEl.insertBefore(tituloSom, $('stats'));
@@ -5386,8 +5484,8 @@
   }
   somUI.geral = linhaVolumeSom('hudt1-som-geral', 'Volume geral', null,
     () => somGeral, v => { somGeral = v; ambAudioSincronizarChuva(); });
-  somUI.musica = linhaVolumeSom('hudt1-som-musica', 'Música', 'só a do título',
-    () => somMusica, v => { somMusica = v; });
+  somUI.musica = linhaVolumeSom('hudt1-som-musica', 'Música', 'do título e da batalha',
+    () => somMusica, v => { somMusica = v; musSincronizar(); });
   somUI.efeitos = linhaVolumeSom('hudt1-som-efeitos', 'Efeitos', 'chuva, trovão e sons da batalha',
     () => somEfeitos, v => { somEfeitos = v; ambAudioSincronizarChuva(); });
   const linhaMudo = document.createElement('div');
@@ -6664,6 +6762,7 @@
       iniciarVezIA(snap.vez, false);
     }
     supConferirInvariantes('restauro');
+    musSincronizar();   // MÚSICA DE BATALHA: o restauro repõe uma batalha viva — a música retoma
   }
 
   /* ---------- ponte de estado para saves (tranche SAVES, C-23;
@@ -7286,6 +7385,7 @@
         supSnapshot();
         supRestaurando = false;
         supConferirInvariantes('restauro-saves');   // fecha com a rede do jogo
+        musSincronizar();   // MÚSICA DE BATALHA: o save assentou batalhaFim — a música segue o estado
         return { ok: true };
       } catch (_) {
         /* VOLTA 2 (S-CONF-02): atomicidade real. O pendente do save
@@ -7378,6 +7478,7 @@
         supRestauroPendente = null;
         supRestauroVoo = null;   // EM-TJ12J13-01: idem — pendente e carimbo saem sempre juntos deste catch
         supRestaurando = false;
+        musSincronizar();   // MÚSICA DE BATALHA: a reposição também assentou batalhaFim
         return { ok: false, erro: 'SAVE_APLICACAO_FALHOU' };
       }
     }

@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_80';
+  var VERSAO_JOGO = 'REF_81';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -296,7 +296,7 @@
    * partida, é definição DELE — vive só na vista do Mestre, no ⚙,
    * lida da mesma chave. A secção Som abre o painel: os volumes são
    * da pessoa e do aparelho, como as outras linhas. */
-  var NOTA_SOM = 'Música: só a do título — na batalha não há música. Efeitos: hoje, a chuva e o trovão; os sons da batalha usarão este volume quando existirem.';
+  var NOTA_SOM = 'Música: a do título e a da batalha. Efeitos: hoje, a chuva e o trovão; os sons da batalha usarão este volume quando existirem.';
   var DEFINICOES = [
     { chave: 'hudt1-som-geral', rotulo: 'Volume geral', tipo: 'vol', padrao: '100', seccao: 'Som' },
     { chave: 'hudt1-som-musica', rotulo: 'Música', tipo: 'vol', padrao: '100' },
