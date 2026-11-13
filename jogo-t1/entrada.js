@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_85';
+  var VERSAO_JOGO = 'REF_86';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -268,13 +268,17 @@
    * físico dela escreve-se por UMA função na secção da trilha
    * (aplicarVolumeTrilha), que multiplica o progresso da rampa pelo
    * factor daqui: G × M × (mudo ? 0 : 1). */
+  /* Valores de fábrica dos volumes (REF_86, palavra do Mestre
+   * 13/11/2026: a Música nasce a 8% — o guardado manda sempre). */
+  var SOM_PADRAO = { 'hudt1-som-geral': 100, 'hudt1-som-musica': 8, 'hudt1-som-efeitos': 100 };
   function lerVolumeSom(chave) {
+    var padrao = SOM_PADRAO[chave] !== undefined ? SOM_PADRAO[chave] : 100;
     try {
       var v = localStorage.getItem(chave);
-      if (v === null || !/^[0-9]+$/.test(v)) return 100;
+      if (v === null || !/^[0-9]+$/.test(v)) return padrao;
       var n = Number(v);
-      return (n >= 0 && n <= 100) ? n : 100;
-    } catch (_) { return 100; }
+      return (n >= 0 && n <= 100) ? n : padrao;
+    } catch (_) { return padrao; }
   }
   function lerSomMudo() {
     try { return localStorage.getItem('hudt1-som-mudo') === 'ligado'; } catch (_) { return false; }
@@ -299,7 +303,7 @@
   var NOTA_SOM = 'Música: a do título e a da batalha. Efeitos: hoje, a chuva e o trovão; os sons da batalha usarão este volume quando existirem.';
   var DEFINICOES = [
     { chave: 'hudt1-som-geral', rotulo: 'Volume geral', tipo: 'vol', padrao: '100', seccao: 'Som' },
-    { chave: 'hudt1-som-musica', rotulo: 'Música', tipo: 'vol', padrao: '100' },
+    { chave: 'hudt1-som-musica', rotulo: 'Música', tipo: 'vol', padrao: '8' },
     { chave: 'hudt1-som-efeitos', rotulo: 'Efeitos', tipo: 'vol', padrao: '100',
       sub: 'chuva e trovão — na batalha' },
     { chave: 'hudt1-som-mudo', rotulo: 'Mudo', tipo: 'tog',
@@ -597,7 +601,7 @@
     ['hudt1-tela-vermelha', 'ligado'],
     ['hudt1-tela-vermelha-piscar', 'ligado'],
     ['hudt1-som-geral', '100'],
-    ['hudt1-som-musica', '100'],
+    ['hudt1-som-musica', '8'],
     ['hudt1-som-efeitos', '100'],
     ['hudt1-som-mudo', 'desligado']
   ];
@@ -606,7 +610,7 @@
       for (var i = 0; i < RESTAURAR_ENTRADA.length; i++)
         localStorage.setItem(RESTAURAR_ENTRADA[i][0], RESTAURAR_ENTRADA[i][1]);
     } catch (_) {}
-    somGeral = 100; somMusica = 100; somEfeitos = 100; somMudo = false;
+    somGeral = 100; somMusica = 8; somEfeitos = 100; somMudo = false;
     if (typeof aplicarVolumeTrilha === 'function') aplicarVolumeTrilha();
     pintarConfig();
   });

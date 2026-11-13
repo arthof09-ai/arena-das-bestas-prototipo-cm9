@@ -464,14 +464,18 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
    direito): fundo DENSO (--painel-denso — a garantia de contraste
    de EM-VD-10), borda de ouro, a palavra em cima e o número em
    baixo. A palavra nunca encolhe: se apertar, a caixa cresce.
-   Camadas lavradas (EM-VD-13): caixa 20 · painel 26. */
-#contadorvd{position:fixed;left:202px;bottom:68px;z-index:20;min-width:118px;
-  background:var(--painel-denso);border:1px solid var(--linha);border-radius:11px;
-  padding:7px 10px 8px;text-align:center;cursor:pointer}
+   Camadas lavradas (EM-VD-13): caixa 20 · painel 26.
+   REF_86 (palavra do Mestre, 13/11/2026: «a caixa da vantagem e
+   desvantagem tá gigantescamente imensa»): a caixa inteira
+   encolheu para ~55% — min-width 118→64, número 28→16, palavra
+   11→8, padding apertado; a âncora (left/bottom) não muda. */
+#contadorvd{position:fixed;left:202px;bottom:68px;z-index:20;min-width:64px;
+  background:var(--painel-denso);border:1px solid var(--linha);border-radius:9px;
+  padding:3px 4px 4px;text-align:center;cursor:pointer}
 #contadorvd[hidden]{display:none}
-#contadorvd .cvd-palavra{display:block;font-size:11px;font-weight:700;
-  letter-spacing:.14em;color:var(--pergaminho)}
-#contadorvd .cvd-num{display:block;font-size:28px;line-height:1.1;font-weight:700;
+#contadorvd .cvd-palavra{display:block;font-size:8px;line-height:1.1;font-weight:700;
+  letter-spacing:.02em;color:var(--pergaminho)}
+#contadorvd .cvd-num{display:block;font-size:16px;line-height:1.05;font-weight:700;
   color:var(--pergaminho)}
 #contadorvd.vd-vantagem .cvd-palavra,#contadorvd.vd-vantagem .cvd-num{color:#46C96A}
 #contadorvd.vd-desvantagem .cvd-palavra,#contadorvd.vd-desvantagem .cvd-num{color:#FF5347}

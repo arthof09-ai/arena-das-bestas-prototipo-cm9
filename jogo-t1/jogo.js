@@ -569,13 +569,19 @@
    * factor ressuscita o som que outro pôs a zero. Os tectos da
    * chuva (0,0280/0,0556) e o ganho do trovão (0,85) ficam
    * INTOCADOS, a montante do master: o factor vive só no master. */
+  /* Valores de fábrica dos volumes (REF_86, palavra do Mestre
+   * 13/11/2026: «deixe o som da música pré-setado em 8%») — a
+   * Música nasce a 8; quem tem valor guardado não passa por aqui:
+   * o guardado manda sempre. */
+  const SOM_PADRAO = { 'hudt1-som-geral': 100, 'hudt1-som-musica': 8, 'hudt1-som-efeitos': 100 };
   function lerVolumeSom(chave) {
+    const padrao = SOM_PADRAO[chave] ?? 100;
     try {
       const v = localStorage.getItem(chave);
-      if (v === null || !/^[0-9]+$/.test(v)) return 100;
+      if (v === null || !/^[0-9]+$/.test(v)) return padrao;
       const n = Number(v);
-      return (n >= 0 && n <= 100) ? n : 100;
-    } catch (_) { return 100; }
+      return (n >= 0 && n <= 100) ? n : padrao;
+    } catch (_) { return padrao; }
   }
   let somGeral = lerVolumeSom('hudt1-som-geral');
   let somMusica = lerVolumeSom('hudt1-som-musica');
@@ -5582,7 +5588,7 @@
     somGravar('hudt1-tela-vermelha', 'ligado');
     somGravar('hudt1-tela-vermelha-piscar', 'ligado');
     somGravar('hudt1-som-geral', '100');
-    somGravar('hudt1-som-musica', '100');
+    somGravar('hudt1-som-musica', '8');
     somGravar('hudt1-som-efeitos', '100');
     somGravar('hudt1-som-mudo', 'desligado');
     if (qualidade !== 'alta') {
@@ -5595,10 +5601,10 @@
     telaVermelha = true; marcarVermelha();
     telaVermelhaPiscar = true; marcarPiscar();
     aplicarTelaVermelha();
-    somGeral = 100; somMusica = 100; somEfeitos = 100; somMudo = false;
-    for (const par of [[somUI.geral, 100], [somUI.musica, 100], [somUI.efeitos, 100]]) {
-      par[0].reg.value = '100';
-      par[0].saida.textContent = '100%';
+    somGeral = 100; somMusica = 8; somEfeitos = 100; somMudo = false;
+    for (const par of [[somUI.geral, 100], [somUI.musica, 8], [somUI.efeitos, 100]]) {
+      par[0].reg.value = String(par[1]);
+      par[0].saida.textContent = par[1] + '%';
     }
     marcarMudo();
     ambAudioSincronizarChuva();
