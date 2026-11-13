@@ -214,8 +214,6 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
 .ent-aba-frase { font-size: 12px; line-height: 1.45; color: var(--pergaminho, #e9dcb8); margin: 0 0 8px; }
 .ent-frase { font-size: 11.5px; line-height: 1.45; color: var(--pergaminho-fraco, #cbbd97); margin: 2px 0 4px; }
 .ent-restaurar-zona { margin-top: 10px; }
-.ent-conta { flex: none; max-height: 40%; overflow-y: auto; border-top: 1px solid rgba(201, 162, 39, .5); margin-top: 8px; padding-top: 2px; }
-.ent-conta .ent-nota { margin-top: 4px; }
 @media (min-width: 600px) {
   .ent-painel.com-abas { left: 50%; transform: translateX(-50%); width: min(600px, 94%); }
 }

@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_86';
+  var VERSAO_JOGO = 'REF_87';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -268,9 +268,12 @@
    * físico dela escreve-se por UMA função na secção da trilha
    * (aplicarVolumeTrilha), que multiplica o progresso da rampa pelo
    * factor daqui: G × M × (mudo ? 0 : 1). */
-  /* Valores de fábrica dos volumes (REF_86, palavra do Mestre
-   * 13/11/2026: a Música nasce a 8% — o guardado manda sempre). */
-  var SOM_PADRAO = { 'hudt1-som-geral': 100, 'hudt1-som-musica': 8, 'hudt1-som-efeitos': 100 };
+  /* Valores de fábrica dos volumes DESTA superfície (REF_87,
+   * palavra do Mestre 13/11/2026: os 8% da REF_86 são o pré-definido
+   * SÓ dentro do jogo — na entrada, a Música volta ao padrão de
+   * sempre, 100; o padrão do jogo vive no SOM_PADRAO do jogo.js.
+   * O guardado manda sempre, nos dois lados). */
+  var SOM_PADRAO = { 'hudt1-som-geral': 100, 'hudt1-som-musica': 100, 'hudt1-som-efeitos': 100 };
   function lerVolumeSom(chave) {
     var padrao = SOM_PADRAO[chave] !== undefined ? SOM_PADRAO[chave] : 100;
     try {
@@ -303,7 +306,7 @@
   var NOTA_SOM = 'Música: a do título e a da batalha. Efeitos: hoje, a chuva e o trovão; os sons da batalha usarão este volume quando existirem.';
   var DEFINICOES = [
     { chave: 'hudt1-som-geral', rotulo: 'Volume geral', tipo: 'vol', padrao: '100', seccao: 'Som' },
-    { chave: 'hudt1-som-musica', rotulo: 'Música', tipo: 'vol', padrao: '8' },
+    { chave: 'hudt1-som-musica', rotulo: 'Música', tipo: 'vol', padrao: '100' },
     { chave: 'hudt1-som-efeitos', rotulo: 'Efeitos', tipo: 'vol', padrao: '100',
       sub: 'chuva e trovão — na batalha' },
     { chave: 'hudt1-som-mudo', rotulo: 'Mudo', tipo: 'tog',
@@ -462,9 +465,9 @@
   raiz.appendChild(vistaConfig);
 
   /* ---------- Configurações em ABAS na entrada (t-config-abas,
-   * SPEC §3): a vista ganha 3 abas — Gráficos · Som · Controles —
-   * com a geometria v1 (coluna no Largo, grelha 2+1 no Estreito,
-   * sem faixas-régua) e a zona Conta separada depois das abas.
+   * SPEC §3): a vista ganha abas — Gráficos · Som · Controles · e,
+   * desde a REF_87, Conta — com a geometria v1 (coluna no Largo,
+   * grelha 2+2 no Estreito, sem faixas-régua).
    * NADA do Mestre nasce aqui. A aba por omissão é Gráficos; a
    * última aba fica lembrada numa variável desta superfície. */
   var entAbaActual = 'graficos';
@@ -487,7 +490,8 @@
   var ABAS_ENT = [
     ['graficos', 'Gráficos', 'Qualidade, números e tela vermelha'],
     ['som', 'Som', 'Volumes, música, efeitos e mudo'],
-    ['controles', 'Controles', 'As teclas para jogar no computador']
+    ['controles', 'Controles', 'As teclas para jogar no computador'],
+    ['conta', 'Conta', 'Conta guardada, senha e aparelho']
   ];
   ABAS_ENT.forEach(function (def) {
     var sec = el('section', 'entab-aba');
@@ -571,16 +575,17 @@
   paineisEnt.controles.appendChild(tabelaTeclasEnt());
   /* O contentor plano antigo sai: as linhas pintam-se por aba. */
   linhasDef.remove();
-  /* Zona Conta — depois das abas, com divisória: nota do aparelho
-     no topo, título e os três botões com as visibilidades de sempre
-     (quem as pinta continua a ser pintarConfig). */
-  var contaEnt = el('div', 'ent-conta');
-  contaEnt.appendChild(notaAparelho);
-  contaEnt.appendChild(el('h3', 'ent-subtitulo', 'Conta guardada neste aparelho'));
-  contaEnt.appendChild(btnOutraConta);
-  contaEnt.appendChild(btnTrocar);
-  contaEnt.appendChild(btnEsquecer);
-  vistaConfig.appendChild(contaEnt);
+  /* Aba Conta (REF_87, palavra do Mestre 13/11/2026: «todo esse
+     negócio de conta guardada, esquecer esse aparelho, trocar de
+     senha — tudo isso deveria ter uma aba só para ela»): a antiga
+     zona solta depois das abas sai; a nota do aparelho, o título e
+     os três botões — os MESMOS nós, com as visibilidades de sempre
+     (quem as pinta continua a ser pintarConfig) — vivem na aba. */
+  paineisEnt.conta.appendChild(notaAparelho);
+  paineisEnt.conta.appendChild(el('h3', 'ent-subtitulo', 'Conta guardada neste aparelho'));
+  paineisEnt.conta.appendChild(btnOutraConta);
+  paineisEnt.conta.appendChild(btnTrocar);
+  paineisEnt.conta.appendChild(btnEsquecer);
   activarAbaEnt('graficos');
   /* REF_83 (defeitos 5/6): o painel nasce PINTADO. Antes, as linhas
      das definições só existiam depois de «abrir» por mostrar('config')
@@ -590,7 +595,9 @@
   pintarConfig();
 
   /* ---------- RESTAURAR O PADRÃO (sentença J4) ----------
-   * Lista branca EXPLÍCITA, chave a chave — a mesma do ⚙ do jogo.
+   * Lista branca EXPLÍCITA, chave a chave — as mesmas chaves do ⚙
+   * do jogo; os VALORES são os de fábrica DESTA superfície (REF_87:
+   * na entrada a Música repõe a 100; no jogo, a 8).
    * Proibido repor por prefixo, por enumeração do armazenamento ou
    * por clear(): num aparelho partilhado, isso destruiria as chaves
    * do Mestre (velocidade, ambiente, visão, escala). Só entra o que
@@ -601,7 +608,7 @@
     ['hudt1-tela-vermelha', 'ligado'],
     ['hudt1-tela-vermelha-piscar', 'ligado'],
     ['hudt1-som-geral', '100'],
-    ['hudt1-som-musica', '8'],
+    ['hudt1-som-musica', '100'],
     ['hudt1-som-efeitos', '100'],
     ['hudt1-som-mudo', 'desligado']
   ];
@@ -610,7 +617,7 @@
       for (var i = 0; i < RESTAURAR_ENTRADA.length; i++)
         localStorage.setItem(RESTAURAR_ENTRADA[i][0], RESTAURAR_ENTRADA[i][1]);
     } catch (_) {}
-    somGeral = 100; somMusica = 8; somEfeitos = 100; somMudo = false;
+    somGeral = 100; somMusica = 100; somEfeitos = 100; somMudo = false;
     if (typeof aplicarVolumeTrilha === 'function') aplicarVolumeTrilha();
     pintarConfig();
   });
