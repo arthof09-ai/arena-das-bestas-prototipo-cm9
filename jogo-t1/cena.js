@@ -1848,6 +1848,20 @@
             }
             function pose(u) {
                 u.root.position.set(wx(u.x), world.height(wx(u.x), wz(u.z)) + u.altitude, wz(u.z));
+                /* F-20 (respiração): pose() corre na criação, depois
+                   da carga do modelo e no setVivo — é aqui que se sabe
+                   se a figura tem clip de repouso próprio (idle
+                   declarado e existente) e se fixam fase/ritmo dela,
+                   uma única vez, por hash do id (nunca em coro). */
+                u.temIdleRepouso = !!(u.clips.idle && u.animations.some(a => a.name === u.clips.idle));
+                if (u.respFase === undefined) {
+                    let h = 0;
+                    for (const c of u.id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+                    u.respFase = (h % 6283) / 1000;
+                    u.respOmega = Math.PI * 2 / (3.8 + (h % 61) / 100);
+                    u.respNivel = 0;
+                }
+                if (!u.vivo || u.temIdleRepouso) { u.respNivel = 0; u.pivot.scale.set(1, 1, 1); }
                 if (!u.vivo)
                     u.altitude = 0;
                 u.pivot.rotation.z = u.vivo ? 0 : Math.PI / 2;
@@ -2267,6 +2281,23 @@
                     if (u.mixer && u.vivo) {
                         u.mixer.update(dt);
                         dirty = true;
+                    }
+                    /* F-20 (respiração): só figuras sem animação de
+                       repouso própria, só em repouso — nunca a mover,
+                       nunca em apresentação de ataque, nunca mortas
+                       nem ocultas. O nível entra devagar (0,5 s) e sai
+                       depressa (0,3 s); a escala nasce nos pés. */
+                    {
+                        const elegivel = u.vivo && !u.temIdleRepouso && !moving(u) && !u.oculto
+                            && !(presentation && (presentation.a === u || presentation.b === u));
+                        u.respNivel = clamp((u.respNivel || 0) + (elegivel ? dt / .5 : -dt / .3), 0, 1);
+                        if (u.respNivel > 0) {
+                            const s = Math.sin(now / 1000 * u.respOmega + u.respFase) * u.respNivel, a = .02 * s;
+                            u.pivot.scale.set(1 + a * .4, 1 + a, 1 + a * .4);
+                            dirty = true;
+                        }
+                        else if (u.pivot.scale.y !== 1)
+                            u.pivot.scale.set(1, 1, 1);
                     }
                     const x = u.root.position.x, z = u.root.position.z, ground = world.height(x, z), alt = u.root.position.y - ground;
                     u.ring.position.set(x, u.root.position.y + .035, z);
