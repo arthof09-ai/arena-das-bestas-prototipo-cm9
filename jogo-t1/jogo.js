@@ -153,6 +153,81 @@
      O motor real substituirá isto pelas casasAlcancaveis oficiais. */
   const ORCAMENTOS = { orc: 7, capanga: 6, lobo: 9 };
 
+  /* ---------- VOO (tranche F-36, REF_89) — dados ----------
+   * O desenho governante é a sentença de 08/11/2026 com a
+   * inscrição do Mestre de 09/11 (07:09–07:12, refino 07:27) e as
+   * complementares N1/N2; a análise cláusula a cláusula vive em
+   * t-voo-c41/ANALISE-COMPLETA.md. A camada z ∈ {0,…,10} é estado
+   * DA CASCA: a cena só conhece a projecção (altitude = camada ×
+   * 1,5 m, o CELL do mundo). Quem pode voar declara a origem no
+   * campo `voo` da ficha (origens fechadas: asas · transformacao ·
+   * tecnica); unidade sem estado de voo lê-se camada 0 em todas
+   * as portas, e campo novo em save/evento só aparece quando a
+   * camada é > 0 (o padrão da casa: escala, visão, furtividade).
+   * FIGURAS_TESTE: figuras de banco de ensaio — NÃO são elenco:
+   * não nascem com a batalha, entram só por admissão (aba Testes
+   * do Mestre ou aplicar um save que as traz) e a vitória ignora
+   * as não-presentes. O Grifo é a figura de teste do desenho
+   * (âncora IBX-191: CONCEPT/FULLSPEC de comportamento, sem ficha
+   * numérica na fonte). Proveniência dos números, declarada como
+   * a fonte PJR1 os declara (characters.gd, entrada grifo):
+   * Vida 110, CA 30 e dano das Garras 2d6+3 são o PREENCHIMENTO
+   * DE PROTÓTIPO daquela fonte; iniciativa 1 idem; a altura
+   * 3,8 m é o corpus VZ (380 cm no ombro, SISTEMA-DE-MEDIDAS);
+   * ataque 1d6+10 e reserva interna 6 são preenchimento DESTE
+   * banco de ensaio (o «atk 7» do PJR1 é outra convenção de
+   * protótipo e não se converte; +10 é o padrão corpo-a-corpo
+   * desta casca; a reserva é constante interna, como os 7/6/9
+   * do elenco). Alcance 1,5 = garras, corpo-a-corpo. */
+  const VOO_TECTO = 10;
+  const VOO_METROS_CAMADA = 1.5;
+  const FIGURAS_TESTE = {
+    grifo: {
+      nome: 'Grifo-Matriarca de Sílica', modelo: 'marcador', alturaMetros: 3.8,
+      voo: 'asas', vida: 110,
+      combate: { ca: 30, atkQtd: 1, atkFaces: 6, atkBonus: 10, arma: 'Garras',
+        dano: { qtd: 2, faces: 6, bonus: 3 }, alcance: 1.5 },
+      orcamento: 6, iniciativa: 1,
+      frases: { acerto: 'deu uma garrada', falha: 'tentou dar uma garrada' }
+    }
+  };
+  const vooEstado = {};              // id -> { z, asaTorada } — só de quem pode voar e está presente
+  const testesPresentes = new Set(); // ids das figuras de teste admitidas nesta batalha
+  /* Instância de teste -> modelo ('grifo2' é a segunda voadora
+     de ensaio da bateria; o jogo só admite o que a aba Testes e
+     os saves nomeiam). */
+  function vooModeloDe(id) {
+    if (FIGURAS_TESTE[id]) return id;
+    const base = String(id).replace(/\d+$/, '');
+    return FIGURAS_TESTE[base] ? base : null;
+  }
+  function vooOrigemDe(id) {
+    const m = vooModeloDe(id);
+    if (m && testesPresentes.has(id)) return FIGURAS_TESTE[m].voo;
+    const e = ELENCO.find(u => u.id === id);
+    return e && e.voo ? e.voo : null;
+  }
+  function camadaDe(id) {
+    const v = vooEstado[id];
+    return v ? (v.z | 0) : 0;
+  }
+  function vooPodeVoar(id) {
+    if (!vooOrigemDe(id)) return false;
+    const v = vooEstado[id];
+    if (v && v.asaTorada) return false;
+    const u = unidade(id);
+    return !!u && u.vivo !== false;
+  }
+  const chave3 = (x, y, z) => x + ',' + y + ',' + z;
+  /* A conversão motor->vista de um ponto com camada: a altitude
+     é a projecção da camada em metros do mundo (z=10 -> 15 m,
+     dentro do domínio 0..60 da cena). */
+  function casaVistaVoo(p) {
+    const v = casaVista(p);
+    v.altitude = (p.z || 0) * VOO_METROS_CAMADA;
+    return v;
+  }
+
   let qualidade = 'alta';
   try { qualidade = localStorage.getItem('hudt1-qualidade') || 'alta'; } catch (_) {}
   if (qualidade !== 'alta' && qualidade !== 'media' && qualidade !== 'baixa') qualidade = 'alta';
@@ -1091,9 +1166,12 @@
     return chuva > 0 ? Math.min(idade, 3) : Math.min(3, Math.ceil(idade / 3));
   }
   function rfOcupante(x, y) {
-    for (const e of ELENCO) {
-      const u = unidade(e.id);
-      if (u && u.posicao && u.posicao.x === x && u.posicao.y === y) return e.id;
+    /* VOO (F-36): o raio cai na camada do chão — o ocupante da
+       casa é a figura que lá está NO CHÃO; quem voa por cima
+       não é atingido (as áreas vivem na camada onde nascem). */
+    for (const id of [...ELENCO.map(e => e.id), ...testesPresentes]) {
+      const u = unidade(id);
+      if (u && u.posicao && u.posicao.x === x && u.posicao.y === y && camadaDe(id) === 0) return id;
     }
     return null;
   }
@@ -1169,6 +1247,7 @@
       return { aplicado, desfecho: null };
     }
     if (aplicado > 0 && VIDA_MONSTROS[id] != null && vlabVidaMonstro(id) <= 0) {
+      vooCairCorpoSeEmVoo(id);   // VOO: quem morre em voo cai antes da pose
       try {
         const pm = view.apresentarMorte(id);
         if (pm && pm.catch) pm.catch(() => {});
@@ -1341,7 +1420,9 @@
     const u = unidade(id);
     if (!u || u.vivo === false) return null;
     if (id === PROPRIA && ESTADO_VLAB.ong.estadoMorte) return null;
-    const naCasa = rfCasas.has(rfChave(u.posicao.x, u.posicao.y));
+    /* VOO: estar POR CIMA de uma casa a arder não é estar nela —
+       o tick do fogo só morde na camada onde o fogo vive (o chão). */
+    const naCasa = camadaDe(id) === 0 && rfCasas.has(rfChave(u.posicao.x, u.posicao.y));
     const aArder = rfAArder.has(id);
     if (aArder && !naCasa && ambientePartida.chuva > 0 && RF_CHUVA_APAGA_PARADO) {
       rfApagarPessoa(id);
@@ -1482,6 +1563,323 @@
    * abaixo. Os números das figuras alheias nunca se exibem:
    * exibição ZERO em frase, ficha, cartão e flutuante —
    * vivem só no estado interno e na resolução. */
+  /* ---------- VOO — admissão de figuras de teste ----------
+   * Uma só função de admissão para todas as portas (aba Testes
+   * do Mestre, gancho de prova, restauros): nasce a instância nas
+   * tabelas da casca (cópias do modelo — a instância é uma figura
+   * como as outras enquanto está presente), entra na ordem por
+   * iniciativa (a vez corrente não se move: o índice recalcula-se
+   * a partir dela) e nasce na cena no primeiro ponto de chão
+   * livre, ou no ponto que o restauro manda. A remoção é o
+   * inverso exacto e apaga a instância de todas as tabelas.
+   * Mudar o elenco de teste invalida os instantâneos do
+   * Supervisor (são de outra batalha): a pilha limpa-se —
+   * declarado, como o carregar de um save já faz. */
+  function vooPontoChaoOcupado(x, y, exceptoId) {
+    for (const v of view.getState().units) {
+      if (v.id === exceptoId) continue;
+      if (v.posicao.x === x && v.posicao.y === y && camadaDe(v.id) === 0) return true;
+    }
+    return false;
+  }
+  function vooCasaLivreParaNascer(exceptoId) {
+    for (let y = AREA.origin.y; y < AREA.origin.y + AREA.rows; y++)
+      for (let x = AREA.origin.x; x < AREA.origin.x + AREA.cols; x++)
+        if (!vooPontoChaoOcupado(x, y, exceptoId)) return { x, y };
+    return { x: AREA.origin.x, y: AREA.origin.y };
+  }
+  function vooAdmitirFiguraTeste(instancia, opts = {}) {
+    const mod = vooModeloDe(instancia);
+    if (!mod) return { ok: false, erro: 'FIGURA_TESTE_DESCONHECIDA' };
+    if (testesPresentes.has(instancia) || unidade(instancia))
+      return { ok: false, erro: 'FIGURA_JA_PRESENTE' };
+    const m = FIGURAS_TESTE[mod];
+    DADOS_COMBATE[instancia] = JSON.parse(JSON.stringify(m.combate));
+    VIDA_MONSTROS[instancia] = m.vida;
+    ORCAMENTOS[instancia] = m.orcamento;
+    INICIATIVA[instancia] = m.iniciativa;
+    FRASES_IA[instancia] = { ...m.frases };
+    ESTADO_VLAB[instancia] = {
+      danoSofrido: 0, estados: [], armaCaida: false, armaQuebrada: false,
+      desvantagemAtaque: 0, deslocMetade: false, reacaoDisponivel: true,
+      estadoMorte: null };
+    testesPresentes.add(instancia);
+    vooEstado[instancia] = { z: 0, asaTorada: false };
+    const nova = [...ordem, instancia];
+    nova.sort((a, b) => ((INICIATIVA[b] || 0) - (INICIATIVA[a] || 0)));
+    ordem = nova;
+    indiceVez = ordem.indexOf(vezAtual);
+    const casa = opts.casa || vooCasaLivreParaNascer(instancia);
+    try {
+      const p = view.addUnit({ id: instancia, nome: m.nome, modelo: m.modelo,
+        x: casa.x, y: casa.y, alturaMetros: m.alturaMetros,
+        vivo: opts.vivo !== false, altitude: (opts.z || 0) * VOO_METROS_CAMADA });
+      if (p && p.catch) p.catch(() => {});
+    } catch (_) { /* vista sem addUnit (arnês antigo): a presença fica só na casca */ }
+    if (opts.z) vooEstado[instancia].z = opts.z | 0;
+    if (!opts.silencioso) supPilha.length = 0;
+    return { ok: true, casa };
+  }
+  function vooRemoverFiguraTeste(instancia, opts = {}) {
+    if (!testesPresentes.has(instancia)) return { ok: false, erro: 'FIGURA_NAO_PRESENTE' };
+    if (!opts.forcar && vezAtual === instancia)
+      return { ok: false, erro: 'FIGURA_NA_SUA_VEZ' };
+    if (contextoIA && contextoIA.id === instancia) consumirContextoIA(instancia);
+    reservasDestinoIA.delete(instancia);
+    try { if (typeof view.removeUnit === 'function') view.removeUnit(instancia); } catch (_) {}
+    testesPresentes.delete(instancia);
+    delete vooEstado[instancia];
+    delete ESTADO_VLAB[instancia];
+    delete DADOS_COMBATE[instancia];
+    delete VIDA_MONSTROS[instancia];
+    delete ORCAMENTOS[instancia];
+    delete INICIATIVA[instancia];
+    delete FRASES_IA[instancia];
+    ordem = ordem.filter(id => id !== instancia);
+    indiceVez = ordem.indexOf(vezAtual);
+    if (!opts.silencioso) supPilha.length = 0;
+    return { ok: true };
+  }
+  /* O estado do voo como valor (instantâneos e pré-saves):
+     quem está presente e, por figura, camada + asa torada. */
+  function vooCapturarEstado() {
+    const estados = {};
+    for (const id of testesPresentes)
+      estados[id] = { z: camadaDe(id), asaTorada: !!(vooEstado[id] && vooEstado[id].asaTorada) };
+    for (const id of Object.keys(vooEstado))
+      if (!estados[id]) estados[id] = { z: camadaDe(id), asaTorada: !!vooEstado[id].asaTorada };
+    return { presentes: [...testesPresentes], estados };
+  }
+  /* Reconciliação de elenco de teste para um restauro: admite
+     quem o estado traz, remove quem ele não traz, e repõe
+     camada + asa de cada presente. unidadesPorId traz as
+     unidades do estado (com x, y, z, vivo). */
+  /* O bloco 'voo' de um save: só nasce quando alguma figura
+     presente tem a asa torada (a incapacidade é o único estado
+     do voo que as unidades, com o seu z, não dizem sozinhas). */
+  function vooBlocoSaveCaptura() {
+    const b = {};
+    for (const id of testesPresentes)
+      if (vooEstado[id] && vooEstado[id].asaTorada) b[id] = { asaTorada: true };
+    return Object.keys(b).length ? { voo: b } : {};
+  }
+  function vooReconciliarDeEstado(cap, unidadesPorId) {
+    if (!cap) return;
+    const alvo = cap.presentes || [];
+    for (const id of [...testesPresentes])
+      if (!alvo.includes(id)) vooRemoverFiguraTeste(id, { forcar: true, silencioso: true });
+    for (const id of alvo) {
+      if (testesPresentes.has(id)) continue;
+      const su = unidadesPorId ? unidadesPorId[id] : null;
+      vooAdmitirFiguraTeste(id, { forcar: true, silencioso: true,
+        casa: su ? { x: su.x, y: su.y } : null,
+        z: su ? (su.z || 0) : 0, vivo: su ? su.vivo : true });
+    }
+    for (const id of testesPresentes) {
+      const e = (cap.estados || {})[id];
+      const su = unidadesPorId ? unidadesPorId[id] : null;
+      vooEstado[id] = { z: e ? (e.z | 0) : (su ? (su.z || 0) : 0),
+        asaTorada: !!(e && e.asaTorada) };
+    }
+  }
+
+  /* ---------- VOO — a fonte «altura» ----------
+   * Atacante estritamente acima do alvo (dz >= 1) e técnica que
+   * não é magia: exactamente 1 nível de Vantagem, sem escada
+   * (dz=5 continua 1). A magia está fora do sistema VD (palavra
+   * dele, 13/11/2026). Quem está por baixo não ganha nada além
+   * da distância que a régua já cobra. A fonte entra no contexto
+   * montado (vlabMontarContextoAtaque), onde o flanquear já
+   * entra — a caixa do contador VD não a lê, como nunca leu
+   * fontes posicionais. */
+  function vooFonteAltura(atacanteId, alvoId, tecnica) {
+    if (tecnica && tecnica.magia === true) return 0;
+    return camadaDe(atacanteId) > camadaDe(alvoId) ? 1 : 0;
+  }
+
+  /* ---------- VOO — as quedas ----------
+   * Resolvedor único (Art. 8 da análise): perder o voo a z>0 é
+   * cair JÁ para (x, y, 0); se o ponto do chão estiver ocupado,
+   * quem cai desvia-se para a casa livre mais próxima — a ordem
+   * de procura é a da BFS da casa (a de mapaDistancias: (1,0),
+   * (-1,0), (0,1), (0,-1)) — e ninguém é empurrado. O dano é
+   * ⌊camadas × escala vigente NO MOMENTO DA QUEDA⌋ × 2d8, por
+   * uma passagem própria: sem rolagem de ataque, sem Defesa,
+   * sem reacção (gémea da passagem do ambiente, com o actor
+   * «queda» no registo — nunca «ambiente»). NÃO é um ataque:
+   * não importa as regras das falhas nem os 25% do
+   * quebrar-o-corpo. Pode matar, pelo pipeline normal. Dano, por
+   * si, nunca derruba ninguém (cânone dele): só se cai por
+   * pouso voluntário (pelos passos, sem dano), por queda de
+   * sistema (a origem expira ou a Vida chega a 0 — o corpo cai
+   * sem dano novo, já está a 0) ou por adjudicação dele. */
+  function vooResolverCasaQueda(x, y, exceptoId) {
+    if (!vooPontoChaoOcupado(x, y, exceptoId)) return { x, y };
+    const vistos = new Set([chave(x, y)]);
+    const fila = [{ x, y }];
+    for (let i = 0; i < fila.length; i++) {
+      const p = fila[i];
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = p.x + dx, ny = p.y + dy, k = chave(nx, ny);
+        if (nx < AREA.origin.x || nx >= AREA.origin.x + AREA.cols
+          || ny < AREA.origin.y || ny >= AREA.origin.y + AREA.rows
+          || vistos.has(k)) continue;
+        vistos.add(k);
+        if (!vooPontoChaoOcupado(nx, ny, exceptoId)) return { x: nx, y: ny };
+        fila.push({ x: nx, y: ny });
+      }
+    }
+    return { x, y };   // arena sem casa livre: fica (inalcançável com o elenco actual)
+  }
+  function vooRolarParcelaQueda(nDados) {
+    if (DMG_MOTOR) {
+      try {
+        const s = vlabComDmg(() => DMG_MOTOR.calcularDano({
+          componentes: [{ tipo: null, expressao: nDados + 'd8' }], contexto: { semente: vlabSemente() } }));
+        const p = s && !s.erro && s.parcelas && s.parcelas[0];
+        if (p && Array.isArray(p.faces) && p.faces.length === nDados)
+          return { tipo: 'queda', expressao: nDados + 'd8', faces: p.faces, subtotal: p.subtotal };
+      } catch (_) {}
+    }
+    const faces = []; let subtotal = 0;
+    for (let i = 0; i < nDados; i++) { const f = 1 + Math.floor(Math.random() * 8); faces.push(f); subtotal += f; }
+    return { tipo: 'queda', expressao: nDados + 'd8', faces, subtotal };
+  }
+  function vooAplicarDanoQueda(id, parcela) {
+    const u = unidade(id);
+    if (!u || u.vivo === false) return null;
+    if (id === PROPRIA && ESTADO_VLAB.ong.estadoMorte) return null;
+    const aplicado = parcela.subtotal;
+    if (aplicado > 0) {
+      if (id === PROPRIA) { danoSofrido += aplicado; atualizarChipVida(); }
+      else ESTADO_VLAB[id].danoSofrido = (ESTADO_VLAB[id].danoSofrido | 0) + aplicado;
+    }
+    if (id === PROPRIA) {
+      if (aplicado > 0 && vlabVidaOng() <= 0) {
+        ESTADO_VLAB.ong.estadoMorte = { fase: 'aMorrer', sucessos: 0, falhas: 0 };
+        return { aplicado, desfecho: 'aMorrer' };
+      }
+      return { aplicado, desfecho: null };
+    }
+    if (aplicado > 0 && VIDA_MONSTROS[id] != null && vlabVidaMonstro(id) <= 0) {
+      try {
+        const pm = view.apresentarMorte(id);
+        if (pm && pm.catch) pm.catch(() => {});
+      } catch (_) { view.setVivo(id, false); }
+      ambAoMorrerFigura(id);
+      if (vlabTodosMonstrosForaDeCombate()) fimDeBatalha('vitoria');
+      return { aplicado, desfecho: 'caiu' };
+    }
+    return { aplicado, desfecho: null };
+  }
+  /* via: 'sistema' | 'adjudicada'. A adjudicada marca a asa
+     torada (a figura não volta a voar NESTA batalha) e regista
+     o acto com quem ordenou, z e escala do momento — o registo
+     que a frente da IA um dia lê (requisito nomeado: ler z E
+     escala no momento da ordem). */
+  function vooPerderVoo(id, via, opts = {}) {
+    const u = unidade(id);
+    if (!u) return null;
+    const zAntes = camadaDe(id);
+    const de = { x: u.posicao.x, y: u.posicao.y, z: zAntes };
+    const escala = CASA_M;
+    const metros = Math.floor(zAntes * escala);
+    if (via === 'adjudicada' && vooEstado[id]) vooEstado[id].asaTorada = true;
+    let casa = { x: de.x, y: de.y }, faces = [], aplicado = 0, desfecho = null;
+    const nDados = zAntes > 0 ? metros * 2 : 0;
+    if (zAntes > 0) {
+      casa = vooResolverCasaQueda(de.x, de.y, id);
+      /* a camada assenta ANTES do movimento (o moveend confere
+         camada × altitude; ver vooCairCorpoSeEmVoo). */
+      if (vooEstado[id]) vooEstado[id].z = 0;
+      try { view.move(id, casaVistaVoo({ x: casa.x, y: casa.y, z: 0 }), { immediate: true }); } catch (_) {}
+      if (nDados > 0) {
+        const parcela = vooRolarParcelaQueda(nDados);
+        faces = parcela.faces;
+        const r = vooAplicarDanoQueda(id, parcela);
+        if (r) { aplicado = r.aplicado; desfecho = r.desfecho; }
+      }
+    }
+    supRegistar('accao', { acao: 'queda', actor: id, via, quem: opts.quem || null,
+      de, para: { x: casa.x, y: casa.y }, escala, metros, dados: nDados, faces, dano: aplicado, desfecho });
+    if (via === 'adjudicada')
+      supRegistar('accao', { acao: 'torou-a-asa', quem: opts.quem || null, alvo: id,
+        z: zAntes, escala, metros, rolagem: faces, resultado: desfecho || 'caiu' });
+    if (zAntes > 0) {
+      if (aplicado > 0 && numerosDano)
+        mostrarDano(id, [{ classe: 'queda', rotulo: 'queda', valor: aplicado }]);
+      if (via === 'adjudicada')
+        say(`O Mestre torou a asa de <b>${nomeCena(id)}</b> — a queda foi feia e o voo acabou nesta batalha.`);
+      else
+        say(`<b>${nomeCena(id)}</b> perdeu o voo e caiu do alto!${desfecho === 'caiu' ? ' Não se levantou.' : ''}`);
+    } else if (via === 'adjudicada') {
+      say(`O Mestre torou a asa de <b>${nomeCena(id)}</b> — o voo acabou nesta batalha.`);
+    }
+    return { casaFinal: casa, zAntes, dados: nDados, faces, aplicado, desfecho };
+  }
+  /* Quem morre em voo cai: o corpo desce (pela mesma casa e
+     desvio) ANTES da pose de morte — sem dano novo (inerte:
+     já está a 0 de Vida) e sem «cadáver em z>0» persistente. */
+  function vooCairCorpoSeEmVoo(id) {
+    const zAntes = camadaDe(id);
+    if (zAntes <= 0) return;
+    const u = unidade(id);
+    if (!u) return;
+    const casa = vooResolverCasaQueda(u.posicao.x, u.posicao.y, id);
+    /* a camada assenta ANTES do movimento: o moveend confere
+       camada × altitude e um corpo já no chão com a camada
+       ainda alta seria lido como desencontro (gelo). */
+    if (vooEstado[id]) vooEstado[id].z = 0;
+    try { view.move(id, casaVistaVoo({ x: casa.x, y: casa.y, z: 0 }), { immediate: true }); } catch (_) {}
+    supRegistar('accao', { acao: 'queda', actor: id, via: 'morte', quem: null,
+      de: { x: u.posicao.x, y: u.posicao.y, z: zAntes }, para: { x: casa.x, y: casa.y },
+      escala: CASA_M, metros: Math.floor(zAntes * CASA_M), dados: 0, faces: [], dano: 0, desfecho: 'caiu' });
+  }
+
+  /* Gancho de prova da bateria do voo (não é mecânica): expõe
+     a régua e os verbos de encenação que a BATERIA-SYNC-N2
+     assere ao dígito — o padrão de __somEstado/__visao/
+     __furtividade. Congelado; nenhum caminho do jogo o lê. */
+  window.__voo = Object.freeze({
+    admitir: (id, instancia) => vooAdmitirFiguraTeste(instancia || id),
+    remover: id => vooRemoverFiguraTeste(id),
+    estado: id => ({ presente: testesPresentes.has(id) || !!unidade(id),
+      z: camadaDe(id), asaTorada: !!(vooEstado[id] && vooEstado[id].asaTorada),
+      podeVoar: vooPodeVoar(id) }),
+    teleportar: (id, x, y, z) => {
+      if (!unidade(id)) return { ok: false };
+      /* EMENDA DA CONFERÊNCIA REF_89 (LEVE-2): o gancho limita
+         o z ao domínio lavrado {0,…,10} — um z=99 encenado não
+         fica no estado à espera da invariante. */
+      const zz = Math.max(0, Math.min(10, z | 0));
+      if (vooOrigemDe(id) && !vooEstado[id]) vooEstado[id] = { z: 0, asaTorada: false };
+      if (vooEstado[id]) vooEstado[id].z = zz;
+      reservasDestinoIA.delete(id);
+      try { view.move(id, casaVistaVoo({ x, y, z: zz }), { immediate: true }); } catch (_) {}
+      return { ok: true, z: camadaDe(id) };
+    },
+    distancia: (a, b) => distanciaEntre(a, b),
+    alcance: (id, teto) => [...calcularAlcancePara(id, teto).values()]
+      .map(c => `${c.x},${c.y},${c.z || 0}:${c.passos}`)
+      .sort(),
+    fonteAltura: (a, b, tecnica) => vooFonteAltura(a, b, tecnica || null),
+    contextoAtaque: (a, b) => {
+      const m = vlabMontarContextoAtaque(a, b, {});
+      return { niveisVantagem: m.contexto.niveisVantagem || 0,
+        flanqueando: !!m.contexto.flanqueando };
+    },
+    flanqueando: (alvoId, atacanteId) => vlabFlanqueandoSobre(alvoId, atacanteId),
+    queda: (id, via) => vooPerderVoo(id, via || 'sistema', { quem: 'prova' }),
+    porEscala: v => { escalaAssentar(v, { silencioso: true }); return CASA_M; },
+    escala: () => CASA_M,
+    acenderCasa: (x, y) => { rfResolverImpacto(x, y); },
+    tick: id => ambTickInicioTurno(id),
+    aArder: id => rfAArder.has(id),
+    reservar: (id, x, y, z) => { reservasDestinoIA.set(id, { x, y, z: z | 0 }); },
+    voltarAtras: () => { supRestaurar(); return vooCapturarEstado(); },
+    vidaMonstro: id => (VIDA_MONSTROS[id] != null ? vlabVidaMonstro(id) : null)
+  });
+
   const DADOS_COMBATE = {
     ong:     { ca: 30, atkQtd: 1, atkFaces: 6, atkBonus: 19, arma: 'Chicote de Água', dano: { qtd: 8, faces: 6, bonus: 28 }, alcance: 9,
                transformacao: { custo: 40, dmgBonusNovo: 34, caNova: 36 } },
@@ -2067,13 +2465,20 @@
     const a = unidade(atacanteId), t = unidade(alvoId);
     if (!a || !t) return false;
     const dx = a.posicao.x - t.posicao.x, dy = a.posicao.y - t.posicao.y;
-    return ELENCO.some(u => {
-      if (u.id === atacanteId || u.id === alvoId) return false;
-      const v = unidade(u.id);
+    /* VOO (F-36): o flanquear é um fenómeno DE PLANO — o
+       parceiro tem de estar na casa oposta exacta E à mesma
+       camada do atacante (dz igual para os dois, medido contra
+       o alvo); quem está por cima do alvo não flanqueia. Os
+       parceiros contam-se entre o elenco e as figuras de teste
+       presentes. No chão, as duas condições são as de hoje. */
+    return [...ELENCO.map(u => u.id), ...testesPresentes].some(id => {
+      if (id === atacanteId || id === alvoId) return false;
+      const v = unidade(id);
       /* T-J12J13: cadáver não dá flanqueamento — o parceiro do
          outro lado tem de estar vivo (o padrão `vivo !== false`
          da casa, o mesmo das adjacências de oportunidade A01). */
-      return v && v.vivo !== false && distanciaEntre(u.id, alvoId) === 1
+      return v && v.vivo !== false && distanciaEntre(id, alvoId) === 1
+        && camadaDe(id) === camadaDe(atacanteId)
         && v.posicao.x - t.posicao.x === -dx && v.posicao.y - t.posicao.y === -dy;
     });
   }
@@ -2113,6 +2518,12 @@
     }
     if (atacanteId !== PROPRIA && alvoId === PROPRIA && vlabFlanqueandoSobre(PROPRIA, atacanteId))
       contexto.flanqueando = true;
+    /* VOO (F-36): a fonte «altura» — atacante acima do alvo soma
+       exactamente 1 nível pela contabilidade de fontes nomeadas
+       (empilha com a Regra 3 e com o flanco até ao máximo do
+       motor; a magia fica de fora, ver vooFonteAltura). */
+    if (vooFonteAltura(atacanteId, alvoId, tecnica) > 0)
+      contexto.niveisVantagem = (contexto.niveisVantagem | 0) + 1;
     if (opts.desgracaEscolhida) contexto.desgracaEscolhida = opts.desgracaEscolhida;
     if (opts.confirmacaoDeProposta) contexto.confirmacaoDeProposta = opts.confirmacaoDeProposta;
     /* DÍVIDA E1: as bandeiras de exclusão da fronteira T1 do motor
@@ -2269,6 +2680,7 @@
            vitória (o padrão da morte por ambiente). */
         if (VIDA_MONSTROS[id] != null)
           ESTADO_VLAB[id].danoSofrido = VIDA_MONSTROS[id];
+        vooCairCorpoSeEmVoo(id);   // VOO: quem morre em voo cai antes da pose
         try {
           const pm = view.apresentarMorte(id);
           if (pm && pm.catch) pm.catch(() => {});
@@ -2334,6 +2746,9 @@
       if (caiu && quedaDeMonstro && VIDA_MONSTROS[id] != null)
         ESTADO_VLAB[id].danoSofrido = VIDA_MONSTROS[id];   // F-13: a queda mata — a Vida interna fecha a zero, tenha o golpe tirado o que tiver
       if (caiu) {
+        /* VOO (F-36): quem morre em voo CAI — o corpo desce antes
+           da pose de morte (sem dano novo: já está a 0). */
+        vooCairCorpoSeEmVoo(id);
         /* A queda VÊ-SE pela máquina de morte da cena quando ela
            existe; na cena sagrada do vivo cai no setVivo de sempre
            (o mesmo caminho do restauro de figura morta). */
@@ -2426,8 +2841,11 @@
      na cena (a vista é a verdade da queda, como na rotação de vez
      e nos alvos vivos FID-R2). */
   function vlabTodosMonstrosForaDeCombate() {
-    return ELENCO.every(u => u.id === PROPRIA
-      || (unidade(u.id) || {}).vivo === false);
+    /* VOO (F-36): contam o elenco E as figuras de teste
+       PRESENTES — uma figura de teste que nunca foi admitida
+       não pode tornar a vitória impossível. */
+    return [...ELENCO.map(u => u.id), ...testesPresentes].every(id => id === PROPRIA
+      || (unidade(id) || {}).vivo === false);
   }
   /* Frase de ficção de uma desgraça (sem números de ninguém). */
   function vlabFraseDesgraca(id, fc) {
@@ -2547,9 +2965,16 @@
     const u = unidade(PROPRIA);
     if (!u) { partidaPendente = null; return; }
     const partida = { x: u.posicao.x, y: u.posicao.y };
-    const adjacentes = ELENCO.filter(e => e.id !== PROPRIA
-      && (unidade(e.id) || {}).vivo !== false   // A01: um monstro caído não golpeia de oportunidade
-      && distanciaEntre(e.id, PROPRIA) === 1).map(e => e.id);
+    /* EMENDA DA CONFERÊNCIA REF_89 (MÉDIO-1): o universo da
+       partida inclui as figuras de teste PRESENTES — análise
+       §2: adjacentes à partida e meio-caminho herdam a
+       adjacência 3D como o flanco já herdava (jogo.js, função
+       de flanquear). Sem figuras de teste, o universo é o
+       ELENCO de hoje e as duas listas saem byte-iguais. */
+    const universoPartida = [...ELENCO.map(e => e.id), ...testesPresentes];
+    const adjacentes = universoPartida.filter(id => id !== PROPRIA
+      && (unidade(id) || {}).vivo !== false   // A01: um monstro caído não golpeia de oportunidade
+      && distanciaEntre(id, PROPRIA) === 1);
     /* Meio do caminho (contrato Parte C; achado 3 do Crítico 1):
        inimigos cuja zona ela atravessa E abandona durante o
        percurso também provocam ataque de oportunidade — e o
@@ -2560,14 +2985,20 @@
     let meioCaminho = [];
     if (Array.isArray(caminho) && caminho.length) {
       const casas = [partida, ...caminho];
-      meioCaminho = ELENCO.filter(e => e.id !== PROPRIA && !adjacentes.includes(e.id))
-        .filter(e => {
-          const m = unidade(e.id); if (!m || m.vivo === false) return false;   // A01: idem — morto não provoca
-          const adj = c => Math.abs(c.x - m.posicao.x) + Math.abs(c.y - m.posicao.y) === 1;
+      meioCaminho = universoPartida.filter(id => id !== PROPRIA && !adjacentes.includes(id))
+        .filter(id => {
+          const m = unidade(id); if (!m || m.vivo === false) return false;   // A01: idem — morto não provoca
+          /* A zona é a adjacência à casa do caminho (que vive
+             na camada 0 — ela anda no chão): para uma figura
+             de teste a adjacência 3D soma |dz| à horizontal,
+             como a régua manda; para o ELENCO dz é 0 e a
+             fórmula é a de hoje, verbatim. */
+          const dz = testesPresentes.has(id) ? camadaDe(id) : 0;
+          const adj = c => Math.abs(c.x - m.posicao.x) + Math.abs(c.y - m.posicao.y) + dz === 1;
           for (let i = 0; i < casas.length - 1; i++)
             if (adj(casas[i]) && !adj(casas[i + 1])) return true;
           return false;
-        }).map(e => e.id);
+        });
     }
     partidaPendente = { de: partida, adjacentes, meioCaminho, desvincular: opcoesMovimento.desvincular };
     opcoesMovimento.desvincular = false;   // a intenção consome-se na partida
@@ -3121,7 +3552,60 @@
     const s = view.getState();
     const u = s.units.find(v => v.id === id);
     if (!u) return new Map();
-    const ocupadas = new Set(s.units.filter(v => v.id !== u.id && v.vivo !== false)
+    /* VOO (F-36): quem tem origem de voo anda no espaço de
+       pontos (x, y, z): os quatro vizinhos do plano da sua
+       camada + subir/descer 1 camada por passo (vizinhos
+       verticais só para quem pode voar AGORA — asa torada ou
+       figura morta não sobe), com o custo na mesma moeda da
+       distância (H + |dz|). Ocupação é por PONTO: uma figura
+       noutra camada não bloqueia este plano, e pousar sobre um
+       ponto ocupado é ilegal; sobrevoar é livre. Cadáveres
+       (sempre no chão: quem morre em voo cai) atravessam-se e
+       não são destino, como no plano. Quem não tem origem de
+       voo corre o código 2D de sempre, verbatim, mais abaixo —
+       o braço z=0 é ao dígito por construção. */
+    if (vooOrigemDe(id)) {
+      const z0 = camadaDe(id);
+      const podeVoarAgora = vooPodeVoar(id);
+      const ocupadas3 = new Set(s.units.filter(v => v.id !== u.id && v.vivo !== false)
+        .map(v => chave3(v.posicao.x, v.posicao.y, camadaDe(v.id))));
+      for (const [dono, r] of reservasDestinoIA) {
+        if (dono === u.id) continue;
+        const donoU = s.units.find(v => v.id === dono);
+        if (!donoU || donoU.vivo === false) { reservasDestinoIA.delete(dono); continue; }
+        ocupadas3.add(chave3(r.x, r.y, r.z || 0));
+      }
+      const inicio = { x: u.posicao.x, y: u.posicao.y, z: z0, passos: 0, path: [] };
+      const vistos = new Map([[chave3(inicio.x, inicio.y, inicio.z), inicio]]);
+      const fila = [inicio];
+      for (let i = 0; i < fila.length; i++) {
+        const p = fila[i];
+        if (p.passos >= tetoCasas) continue;
+        const vizinhos = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]];
+        if (podeVoarAgora) {
+          if (p.z < VOO_TECTO) vizinhos.push([0, 0, 1]);
+          if (p.z > 0) vizinhos.push([0, 0, -1]);
+        }
+        for (const [dx, dy, dz] of vizinhos) {
+          const x = p.x + dx, y = p.y + dy, z = p.z + dz, k = chave3(x, y, z);
+          if (x < AREA.origin.x || x >= AREA.origin.x + AREA.cols
+            || y < AREA.origin.y || y >= AREA.origin.y + AREA.rows
+            || vistos.has(k) || ocupadas3.has(k)) continue;
+          const n = { x, y, z, passos: p.passos + 1, path: [...p.path, { x, y, z }] };
+          vistos.set(k, n);
+          fila.push(n);
+        }
+      }
+      vistos.delete(chave3(inicio.x, inicio.y, inicio.z));
+      for (const v of s.units)
+        if (v.id !== u.id && v.vivo === false)
+          vistos.delete(chave3(v.posicao.x, v.posicao.y, 0));
+      return vistos;
+    }
+    /* VOO (F-36): no plano, só bloqueia quem está NO plano — a
+       casa debaixo de uma voadora é caminho livre para quem
+       anda no chão (ocupação por ponto, nunca por coluna). */
+    const ocupadas = new Set(s.units.filter(v => v.id !== u.id && v.vivo !== false && camadaDe(v.id) === 0)
       .map(v => chave(v.posicao.x, v.posicao.y)));
     /* Reserva de destino em voo: o destino já escolhido por outra
        figura que ainda anda conta como ocupado — bloqueia caminho
@@ -3134,7 +3618,8 @@
       if (dono === u.id) continue;
       const donoU = s.units.find(v => v.id === dono);
       if (!donoU || donoU.vivo === false) { reservasDestinoIA.delete(dono); continue; }
-      ocupadas.add(chave(r.x, r.y));
+      /* VOO (F-36): reserva aérea nunca bloqueia destino terrestre. */
+      if ((r.z || 0) === 0) ocupadas.add(chave(r.x, r.y));
     }
     const inicio = { x: u.posicao.x, y: u.posicao.y, passos: 0, path: [] };
     const vistos = new Map([[chave(inicio.x, inicio.y), inicio]]);
@@ -3166,7 +3651,15 @@
     return calcularAlcancePara(selecionada, Math.floor(reservaMovimento / CASA_M));
   }
   function desenharAlcance() {
-    view.showMovement(ajudaGrid ? [...alcance.values()].map(casaVista) : []);
+    if (!ajudaGrid) { view.showMovement([]); return; }
+    /* VOO (F-36): UMA só grade visível — a da camada activa de
+       quem se move, desenhada à altura dessa camada (a cena
+       honra a altitude por casa). Para quem está no chão — a
+       Ong, sempre nesta tranche — é exactamente a grade de hoje. */
+    const zSel = camadaDe(selecionada);
+    view.showMovement([...alcance.values()]
+      .filter(c => (c.z || 0) === zSel)
+      .map(c => (c.z || 0) > 0 ? casaVistaVoo(c) : casaVista(c)));
   }
   /* Mapa de distâncias (T1.3 §4.1): BFS a partir de uma figura, com
      os passos até TODAS as casas — as casas ocupadas contam como
@@ -3209,15 +3702,26 @@
     const eu = s.units.find(v => v.id === deId);
     const ele = s.units.find(v => v.id === paraId);
     if (!eu || !ele) return Infinity;
+    /* VOO (F-36): a régua 3D = a BFS horizontal de sempre, corrida
+       no plano da camada de QUEM MEDE (só bloqueiam as figuras
+       vivas nessa camada — um corpo noutra camada não tapa este
+       plano), mais |dz| em camadas puras (a vertical nunca se
+       converte pela escala). A casa do alvo conta como destino
+       no plano, como sempre contou. Com as duas figuras no chão
+       o conjunto de bloqueadoras é exactamente o de hoje e o
+       resultado é o de hoje, ao dígito. */
+    const zDe = camadaDe(deId), zPara = camadaDe(paraId);
     const bloqueadas = new Set(s.units
-      .filter(v => v.id !== deId && v.id !== paraId && v.vivo !== false)
+      .filter(v => v.id !== deId && v.id !== paraId && v.vivo !== false
+        && camadaDe(v.id) === zDe)
       .map(v => chave(v.posicao.x, v.posicao.y)));
     const destino = chave(ele.posicao.x, ele.posicao.y);
+    bloqueadas.delete(destino);   // a casa do alvo conta como destino no plano de quem mede, mesmo que uma terceira figura esteja nesse ponto da camada de quem mede (a descida faz-se na coluna)
     const vistos = new Map([[chave(eu.posicao.x, eu.posicao.y), 0]]);
     const fila = [{ x: eu.posicao.x, y: eu.posicao.y, passos: 0 }];
     for (let i = 0; i < fila.length; i++) {
       const p = fila[i];
-      if (chave(p.x, p.y) === destino) return p.passos;
+      if (chave(p.x, p.y) === destino) return p.passos + Math.abs(zDe - zPara);
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const x = p.x + dx, y = p.y + dy, k = chave(x, y);
         if (x < AREA.origin.x || x >= AREA.origin.x + AREA.cols
@@ -3227,7 +3731,7 @@
         fila.push({ x, y, passos: p.passos + 1 });
       }
     }
-    return vistos.has(destino) ? vistos.get(destino) : Infinity;
+    return vistos.has(destino) ? vistos.get(destino) + Math.abs(zDe - zPara) : Infinity;
   }
   /* A distância da Ong até um alvo — as chamadas antigas ficam com
      o comportamento de sempre, agora por cima de distanciaEntre. */
@@ -3242,7 +3746,10 @@
   function fraseForaDeAlcance(alvoId, contexto) {
     const u = unidade(alvoId);
     const atraves = u ? mapaDistancias(PROPRIA).get(chave(u.posicao.x, u.posicao.y)) : undefined;
-    const tapado = atraves !== undefined && atraves <= alcanceEmCasas(DADOS_COMBATE.ong.alcance);
+    /* VOO: com o alvo no ar, a régua que manda é a 3D — a casa
+       por baixo dela estar «perto» no mapa 2D não é caminho
+       tapado, é altura; a frase honesta é a de longe demais. */
+    const tapado = camadaDe(alvoId) === 0 && atraves !== undefined && atraves <= alcanceEmCasas(DADOS_COMBATE.ong.alcance);
     if (contexto === 'confirmar') {
       return tapado
         ? 'O caminho até ele está tapado por outras figuras — aproxime-se com <b>Mover</b> e tente outra vez.'
@@ -3619,6 +4126,7 @@
       ESTADO_VLAB[id].estados = ESTADO_VLAB[id].estados.filter(e => e !== 'caido');
       if (VIDA_MONSTROS[id] != null)
         ESTADO_VLAB[id].danoSofrido = VIDA_MONSTROS[id];
+      vooCairCorpoSeEmVoo(id);   // VOO: quem morre em voo cai antes da pose
       try {
         const pm = view.apresentarMorte(id);
         if (pm && pm.catch) pm.catch(() => {});
@@ -3671,21 +4179,29 @@
       return;
     }
     guardaExpiradaIA = null;   // M-009: movimento novo desta figura — a marca de expiração anterior já não descreve nada em voo
-    contextoIA = { id, seq, destino: { x: destino.x, y: destino.y }, rearmes: 0, relogio: setTimeout(() => relogioIA(id, seq), GUARDA_IA_MS) };
+    /* VOO (F-36): o destino e a reserva vivem por PONTO (x, y, z);
+       o evento e o caminho ganham z só quando a camada é > 0 —
+       a z=0 o registo fica byte-igual ao de hoje. */
+    contextoIA = { id, seq, destino: { x: destino.x, y: destino.y, z: destino.z || 0 }, rearmes: 0, relogio: setTimeout(() => relogioIA(id, seq), GUARDA_IA_MS) };
     /* Reserva de destino em voo: nasce com o despacho e NÃO morre
        com o contexto — sobrevive à guarda de 5 s, até esta figura
        de facto pousar neste destino (ver o tratador de moveend). */
-    reservasDestinoIA.set(id, { x: destino.x, y: destino.y });
+    reservasDestinoIA.set(id, { x: destino.x, y: destino.y, z: destino.z || 0 });
     /* Supervisor (pós-críticos T1.5): o movimento LEGAL do monstro
        também entra no registo — actor, de→para e passos. */
     { const uIA = unidade(id);
+      const deEv = uIA ? { x: uIA.posicao.x, y: uIA.posicao.y } : null;
+      if (deEv && camadaDe(id) > 0) deEv.z = camadaDe(id);
+      const paraEv = { x: destino.x, y: destino.y };
+      if ((destino.z || 0) > 0) paraEv.z = destino.z;
       supRegistar('accao', { acao: 'mover', actor: id,
-        de: uIA ? { x: uIA.posicao.x, y: uIA.posicao.y } : null,
-        para: { x: destino.x, y: destino.y }, passos: destino.passos,
-        path: destino.path.map(p => ({ x: p.x, y: p.y })) }); }   // T1.7: o caminho fica no evento mover
+        de: deEv,
+        para: paraEv, passos: destino.passos,
+        path: destino.path.map(p => { const q = { x: p.x, y: p.y }; if ((p.z || 0) > 0) q.z = p.z; return q; }) }); }   // T1.7: o caminho fica no evento mover
     try {
-      view.move(id, casaVista(destino), {
-        path: destino.path.map(casaVista),
+      const voa = vooOrigemDe(id) != null;
+      view.move(id, voa ? casaVistaVoo(destino) : casaVista(destino), {
+        path: destino.path.map(p => voa ? casaVistaVoo(p) : casaVista(p)),
         durationMs: ritmo(Math.min(1700, Math.max(220, destino.passos * 190)))
       });
     } catch (_) {
@@ -3743,7 +4259,12 @@
     if (!ctx || seqTurno !== seq || batalhaFim) return;
     const uIAg = unidade(id);
     const pousado = !!(ctx.destino && uIAg
-      && uIAg.posicao.x === ctx.destino.x && uIAg.posicao.y === ctx.destino.y);
+      && uIAg.posicao.x === ctx.destino.x && uIAg.posicao.y === ctx.destino.y
+      && Math.round(((uIAg.altitude || 0) / VOO_METROS_CAMADA)) === (ctx.destino.z || 0));
+    /* VOO: pousada no destino nas três coordenadas, a camada
+       assenta já — o moveend pode ter-se perdido e a figura
+       está fisicamente lá. */
+    if (pousado && vooEstado[id]) vooEstado[id].z = ctx.destino.z || 0;
     let aMover = false;
     try { aMover = !!view.getState().moving; } catch (_) { aMover = false; }
     if ((aMover || pousado) && (ctx.rearmes || 0) < GUARDA_REARMES_MAX) {
@@ -3795,10 +4316,18 @@
     const eu = unidade(id);
     if (!eu) return null;
     const distOng = mapaDistancias(PROPRIA);
-    const distActual = distOng.get(chave(eu.posicao.x, eu.posicao.y));
+    /* VOO (F-36): a pontuação de uma voadora é a régua do
+       jogador aplicada ao mapa de pontuação — a distância 3D
+       ao ponto candidato é H (do mapa) + |dz| até à camada
+       dela (a Ong está no chão: |dz| = a camada do candidato).
+       Para figuras terrestres os dois termos de camada são 0
+       e a pontuação é a de hoje, ao dígito. */
+    const dActCasa = distOng.get(chave(eu.posicao.x, eu.posicao.y));
+    const distActual = dActCasa === undefined ? undefined : dActCasa + camadaDe(id);
     let melhor = null;
     for (const c of calcularAlcancePara(id, orcamentoIA(id)).values()) {
-      const d = distOng.get(chave(c.x, c.y));
+      const dCasa = distOng.get(chave(c.x, c.y));
+      const d = dCasa === undefined ? undefined : dCasa + (c.z || 0);
       if (d === undefined) continue;
       if (!melhor || d < melhor.d || (d === melhor.d && c.passos < melhor.destino.passos))
         melhor = { d, destino: c };
@@ -4857,6 +5386,11 @@
   view.on('moveend', async u => {
     if (!u || batalhaFim) return;              // nada se move depois da queda
     if (supRestaurando) return;                // Supervisor: reposição não é movimento de jogo
+    /* VOO (F-36): a camada a que esta chegada pousou, lida da
+       altitude que o próprio evento traz (a projecção da cena);
+       o z da casca assenta quando a chegada casa com o destino
+       prometido (reserva ou contexto), nos ramos abaixo. */
+    const zChegada = Math.round(((u && u.altitude) || 0) / VOO_METROS_CAMADA);
     /* Supervisor (pós-críticos T1.5, Conflitos A2): guarda de
        ÉPOCA no moveend DELA. Se a época mudou desde a partida
        (congelamento ou restauro pelo meio), esta chegada é
@@ -4875,9 +5409,10 @@
         supRestaurando = true;               // a reafirmação não é movimento de jogo
         for (const su of snapUnidades) {
           const uv = unidade(su.id);
-          if (uv && (uv.posicao.x !== su.x || uv.posicao.y !== su.y)) {
+          if (uv && (uv.posicao.x !== su.x || uv.posicao.y !== su.y || camadaDe(su.id) !== (su.z || 0))) {
             reservasDestinoIA.delete(su.id);   // EMENDA-V1: a reafirmação cancela o voo desta figura — a reserva dele morre com o voo cancelado, antes do move, porque o moveend cancelado é engolido em :2734
-            view.move(su.id, casaVista({ x: su.x, y: su.y }), { immediate: true });
+            view.move(su.id, (su.z || 0) > 0 ? casaVistaVoo(su) : casaVista({ x: su.x, y: su.y }), { immediate: true });
+            if (vooEstado[su.id]) vooEstado[su.id].z = su.z || 0;   // VOO: a camada reafirmada assenta com a posição
           }
         }
         supRestaurando = false;
@@ -4901,19 +5436,31 @@
       const ctxVivo = (contextoIA && contextoIA.id === u.id && contextoIA.destino) ? contextoIA : null;
       const rViva = reservasDestinoIA.get(u.id);
       const chegadaNova =
-        (ctxVivo && u.posicao.x === ctxVivo.destino.x && u.posicao.y === ctxVivo.destino.y)
+        (ctxVivo && u.posicao.x === ctxVivo.destino.x && u.posicao.y === ctxVivo.destino.y && (ctxVivo.destino.z || 0) === zChegada)
         || (guardaExpiradaIA && guardaExpiradaIA.id === u.id && guardaExpiradaIA.seq > supRestauroVoo.seq)
-        || (rViva && u.posicao.x === rViva.x && u.posicao.y === rViva.y);
+        || (rViva && u.posicao.x === rViva.x && u.posicao.y === rViva.y && (rViva.z || 0) === zChegada);
       if (!chegadaNova) {
         const suR = supRestauroPendente.find(s => s.id === u.id);
-        if (suR && (u.posicao.x !== suR.x || u.posicao.y !== suR.y)) {
+        if (suR && (u.posicao.x !== suR.x || u.posicao.y !== suR.y || camadaDe(u.id) !== (suR.z || 0))) {
           supRestaurando = true;
           reservasDestinoIA.delete(u.id);   // EMENDA-V1: idem — voo cancelado pela reafirmação; sem isto, o casamento por destino de :2781 falha contra a posição reafirmada e a reserva fica órfã
-          view.move(u.id, casaVista({ x: suR.x, y: suR.y }), { immediate: true });
+          view.move(u.id, (suR.z || 0) > 0 ? casaVistaVoo(suR) : casaVista({ x: suR.x, y: suR.y }), { immediate: true });
+          if (vooEstado[u.id]) vooEstado[u.id].z = suR.z || 0;   // VOO: idem — a camada reafirmada assenta
           supRestaurando = false;
         }
       }
       supRestauroVoo = null;   // EM-TJ12J13-01: a travessia resolveu-se — reafirmada, ou pousada pelo voo novo
+    }
+    /* VOO (F-36): a camada assenta ANTES da conferência de
+       invariantes — a chegada que casa com o destino prometido
+       (reserva ou contexto vivo) nas três coordenadas muda a
+       camada da figura; é aqui, e só aqui, que um voo a muda. */
+    if (u.id !== PROPRIA && vooEstado[u.id]) {
+      const rC = reservasDestinoIA.get(u.id);
+      const cC = (contextoIA && contextoIA.id === u.id && contextoIA.destino) ? contextoIA.destino : null;
+      if ((rC && rC.x === u.posicao.x && rC.y === u.posicao.y && (rC.z || 0) === zChegada)
+        || (cC && cC.x === u.posicao.x && cC.y === u.posicao.y && (cC.z || 0) === zChegada))
+        vooEstado[u.id].z = zChegada;
     }
     supConferirInvariantes('moveend');         // Supervisor: invariantes após cada movimento
     try { supCritFecharMovimento(u.id); } catch (_) { supCritErrosCamada++; }   // T1.7: fecha o segmento de movimento (passivo)
@@ -4925,7 +5472,7 @@
          de um voo mais novo da mesma figura. Deste instante em
          diante quem ocupa a casa é a própria figura, pela posição. */
       { const rIA = reservasDestinoIA.get(u.id);
-        if (rIA && rIA.x === u.posicao.x && rIA.y === u.posicao.y)
+        if (rIA && rIA.x === u.posicao.x && rIA.y === u.posicao.y && (rIA.z || 0) === camadaDe(u.id))
           reservasDestinoIA.delete(u.id); }
       /* Chegou um monstro. A conclusão do movimento tem UM dono:
          quem chega primeiro (este tratador ou o relógio de guarda)
@@ -4937,7 +5484,8 @@
          figura; um contexto de ataque (sem destino) nunca é
          consumido por um moveend. */
       const ctx = (contextoIA && contextoIA.id === u.id && contextoIA.destino
-        && u.posicao.x === contextoIA.destino.x && u.posicao.y === contextoIA.destino.y)
+        && u.posicao.x === contextoIA.destino.x && u.posicao.y === contextoIA.destino.y
+        && (contextoIA.destino.z || 0) === camadaDe(u.id))
         ? consumirContextoIA(u.id) : null;
       if (!ctx) {
         /* M-009: chegada TARDIA depois da guarda de 5 s — a vez já
@@ -6252,8 +6800,13 @@
        (o PA da técnica montada, pelo débito de sempre); regista-se
        o facto; e a frase pública narra o embate como mundo, só
        pós-Confirmar — na prévia, a peça total não teve sinal
-       nenhum (EM-S-21). */
-    if (obstaculos.some(o => o.grau === 'total')) {
+       nenhum (EM-S-21).
+       EMENDA DA CONFERÊNCIA REF_89 (GRAVE-2): o portão só é
+       consultado com dz = 0 — análise §6: entre camadas
+       diferentes NÃO há cobertura (o tiro cruza por cima ou
+       por baixo do obstáculo do plano, nos dois sentidos).
+       Com dz=0 o braço é o de hoje, byte-igual. */
+    if (camadaDe(PROPRIA) === camadaDe(alvo) && obstaculos.some(o => o.grau === 'total')) {
       paGasto += montado.tecnica.custoPA;
       atualizarChipVida();           // M-015: o débito reflecte-se já no chip
       atacou = true;
@@ -6426,14 +6979,20 @@
      A MESMA função corre na marcação (ataque-basico) e na
      revalidação do Confirmar (R-02: uma só régua nos dois
      instantes). A BFS (distanciaEntre) continua a governar o
-     Mover e a IA, intactas. */
+     Mover e a IA, intactas.
+     EMENDA DA CONFERÊNCIA REF_89 (GRAVE-1): a recta soma |dz|
+     — o portão DELA herda a régua 3D como o §2/§5 da análise
+     mandam (à mesma casa, z=10 fica a 10 > 6: o céu não se
+     alcança do chão). Trocar a recta pela BFS mudaria o braço
+     z=0 medido da PRÉVIA v2; somar |dz| deixa esse braço
+     byte-igual (dz=0 ⇒ a régua de hoje, ao dígito). */
   function validarAlvoAtaqueOng(contexto) {
     if (!alvo) return { razao: 'Sem alvo escolhido',
       mensagem: 'Primeiro <b>toque no inimigo</b> que você quer atacar — ele fica marcado como alvo.' };
     const u = unidade(alvo);
     if (!u || u.vivo === false) return { razao: 'O alvo já não está na batalha',
       mensagem: 'O alvo já não está na batalha — escolha outro inimigo.' };
-    if (distanciaRectaCasas(PROPRIA, alvo) > alcanceEmCasas(DADOS_COMBATE.ong.alcance)) return { razao: 'Alvo fora de alcance',
+    if (distanciaRectaCasas(PROPRIA, alvo) + Math.abs(camadaDe(PROPRIA) - camadaDe(alvo)) > alcanceEmCasas(DADOS_COMBATE.ong.alcance)) return { razao: 'Alvo fora de alcance',
       mensagem: fraseForaDeAlcance(alvo, contexto) };
     return null;
   }
@@ -6519,7 +7078,15 @@
       if (u.posicao.x < AREA.origin.x || u.posicao.x >= AREA.origin.x + AREA.cols
         || u.posicao.y < AREA.origin.y || u.posicao.y >= AREA.origin.y + AREA.rows)
         return 'Figura fora da arena';
-      const k = chave(u.posicao.x, u.posicao.y);
+      /* VOO (F-36): a ocupação é por PONTO (x, y, z) — duas
+         figuras na mesma casa em camadas diferentes são o voo
+         a funcionar; no mesmo ponto continua proibido. A
+         camada confere-se também contra a altitude da cena. */
+      const zU = camadaDe(u.id);
+      if (zU < 0 || zU > VOO_TECTO) return 'Figura fora do domínio de camadas';
+      if (Math.abs((u.altitude || 0) - zU * VOO_METROS_CAMADA) > 0.01
+        && !view.getState().moving) return 'Camada e altitude desencontradas';
+      const k = chave3(u.posicao.x, u.posicao.y, zU);
       if (casas.has(k)) return 'Duas figuras na mesma casa';
       casas.add(k);
     }
@@ -6597,9 +7164,17 @@
   function supEstadoCanonico() {
     return {
       rodada, indiceVez, vez: vezAtual,
-      unidades: view.getState().units.map(u => ({
-        id: u.id, x: u.posicao.x, y: u.posicao.y, vivo: u.vivo !== false })),
+      unidades: view.getState().units.map(u => {
+        const su = { id: u.id, x: u.posicao.x, y: u.posicao.y, vivo: u.vivo !== false };
+        const z = camadaDe(u.id);   // VOO: a camada entra no instantâneo (só quando > 0)
+        if (z > 0) su.z = z;
+        return su;
+      }),
       danoSofrido, paGasto, transformada, reservaMovimento, atacou, alvo,
+      /* VOO (F-36): presença e estado do voo (camada + asa
+         torada por figura) — o «voltar» repõe a batalha com o
+         voo daquele turno, incapacidade incluída. */
+      voo: vooCapturarEstado(),
       /* Tranche VLAB (pós-Crítico 3, achado 5): o estado do motor
          (estados, arma caída/quebrada, desvantagem, deslocamento a
          metade, reacção, corrida de morte) TAMBÉM entra no snapshot
@@ -6694,10 +7269,17 @@
     seqTurno++;
     if (contextoIA) consumirContextoIA(contextoIA.id);
     reservasDestinoIA.clear();   // o restauro substitui o mundo: os voos da linha abandonada já não prometem casas
+    /* VOO (F-36): o elenco de teste e o estado do voo do
+       instantâneo voltam com o resto — antes das posições, para
+       as figuras admitidas existirem quando forem movidas. */
+    if (snap.voo) vooReconciliarDeEstado(snap.voo,
+      Object.fromEntries((snap.unidades || []).map(su => [su.id, su])));
     for (const su of snap.unidades) {
       const u = unidade(su.id);
-      if (u && (u.posicao.x !== su.x || u.posicao.y !== su.y))
-        view.move(su.id, casaVista({ x: su.x, y: su.y }), { immediate: true });
+      if (u && (u.posicao.x !== su.x || u.posicao.y !== su.y || camadaDe(su.id) !== (su.z || 0))) {
+        view.move(su.id, (su.z || 0) > 0 ? casaVistaVoo(su) : casaVista({ x: su.x, y: su.y }), { immediate: true });
+        if (vooEstado[su.id]) vooEstado[su.id].z = su.z || 0;
+      }
       const uv = unidade(su.id);
       if (uv && (uv.vivo !== false) !== su.vivo) {
         /* FUSÃO T-D (casca-td §1.3): restauro de figura morta entra
@@ -6946,10 +7528,12 @@
     }
     return null;
   }
-  function validarVlabParaAplicar(v) {
+  function validarVlabParaAplicar(v, idsSave) {
     const INV = 'SAVE_ESTADO_INVALIDO', FALTA = 'SAVE_CAMPOS_EM_FALTA';
     if (!v || typeof v !== 'object') return FALTA;
-    const ids = ELENCO.map(u => u.id);
+    /* VOO (F-36): os ids são os do save inteiro (elenco + as
+       figuras de teste que ele declara) — quem chama passa-os. */
+    const ids = idsSave || ELENCO.map(u => u.id);
     for (const id of ids) if (!(id in v)) return FALTA;
     if (Object.keys(v).some(k => !ids.includes(k))) return INV;
     for (const id of ids) {
@@ -7016,8 +7600,17 @@
        do estado, na mesma régua (save antigo sem ele é válido —
        carrega com a matriz vazia declarada no aplicar; sem esta
        excepção, todo o save COM a matriz era rejeitado aqui). */
-    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala' && k !== 'visao' && k !== 'furtividade' && k !== 'previaPublica')) return INV;
-    const ids = ELENCO.map(u => u.id);
+    /* Tranche VOO (F-36): 'voo' é campo OPCIONAL do estado, na
+       mesma régua (save antigo sem ele é válido — ninguém traz
+       asa torada); o 'z' das unidades confere-se junto delas. */
+    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala' && k !== 'visao' && k !== 'furtividade' && k !== 'previaPublica' && k !== 'voo')) return INV;
+    /* Os ids válidos são os do elenco MAIS as figuras de teste
+       que o próprio save declara nas unidades (aplicar um save
+       admite as que ele traz; um save não pode inventar figuras
+       fora dos modelos de teste). */
+    const idsTesteDoSave = (Array.isArray(e.unidades) ? e.unidades : [])
+      .map(u => u && u.id).filter(id => typeof id === 'string' && vooModeloDe(id) && !ELENCO.some(x => x.id === id));
+    const ids = [...ELENCO.map(u => u.id), ...idsTesteDoSave];
     const inteiro = n => Number.isInteger(n);
     const finito = n => typeof n === 'number' && Number.isFinite(n);
     if (!inteiro(e.rodada) || e.rodada < 1 || e.rodada > 10000) return INV;
@@ -7036,15 +7629,23 @@
     const vistos = new Set(), casas = new Set();
     for (const u of e.unidades) {
       if (!u || typeof u !== 'object') return INV;
-      if (Object.keys(u).some(k => !['id', 'x', 'y', 'vivo'].includes(k))) return INV;
+      if (Object.keys(u).some(k => !['id', 'x', 'y', 'vivo', 'z'].includes(k))) return INV;
       if (!ids.includes(u.id) || vistos.has(u.id)) return INV;
       vistos.add(u.id);
       if (!inteiro(u.x) || !inteiro(u.y)
         || u.x < AREA.origin.x || u.x >= AREA.origin.x + AREA.cols
         || u.y < AREA.origin.y || u.y >= AREA.origin.y + AREA.rows) return INV;
       if (typeof u.vivo !== 'boolean') return INV;
-      const k = chave(u.x, u.y);
-      if (casas.has(k)) return INV;              // duas figuras na mesma casa
+      /* VOO: z ausente lê-se 0; presente, tem de ser camada
+         inteira no domínio {0,…,10}, só em quem pode voar, e
+         nunca num corpo (quem morre em voo cai — cadáver em
+         z>0 é incoerente por construção). */
+      const z = u.z === undefined ? 0 : u.z;
+      if (!inteiro(z) || z < 0 || z > VOO_TECTO) return INV;
+      if (z > 0 && !vooOrigemDe(u.id) && !vooModeloDe(u.id)) return INV;
+      if (u.vivo === false && z !== 0) return INV;
+      const k = chave3(u.x, u.y, z);
+      if (casas.has(k)) return INV;              // duas figuras no mesmo ponto
       casas.add(k);
     }
     const porId = id => e.unidades.find(u => u.id === id);
@@ -7144,8 +7745,22 @@
     /* EMENDA Q-02: 'previaPublica', presente, confere-se no seu
        domínio (validarPreviaPublica) — ausente, save válido. */
     if ('previaPublica' in e) { const erroPP = validarPreviaPublica(e.previaPublica); if (erroPP) return erroPP; }
+    /* VOO: o bloco opcional 'voo', presente, só pode nomear
+       figuras de teste DESTE save, cada uma com {asaTorada}
+       booleano e nenhuma outra chave. */
+    if ('voo' in e) {
+      const vv = e.voo;
+      if (!vv || typeof vv !== 'object' || Array.isArray(vv)) return INV;
+      for (const k of Object.keys(vv)) {
+        if (!idsTesteDoSave.includes(k)) return INV;
+        const av = vv[k];
+        if (!av || typeof av !== 'object' || Array.isArray(av)) return INV;
+        if (Object.keys(av).some(c => c !== 'asaTorada')) return INV;
+        if (typeof av.asaTorada !== 'boolean') return INV;
+      }
+    }
     /* PORTA C-23: o bloco do motor confere-se com a mesma régua. */
-    return validarVlabParaAplicar(e.vlab);
+    return validarVlabParaAplicar(e.vlab, ids);
   }
   window.CampoSaveBridge = Object.freeze({
     versaoPonte: 3,
@@ -7191,9 +7806,12 @@
         return { ok: false, erro: 'SAVE_EM_VOO' };
       return {
         rodada, indiceVez, vez: vezAtual, ordem: [...ordem], fase: estado,
-        unidades: view.getState().units.map(u => ({
-          id: u.id, x: u.posicao.x, y: u.posicao.y, vivo: u.vivo !== false
-        })),
+        unidades: view.getState().units.map(u => {
+          const su = { id: u.id, x: u.posicao.x, y: u.posicao.y, vivo: u.vivo !== false };
+          const z = camadaDe(u.id);   // VOO: a camada viaja na unidade (só quando > 0)
+          if (z > 0) su.z = z;
+          return su;
+        }),
         ong: {
           danoSofrido, paGasto, transformada, reservaMovimento,
           atacou, alvo
@@ -7230,7 +7848,10 @@
            imóveis durante a prévia por construção (a rolagem só
            nasce no Confirmar). */
         ...(estado === 'previa' && ataquePreviaPublicaActual()
-          ? { previaPublica: ataquePreviaPublicaActual() } : {})
+          ? { previaPublica: ataquePreviaPublicaActual() } : {}),
+        /* VOO (F-36): a asa torada viaja no bloco opcional
+           'voo' — só nasce quando existe (ver vooBlocoSaveCaptura). */
+        ...vooBlocoSaveCaptura()
       };
     },
     aplicar(e) {
@@ -7261,8 +7882,13 @@
       try {
         preSave = {
           rodada, indiceVez, vez: vezAtual, ordem: [...ordem], fase: estado,
-          unidades: view.getState().units.map(u => ({
-            id: u.id, x: u.posicao.x, y: u.posicao.y, vivo: u.vivo !== false })),
+          unidades: view.getState().units.map(u => {
+            const su = { id: u.id, x: u.posicao.x, y: u.posicao.y, vivo: u.vivo !== false };
+            const z = camadaDe(u.id);
+            if (z > 0) su.z = z;
+            return su;
+          }),
+          voo: vooCapturarEstado(),   // VOO: o pré-estado cobre também presença/camada/asa (atomicidade)
           danoSofrido, paGasto, transformada, reservaMovimento, atacou, alvo,
           batalhaFim, dadoEstado, roladasDados, supCongelado,
           vlab: JSON.parse(JSON.stringify(ESTADO_VLAB)),
@@ -7308,13 +7934,24 @@
         seqTurno++;
         if (contextoIA) consumirContextoIA(contextoIA.id);
         reservasDestinoIA.clear();   // idem supRestaurar: o save substitui o mundo, os voos velhos já não prometem casas
+        /* VOO (F-36): o elenco de teste do save assenta ANTES
+           das posições — admite quem ele traz, remove quem ele
+           não traz, e repõe camada + asa torada de cada um. */
+        { const presentesSave = e.unidades.map(u => u.id).filter(id => vooModeloDe(id));
+          const estadosSave = {};
+          for (const su of e.unidades)
+            if (vooModeloDe(su.id)) estadosSave[su.id] = { z: su.z || 0,
+              asaTorada: !!(e.voo && e.voo[su.id] && e.voo[su.id].asaTorada) };
+          vooReconciliarDeEstado({ presentes: presentesSave, estados: estadosSave },
+            Object.fromEntries(e.unidades.map(su => [su.id, su]))); }
         /* Posições e vivo: move imediato INCONDICIONAL de todas as
            figuras — cancela animações em voo mesmo quando a posição
            lógica já bate com o save (era o buraco S-CRIT-05). Figura
            que o save traz morta entra pela pose de morte rápida
            quando a cena a tem (precedente FUSÃO T-D do restauro). */
         for (const su of e.unidades) {
-          view.move(su.id, casaVista({ x: su.x, y: su.y }), { immediate: true });
+          view.move(su.id, (su.z || 0) > 0 ? casaVistaVoo(su) : casaVista({ x: su.x, y: su.y }), { immediate: true });
+          if (vooEstado[su.id]) vooEstado[su.id].z = su.z || 0;
           const uv = unidade(su.id);
           if (uv && (uv.vivo !== false) !== su.vivo) {
             if (su.vivo === false && typeof view.apresentarMorte === 'function') {
@@ -7452,8 +8089,15 @@
         supRestauroVoo = null;   // EM-TJ12J13-01: simetria S-CONF-02 — aplicação que não aconteceu não deixa carimbo
         try {
           supRestaurando = true;              // os moveend da reposição ignoram-se
+          /* VOO: aplicação que não aconteceu também não muda o
+             elenco de teste nem o voo — repõe-se o do pré-estado. */
+          if (preSave && preSave.voo) {
+            try { vooReconciliarDeEstado(preSave.voo,
+              Object.fromEntries(preSave.unidades.map(su => [su.id, su]))); } catch (__) {}
+          }
           if (preSave) for (const su of preSave.unidades) {
-            try { view.move(su.id, casaVista({ x: su.x, y: su.y }), { immediate: true }); } catch (__) {}
+            try { view.move(su.id, (su.z || 0) > 0 ? casaVistaVoo(su) : casaVista({ x: su.x, y: su.y }), { immediate: true }); } catch (__) {}
+            try { if (vooEstado[su.id]) vooEstado[su.id].z = su.z || 0; } catch (__) {}
             try {
               const uv = unidade(su.id);
               if (uv && (uv.vivo !== false) !== su.vivo) view.setVivo(su.id, su.vivo);
@@ -10611,6 +11255,63 @@
       btnFraco052.addEventListener('click', () => { testeChuva052Nivel = 1; aplicar052(); });
       btnForte052.addEventListener('click', () => { testeChuva052Nivel = 2; aplicar052(); });
       sinc052();
+      /* — O voo (teste): o Grifo e a adjudicação da asa —
+         A figura de ensaio do voo em camadas (F-36): admite-se
+         e tira-se da batalha por aqui; «Torou a asa» é a
+         adjudicação manual do Mestre (a C-37 não existe — é a
+         palavra dele, pelos meios actuais, com o acto registado
+         com z e escala do momento). Estado de sessão: ao
+         recarregar, o Grifo sai e a asa sara — batalha nova. */
+      const gVoo = cfgGrupo(pane, 'O voo (teste)',
+        'O Grifo entra na batalha como figura de ensaio do voo: sobe e desce em camadas, ataca de cima com Vantagem e, se cair, paga a queda em dados. Tire-o quando o ensaio acabar.');
+      const linhaVooEstado = document.createElement('div'); linhaVooEstado.className = 'cfgrow';
+      const rotVooEstado = document.createElement('span'); rotVooEstado.className = 'cl';
+      rotVooEstado.innerHTML = 'O Grifo<small id="voo-estado-txt">fora da batalha</small>';
+      linhaVooEstado.appendChild(rotVooEstado);
+      gVoo.appendChild(linhaVooEstado);
+      const mkBotaoVoo = (id, texto) => {
+        const linha = document.createElement('div'); linha.className = 'cfgrow';
+        const rot = document.createElement('span'); rot.className = 'cl'; rot.textContent = texto;
+        const b = document.createElement('button');
+        b.type = 'button'; b.id = id; b.className = 'tog'; b.textContent = texto;
+        linha.appendChild(rot); linha.appendChild(b);
+        gVoo.appendChild(linha);
+        return b;
+      };
+      const btnVooAdmitir = mkBotaoVoo('voo-admitir-grifo', 'Admitir o Grifo');
+      const btnVooTorcer = mkBotaoVoo('voo-torcer-asa', 'Torou a asa do Grifo');
+      const btnVooTirar = mkBotaoVoo('voo-tirar-grifo', 'Tirar o Grifo');
+      const sincVoo = () => {
+        const txt = document.getElementById('voo-estado-txt');
+        const presente = testesPresentes.has('grifo');
+        const est = presente ? __vooEstadoTxt() : 'fora da batalha';
+        if (txt) txt.textContent = est;
+        btnVooAdmitir.disabled = presente;
+        btnVooTorcer.disabled = !presente || !!(vooEstado.grifo && vooEstado.grifo.asaTorada);
+        btnVooTirar.disabled = !presente;
+      };
+      const __vooEstadoTxt = () => {
+        const z = camadaDe('grifo');
+        const asa = vooEstado.grifo && vooEstado.grifo.asaTorada;
+        return `na batalha — camada ${z}${asa ? ' · asa torada (não voa nesta batalha)' : ''}`;
+      };
+      btnVooAdmitir.addEventListener('click', () => {
+        const r = vooAdmitirFiguraTeste('grifo');
+        if (r.ok) say('O <b>Grifo</b> entrou na batalha — é a figura de ensaio do voo.');
+        else say('O Grifo não entrou: ' + r.erro);
+        sincVoo();
+      });
+      btnVooTorcer.addEventListener('click', () => {
+        vooPerderVoo('grifo', 'adjudicada', { quem: 'mestre' });
+        sincVoo();
+      });
+      btnVooTirar.addEventListener('click', () => {
+        const r = vooRemoverFiguraTeste('grifo');
+        if (r.ok) say('O <b>Grifo</b> saiu da batalha.');
+        else say('O Grifo não saiu: ' + r.erro);
+        sincVoo();
+      });
+      sincVoo();
     }
   }
   activarAbaCfg('jogo');

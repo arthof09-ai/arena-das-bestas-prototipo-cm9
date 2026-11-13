@@ -1693,7 +1693,7 @@
                 moveLayer.clear();
                 const vertices = [], lines = [];
                 for (const p of cells) {
-                    const x = wx(p.x), z = wz(p.z), s = CELL * .47, y = world.height(x, z) + .035, a = [x - s, y, z - s], b = [x + s, y, z - s], c = [x + s, y, z + s], d = [x - s, y, z + s];
+                    const x = wx(p.x), z = wz(p.z), s = CELL * .47, y = world.height(x, z) + (p.altitude || 0) + .035, a = [x - s, y, z - s], b = [x + s, y, z - s], c = [x + s, y, z + s], d = [x - s, y, z + s];
                     vertices.push(...a, ...d, ...b, ...b, ...d, ...c);
                     lines.push(...a, ...b, ...b, ...c, ...c, ...d, ...d, ...a);
                 }
@@ -2276,6 +2276,14 @@
                     u.tether.position.set(x, ground + .04, z);
                     u.tether.scale.y = Math.max(0, alt);
                     u.tether.visible = alt > .3;
+                    /* VOO (F-36): o micro-sinal de camada no rótulo —
+                       a camada corrente ao pé do nome, só com o
+                       token no ar (o mesmo limiar do fio). */
+                    const camada = Math.round(alt / CELL);
+                    if (u.camadaRotulo !== camada) {
+                        u.camadaRotulo = camada;
+                        u.label.textContent = camada > 0 ? `${u.nome} \u2b06${camada}` : u.nome;
+                    }
                     if (u.oculto) { u.ring.visible = u.contact.visible = u.tether.visible = false; }
                 });
                 world.update(now / 1000);
