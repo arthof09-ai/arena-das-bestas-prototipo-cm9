@@ -631,14 +631,24 @@
                 neveGeo.setDrawRange(0, 0);
             }
             const neveMat = new T.ShaderMaterial({
-                uniforms: { uTempo: { value: 0 }, uAlturaPx: { value: 800 }, uFrustumAltM: { value: 10 }, uOrto: { value: 1 }, uOpacidade: { value: 0 }, uTam: { value: .075 }, uQueda: { value: 1.3 }, uVento: { value: new T.Vector2(0, 0) } },
-                vertexShader: 'uniform float uTempo; uniform float uAlturaPx; uniform float uFrustumAltM; uniform float uOrto; uniform float uTam; uniform float uQueda; uniform vec2 uVento; varying float vFase; varying vec2 vDirTraco; varying float vEstica; void main() { vec3 p = position; p.x = mod(p.x + uTempo * uVento.x + 46.0, 92.0) - 46.0; p.z = mod(p.z + uTempo * uVento.y + 46.0, 92.0) - 46.0; p.y = mod(p.y - uTempo * uQueda, 30.0); p.x += sin(uTempo * 0.45 + position.y * 0.31 + position.x * 0.17) * 0.9; p.z += cos(uTempo * 0.36 + position.y * 0.23 + position.z * 0.19) * 0.7; vec4 mv = modelViewMatrix * vec4(p, 1.0); float dist = max(0.1, -mv.z); float escala = (uOrto > 0.5) ? uAlturaPx / max(0.1, uFrustumAltM) : uAlturaPx * 0.5 * projectionMatrix[1][1] / dist; vFase = fract(position.x * 12.9898 + position.z * 78.233); vec4 pv = projectionMatrix * modelViewMatrix * vec4(vec3(uVento.x, -uQueda, uVento.y), 0.0); vec2 dirE = vec2(pv.x, -pv.y); float ld = length(dirE); vDirTraco = ld > 0.0001 ? dirE / ld : vec2(0.0, 1.0); float vh = length(uVento); vEstica = vh > 3.0 ? clamp(1.0 + 0.3 * (vh - 3.0), 1.0, 2.2) : 1.0; gl_PointSize = clamp(uTam * (1.4 + vFase * 0.9) * escala, 2.0, 256.0); gl_Position = projectionMatrix * mv; }',
+                uniforms: { uTempo: { value: 0 }, uDesloc: { value: new T.Vector3(0, 0, 0) }, uAlturaPx: { value: 800 }, uFrustumAltM: { value: 10 }, uOrto: { value: 1 }, uOpacidade: { value: 0 }, uTam: { value: .075 }, uQueda: { value: 1.3 }, uVento: { value: new T.Vector2(0, 0) } },
+                vertexShader: 'uniform float uTempo; uniform vec3 uDesloc; uniform float uAlturaPx; uniform float uFrustumAltM; uniform float uOrto; uniform float uTam; uniform float uQueda; uniform vec2 uVento; varying float vFase; varying vec2 vDirTraco; varying float vEstica; void main() { vec3 p = position; p.x = mod(p.x + uDesloc.x + 46.0, 92.0) - 46.0; p.z = mod(p.z + uDesloc.z + 46.0, 92.0) - 46.0; p.y = mod(p.y - uDesloc.y, 30.0); p.x += sin(uTempo * 0.45 + position.y * 0.31 + position.x * 0.17) * 0.9; p.z += cos(uTempo * 0.36 + position.y * 0.23 + position.z * 0.19) * 0.7; vec4 mv = modelViewMatrix * vec4(p, 1.0); float dist = max(0.1, -mv.z); float escala = (uOrto > 0.5) ? uAlturaPx / max(0.1, uFrustumAltM) : uAlturaPx * 0.5 * projectionMatrix[1][1] / dist; vFase = fract(position.x * 12.9898 + position.z * 78.233); vec4 pv = projectionMatrix * modelViewMatrix * vec4(vec3(uVento.x, -uQueda, uVento.y), 0.0); vec2 dirE = vec2(pv.x, -pv.y); float ld = length(dirE); vDirTraco = ld > 0.0001 ? dirE / ld : vec2(0.0, 1.0); float vh = length(uVento); vEstica = vh > 3.0 ? clamp(1.0 + 0.3 * (vh - 3.0), 1.0, 2.2) : 1.0; gl_PointSize = clamp(uTam * (1.4 + vFase * 0.9) * escala, 2.0, 256.0); gl_Position = projectionMatrix * mv; }',
                 fragmentShader: 'uniform float uOpacidade; varying vec2 vDirTraco; varying float vEstica; void main() { vec2 c = gl_PointCoord - vec2(0.5); vec2 dir = normalize(vDirTraco); vec2 nrm = vec2(dir.y, -dir.x); float d = length(vec2(dot(c, dir) / max(1.0, vEstica), dot(c, nrm))); float a = smoothstep(0.5, 0.06, d) * uOpacidade; if (a < 0.012) discard; gl_FragColor = vec4(0.93, 0.96, 1.0, a); }',
                 transparent: true, depthWrite: false
             });
             const nevePts = new T.Points(neveGeo, neveMat);
             nevePts.frustumCulled = false; nevePts.visible = false; nevePts.renderOrder = 5;
             scene.add(nevePts);
+            /* Deslocamento INTEGRADO da neve (correcção t-neve-forte):
+             * a distância que o campo da neve já percorreu, acumulada
+             * fotograma a fotograma em ambQuadro com o vento e a queda
+             * DE CADA fotograma. Substitui o «tempo total × vento
+             * actual» do shader antigo, que fazia os flocos voarem
+             * contra o vento e saltarem metros entre fotogramas sempre
+             * que a rajada mudava (a velocidade aparente era
+             * v + t·v′). Os acumuladores vivem embrulhados no tamanho
+             * da caixa (92/92/30), por isso o uniforme nunca cresce. */
+            const neveDesloc = { x: 0, y: 0, z: 0 };
             /* A CAMADA DE CHÃO DA CHUVA NOVA (tranche t-aba-testes —
              * o efeito do dossiê 052, fundido da candidata de
              * t-chuva-052, atrás da bandeira da aba «Testes» do
@@ -837,6 +847,12 @@
                 }
                 neveMat.uniforms.uVento.value.set(DIR_VENTO.x * vmN, DIR_VENTO.z * vmN);
                 neveMat.uniforms.uQueda.value = ambNivel(NEVE_QUEDA, cf);
+                if (deNeve && dt > 0) {
+                    neveDesloc.x = (neveDesloc.x + DIR_VENTO.x * vmN * dt) % 92;
+                    neveDesloc.z = (neveDesloc.z + DIR_VENTO.z * vmN * dt) % 92;
+                    neveDesloc.y = (neveDesloc.y + ambNivel(NEVE_QUEDA, cf) * dt) % 30;
+                    neveMat.uniforms.uDesloc.value.set(neveDesloc.x, neveDesloc.y, neveDesloc.z);
+                }
                 /* Nevoa contida (SS3.4): alvo proporcional a intensidade
                  * interpolada da neve Forte; subida/descida ~4 s; snap
                  * literal a 0,0 quando a neve e 0. A adicao vive so
