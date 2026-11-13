@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_87';
+  var VERSAO_JOGO = 'REF_88';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -466,8 +466,12 @@
 
   /* ---------- Configurações em ABAS na entrada (t-config-abas,
    * SPEC §3): a vista ganha abas — Gráficos · Som · Controles · e,
-   * desde a REF_87, Conta — com a geometria v1 (coluna no Largo,
-   * grelha 2+2 no Estreito, sem faixas-régua).
+   * desde a REF_87, Conta — sem faixas-régua.
+   * REF_88 (palavra do Mestre, 13/11/2026 08:34: «Deixe uma única
+   * coluna horizontal de abas, só com seus nomes, essa explicação
+   * de o que é a aba pode ficar dentro da aba»): a barra é UMA
+   * fileira horizontal só com os NOMES; a explicação de cada aba
+   * vive no TOPO do conteúdo da própria aba.
    * NADA do Mestre nasce aqui. A aba por omissão é Gráficos; a
    * última aba fica lembrada numa variável desta superfície. */
   var entAbaActual = 'graficos';
@@ -486,6 +490,14 @@
     for (var k in paineisEnt) paineisEnt[k].classList.toggle('activa', k === id);
     for (var k2 in celulasEnt) celulasEnt[k2].classList.toggle('on', k2 === id);
     conteudoEnt.scrollTop = 0;
+    /* REF_88: na fileira horizontal, a célula activa fica visível —
+       se estiver fora da janela do índice, a fileira desliza até ela. */
+    var celA = celulasEnt[id];
+    if (celA && celA.getBoundingClientRect && indiceEnt.scrollWidth > indiceEnt.clientWidth) {
+      var rI = indiceEnt.getBoundingClientRect(), rC = celA.getBoundingClientRect();
+      if (rC.left < rI.left) indiceEnt.scrollLeft -= (rI.left - rC.left) + 4;
+      else if (rC.right > rI.right) indiceEnt.scrollLeft += (rC.right - rI.right) + 4;
+    }
   }
   var ABAS_ENT = [
     ['graficos', 'Gráficos', 'Qualidade, números e tela vermelha'],
@@ -497,14 +509,15 @@
     var sec = el('section', 'entab-aba');
     sec.dataset.aba = def[0];
     sec.setAttribute('aria-label', def[1]);
+    /* REF_88: a explicação (def[2]) nasce no topo da aba — acrescentada
+       aqui, antes dos enchimentos, fica a primeira coisa da secção. */
+    sec.appendChild(el('p', 'ent-aba-frase', def[2]));
     conteudoEnt.appendChild(sec);
     paineisEnt[def[0]] = sec;
     var cel = el('button', 'entab-celula');
     cel.type = 'button';
     cel.dataset.aba = def[0];
-    var b = el('b', null, def[1]);
-    var i = el('i', null, def[2]);
-    cel.appendChild(b); cel.appendChild(i);
+    cel.appendChild(el('b', null, def[1]));
     cel.addEventListener('click', function () { activarAbaEnt(def[0]); });
     indiceEnt.appendChild(cel);
     celulasEnt[def[0]] = cel;

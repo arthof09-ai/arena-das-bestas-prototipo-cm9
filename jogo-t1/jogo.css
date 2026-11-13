@@ -101,29 +101,30 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 #cfgpop .stats{flex:none;height:22px;line-height:22px;margin:6px 0 0;padding:0;
   border-top:1px dashed rgba(201,162,39,.25);
   font-size:10px;color:var(--pergaminho-mudo);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;visibility:hidden}
-/* ---------- estrutura das abas do ⚙ ---------- */
-.cfg-corpo{position:relative;flex:1;min-height:0;display:flex;gap:10px}
-.cfg-indice-wrap{position:relative;flex:none;width:172px;display:flex}
-.cfg-indice{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+/* ---------- estrutura das abas do ⚙ ----------
+   REF_88: a barra de abas é UMA fileira horizontal só com os
+   nomes (a explicação de cada aba vive dentro da aba, no topo) —
+   acabou a coluna de 172 px e as grelhas de cartões do Estreito;
+   as faixas de grupo viram rótulos compactos dentro da fileira e,
+   se as abas não couberem, a fileira desliza na horizontal. */
+.cfg-corpo{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;gap:8px}
+.cfg-indice-wrap{position:relative;flex:none;display:flex;min-width:0}
+.cfg-indice{flex:1;min-width:0;min-height:0;overflow-x:auto;overflow-y:hidden;display:flex;flex-direction:row;gap:4px;align-items:stretch}
 .cfg-celulas-todos,.cfg-celulas-suas{display:contents}
-.cfg-faixa{height:22px;flex:none;display:flex;align-items:center;justify-content:center;gap:8px;
+.cfg-faixa{flex:none;display:flex;align-items:center;justify-content:center;padding:0 4px;
   font-family:Georgia,'DejaVu Serif',serif;font-size:9px;letter-spacing:.12em;
-  color:var(--ouro);text-transform:uppercase;text-align:center}
-.cfg-faixa::before,.cfg-faixa::after{content:'';flex:1;border-top:1px solid rgba(201,162,39,.4)}
-.cfg-faixa.sticky{position:sticky;top:0;z-index:2;background:var(--painel-denso)}
-.cfg-celula{height:44px;flex:none;display:flex;flex-direction:column;justify-content:center;gap:1px;
-  text-align:left;padding:4px 8px;border:1px solid rgba(201,162,39,.45);border-radius:8px;
+  color:var(--ouro);text-transform:uppercase;text-align:center;white-space:nowrap}
+.cfg-celula{height:36px;flex:none;display:flex;align-items:center;justify-content:center;
+  text-align:center;padding:4px 12px;border:1px solid rgba(201,162,39,.45);border-radius:8px;
   background:rgba(28,21,12,.6);cursor:pointer}
 .cfg-celula b{font-size:13px;color:var(--pergaminho);white-space:nowrap;line-height:1.15}
-.cfg-celula i{font-style:normal;font-size:9px;color:var(--pergaminho-mudo);white-space:nowrap;line-height:1.2}
 .cfg-celula.on{background:var(--ouro);border-color:var(--ouro)}
 .cfg-celula.on b{color:#1c1508}
-.cfg-celula.on i{color:#4a3a10}
-.cfg-mais{position:absolute;left:0;right:0;bottom:0;display:none;justify-content:center;
-  padding:12px 0 2px;font-size:10px;font-weight:700;color:var(--ouro-claro);
-  background:linear-gradient(rgba(20,15,8,0),var(--painel-denso) 45%);pointer-events:none}
+.cfg-mais{position:absolute;top:0;right:0;bottom:0;display:none;align-items:center;justify-content:flex-end;
+  padding:0 4px 0 22px;font-size:10px;font-weight:700;color:var(--ouro-claro);
+  background:linear-gradient(to left,var(--painel-denso) 55%,rgba(20,15,8,0));pointer-events:none}
 .cfg-mais.on{display:flex}
-.cfg-mais-conteudo{position:absolute;left:182px;right:0;bottom:0;display:none;justify-content:center;padding:12px 0 2px;font-size:10px;font-weight:700;color:var(--ouro-claro);background:linear-gradient(rgba(20,15,8,0),rgba(14,11,7,.97) 45%);pointer-events:none;z-index:2}
+.cfg-mais-conteudo{position:absolute;left:0;right:0;bottom:0;display:none;justify-content:center;padding:12px 0 2px;font-size:10px;font-weight:700;color:var(--ouro-claro);background:linear-gradient(rgba(20,15,8,0),rgba(14,11,7,.97) 45%);pointer-events:none;z-index:2}
 .cfg-mais-conteudo.on{display:flex}
 .cfg-conteudo{flex:1;min-width:0;min-height:0;overflow-y:auto}
 .cfg-aba{display:none}
@@ -145,21 +146,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 .cfg-keys-livre td{border-top:0;padding:2px 4px}
 @media (max-width:599px){
   #cfgpop{width:min(366px,94vw);top:auto;bottom:64px;height:min(78vh,calc(100vh - 170px));max-height:none}
-  .cfg-corpo{flex-direction:column;gap:6px}
-  .cfg-indice-wrap{width:auto}
-  .cfg-indice{overflow:visible}
-  .cfg-celulas-todos{display:grid;grid-template-columns:1fr 1fr;gap:4px}
-  .cfg-celulas-suas{display:grid;grid-template-columns:repeat(2,1fr);gap:4px}
-  .cfg-celula{height:auto;min-height:56px;min-width:0}
-  /* Estreito: subtítulos que não cabem numa linha quebram DENTRO
-     da célula (medido em render, P10/P13): «Último estado bom,
-     registo e dicas» mede ≈146 px para ≈96 px úteis na linha das
-     3 do Mestre — cortava; «Volumes, música e som do ambiente»
-     mede 155 px para 150 px úteis na grelha de todos — transbordava
-     5 px. Com a quebra, todos se leem completos, sem sair da folha. */
-  .cfg-celula i{white-space:normal}
-  .cfg-faixa.sticky{position:static}
-  .cfg-mais{display:none}
+  .cfg-corpo{gap:6px}
   .cfg-mais-conteudo{left:0}
 }
 /* Cartão da desgraça (T-DESGRACA-NADA): o cartão de decisão do

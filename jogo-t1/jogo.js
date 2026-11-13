@@ -10143,7 +10143,12 @@
    * Os títulos h3 de secção antigos («Som», «Ambiente», «Câmera
    * livre», «Escala», «Visão») fundem-se nos títulos de aba/grupo e
    * são removidos como elementos soltos (mapa §5.8 no relatório).
-   * #stats fica FORA da rolagem, como faixa de 22 px no fundo. */
+   * #stats fica FORA da rolagem, como faixa de 22 px no fundo.
+   * REF_88 (palavra do Mestre, 13/11/2026 08:34: «Deixe uma única
+   * coluna horizontal de abas, só com seus nomes, essa explicação
+   * de o que é a aba pode ficar dentro da aba»): a barra é UMA
+   * fileira horizontal só com os NOMES; a explicação de cada aba
+   * (subP/subM) vive no TOPO do conteúdo da própria aba. */
   const CFG_ABAS_TODOS = [
     { id: 'jogo', nome: 'Jogo', subP: 'Câmera, zoom e ajuda do grid', subM: 'Câmera, velocidade e automático' },
     { id: 'graficos', nome: 'Gráficos', subP: 'Qualidade, números e tela vermelha', subM: 'A sua tela e a luz do fogo' },
@@ -10161,7 +10166,7 @@
   const indiceWrapCfg = document.createElement('div'); indiceWrapCfg.className = 'cfg-indice-wrap';
   const indiceCfg = document.createElement('nav'); indiceCfg.className = 'cfg-indice';
   indiceCfg.setAttribute('aria-label', 'Abas das configurações');
-  const maisCfg = document.createElement('div'); maisCfg.className = 'cfg-mais'; maisCfg.textContent = 'Há mais abas ↓';
+  const maisCfg = document.createElement('div'); maisCfg.className = 'cfg-mais'; maisCfg.textContent = 'Há mais abas →';
   indiceWrapCfg.appendChild(indiceCfg); indiceWrapCfg.appendChild(maisCfg);
   const conteudoCfg = document.createElement('div'); conteudoCfg.className = 'cfg-conteudo';
   corpoCfg.appendChild(indiceWrapCfg); corpoCfg.appendChild(conteudoCfg);
@@ -10176,12 +10181,22 @@
     for (const k in paineisCfg) paineisCfg[k].classList.toggle('activa', k === id);
     for (const k in celulasCfg) celulasCfg[k].classList.toggle('on', k === id);
     conteudoCfg.scrollTop = 0;
+    /* REF_88: na fileira horizontal, a célula activa fica visível —
+       se estiver fora da janela do índice, a fileira desliza até ela. */
+    const celA = celulasCfg[id];
+    if (celA && celA.getBoundingClientRect && indiceCfg.scrollWidth > indiceCfg.clientWidth) {
+      const rI = indiceCfg.getBoundingClientRect(), rC = celA.getBoundingClientRect();
+      if (rC.left < rI.left) indiceCfg.scrollLeft -= (rI.left - rC.left) + 4;
+      else if (rC.right > rI.right) indiceCfg.scrollLeft += (rC.right - rI.right) + 4;
+    }
     cfgMaisCheck();
     cfgConteudoCheck();
   }
   function cfgMaisCheck() {
-    const precisa = indiceCfg.scrollHeight > indiceCfg.clientHeight + 1 &&
-      indiceCfg.scrollTop + indiceCfg.clientHeight < indiceCfg.scrollHeight - 2;
+    /* REF_88: a fileira desliza na HORIZONTAL — o aviso mede a
+       rolagem lateral (antes media a vertical da coluna). */
+    const precisa = indiceCfg.scrollWidth > indiceCfg.clientWidth + 1 &&
+      indiceCfg.scrollLeft + indiceCfg.clientWidth < indiceCfg.scrollWidth - 2;
     maisCfg.classList.toggle('on', precisa);
   }
   function cfgConteudoCheck() {
@@ -10192,7 +10207,7 @@
   indiceCfg.addEventListener('scroll', cfgMaisCheck);
   conteudoCfg.addEventListener('scroll', cfgConteudoCheck);
   conteudoCfg.addEventListener('click', cfgConteudoCheck);
-  $('btn-config').addEventListener('click', () => requestAnimationFrame(() => cfgConteudoCheck()));
+  $('btn-config').addEventListener('click', () => requestAnimationFrame(() => { cfgMaisCheck(); cfgConteudoCheck(); }));
   addEventListener('resize', () => { cfgMaisCheck(); cfgConteudoCheck(); });
   function faixaCfg(texto, extra) {
     const f = document.createElement('div');
@@ -10206,9 +10221,10 @@
     conteudoCfg.appendChild(sec); paineisCfg[def.id] = sec;
     const cel = document.createElement('button');
     cel.type = 'button'; cel.className = 'cfg-celula'; cel.dataset.aba = def.id;
+    /* REF_88: a célula leva SÓ o nome — a explicação mudou-se para
+       dentro da aba (ver o bloco a seguir a cfgFraseAba). */
     const b = document.createElement('b'); b.textContent = def.nome;
-    const i = document.createElement('i'); i.textContent = MODO_MESTRE ? def.subM : (def.subP || def.subM);
-    cel.appendChild(b); cel.appendChild(i);
+    cel.appendChild(b);
     cel.addEventListener('click', () => activarAbaCfg(def.id));
     celulasEl.appendChild(cel); celulasCfg[def.id] = cel;
   }
@@ -10231,6 +10247,14 @@
   function cfgFraseAba(pane, texto) {
     const p = document.createElement('p'); p.className = 'cfg-aba-frase'; p.textContent = texto;
     pane.appendChild(p); return p;
+  }
+  /* REF_88: a explicação que vivia debaixo do nome na célula passa
+     a abrir cada aba, com o MESMO texto (subM no Mestre, subP na
+     Party). Acrescentada agora — os painéis estão vazios e os
+     enchimentos vêm depois — fica a primeira coisa de cada aba,
+     sem reordenar mais nada nem apagar frase nenhuma existente. */
+  for (const def of [...CFG_ABAS_TODOS, ...(MODO_MESTRE ? CFG_ABAS_SUAS : [])]) {
+    cfgFraseAba(paineisCfg[def.id], MODO_MESTRE ? def.subM : (def.subP || def.subM));
   }
   function cfgPFrase(texto) {
     const p = document.createElement('p'); p.className = 'cfg-frase'; p.textContent = texto; return p;
