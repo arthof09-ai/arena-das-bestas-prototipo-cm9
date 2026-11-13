@@ -2551,6 +2551,12 @@
                 }
                 const novoFactorH = veuFactorLuzVista(0, 0, 8);
                 if (novoFactorH !== veuFactorHearth) { veuFactorHearth = novoFactorH; ambReaplicar(); }
+                /* F-18 (sentença da mini-bancada, M-ÚNICA): a luzRunas
+                   do ritual — a luz implicada pela régua S2-8 — passa
+                   pela MESMA regra anti-D3, publicada no canal que o
+                   visual lê (padrão dos motes). A luzChao mediu dentro
+                   da régua isolada e mantém a decisão (ii) intacta. */
+                if (world.veuLuzRitual) world.veuLuzRitual.factor = novoFactorH;
                 veuAplicarBraseiros();
                 if (world.veuMotes) {
                     world.veuMotes.nunca.clear(); for (const c of veuNunca) world.veuMotes.nunca.add(c);
@@ -2562,7 +2568,7 @@
             function getVeuEstado() {
                 const tempos = [...veuTemposCamadas].sort((a, b) => a - b);
                 return {
-                    nunca: [...veuNunca], memoria: [...veuMemoria], chavesIgnoradas: [...veuChavesIgnoradas], factorHearth: veuFactorHearth,
+                    nunca: [...veuNunca], memoria: [...veuMemoria], chavesIgnoradas: [...veuChavesIgnoradas], factorHearth: veuFactorHearth, factorLuzRitual: (world.veuLuzRitual ? world.veuLuzRitual.factor : null),
                     temposCamadas: { n: tempos.length, p95: tempos.length ? tempos[Math.min(tempos.length - 1, Math.floor(tempos.length * .95))] : 0, lista: veuTemposCamadas.slice(-40).map(v => Math.round(v * 100) / 100) },
                     pecas: pecasFogueiraRegisto.map(r => ({ chave: r.chave, visivel: r.mesh.visible, fantasma: r.mesh.material === ghostMat, sombra: r.mesh.castShadow })),
                     fogos: [...fogosCasas.entries()].map(([chave, f]) => ({ chave, estado: f.estadoVisao, vistoAArder: !!f.vistoAArder, geemeoVisivel: !!(f.geemeo && f.geemeo.grupo.visible), geemeoNaCena: !!(f.geemeo && f.geemeo.grupo.parent) })),

@@ -871,6 +871,11 @@
            reaplicação; este ciclo lê-os por casa. Sem cena a
            aplicá-los, ficam vazios = tudo vista, como hoje. */
         world.veuMotes = { nunca: new Set(), memoria: new Set() };
+        /* F-18: canal do factor da luzRunas do ritual (a cena é a
+           dona — publica em cada reaplicação do véu o factor anti-D3
+           do centro, R=8). Sem cena a aplicá-lo, fica 1 = a luz de
+           hoje, como os motes sem cena ficam tudo-vista. */
+        world.veuLuzRitual = { factor: 1 };
         /* Cinzento possível em aditivo: multiplicar por um escalar
            cinzento NÃO dessatura (mantém o laranja); divide-se a
            luminância alvo (0,45 × L) por cada canal da cor do
@@ -890,7 +895,7 @@
             const respiro = 0.5 + 0.5 * Math.sin(time * 0.85);
             circulo.material.opacity = 0.925 + respiro * 0.065;
             halo.material.opacity = 0.42 + respiro * 0.14;
-            luzRunas.intensity = 0.72 + respiro * 0.2;
+            luzRunas.intensity = (0.72 + respiro * 0.2) * (world.veuLuzRitual ? world.veuLuzRitual.factor : 1); /* F-18: factor anti-D3 da cena (a luzChao, abaixo, não muda — (ii) medido e mantido) */
             luzChao.intensity = 0.17 + respiro * 0.07;
             brasasPts.material.opacity = 0.3 + respiro * 0.12;
             for (let k = 0; k < cunhas.length; k++) // C7: sectores dessincronizados

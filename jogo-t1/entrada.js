@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_89';
+  var VERSAO_JOGO = 'REF_90';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
