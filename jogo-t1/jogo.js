@@ -788,7 +788,7 @@
    * master do ambiente — o master carrega o factor dos Efeitos
    * (somFatorAmbiente) e a música não pode ser atenuada por ele.
    * O ganho calcula-se NUM SÍTIO SÓ, na fórmula do som pessoal:
-   * 0,9 × G × M × (mudo?0:1), com G/M/mudo lidos das MESMAS chaves
+   * 0,45 × G × M × (mudo?0:1), com G/M/mudo lidos das MESMAS chaves
    * hudt1-som-* e da mesma leitura defensiva. Música a 0 ou Mudo
    * ligado = batalha sem música, sem erros.
    * A faixa carrega em fundo como as chuvas (fetch + decode); se o
@@ -822,7 +822,7 @@
     try {
       const deveTocar = ctx.state === 'running' && ambAudio.desbloqueado &&
         !!musica.buffer && !batalhaFim;
-      const alvo = deveTocar ? 0.9 * somFatorMusica() : 0;
+      const alvo = deveTocar ? 0.45 * somFatorMusica() : 0;
       const agora = ctx.currentTime;
       musica.ganho.gain.cancelScheduledValues(agora);
       musica.ganho.gain.setTargetAtTime(alvo, agora, 0.15);

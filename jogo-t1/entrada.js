@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_83';
+  var VERSAO_JOGO = 'REF_84';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -404,7 +404,7 @@
   var erroMestre = el('p', 'ent-erro');
   erroMestre.setAttribute('role', 'alert');
   vistaMestre.appendChild(erroMestre);
-  var btnGoogleMestre = el('button', 'ent-google painel', 'Entrar com a sua conta Google');
+  var btnGoogleMestre = el('button', 'ent-google painel escuro', 'Entrar com a sua conta Google');
   btnGoogleMestre.id = 'ent-google-mestre'; btnGoogleMestre.type = 'button';
   vistaMestre.appendChild(btnGoogleMestre);
   var zonaSenhaHost = el('div');
@@ -977,7 +977,7 @@
     'Para ter a certeza de que é você, entre primeiro com a sua conta Google. Depois define a senha nova.'));
   var erroNovaGoogle = el('p', 'ent-erro');
   erroNovaGoogle.setAttribute('role', 'alert');
-  var btnGoogleNova = el('button', 'ent-google painel', 'Entrar com a sua conta Google');
+  var btnGoogleNova = el('button', 'ent-google painel escuro', 'Entrar com a sua conta Google');
   btnGoogleNova.id = 'ent-google-nova'; btnGoogleNova.type = 'button';
   passoGoogle.appendChild(erroNovaGoogle);
   passoGoogle.appendChild(btnGoogleNova);

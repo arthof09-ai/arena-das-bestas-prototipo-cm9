@@ -236,6 +236,8 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
 }
 .ent-google:active { background: #e8e8e8; }
 .ent-google.painel { width: 100%; min-height: 46px; margin-top: 10px; padding: 0 12px; font-size: 15px; }
+.ent-google.escuro { background: #131314; color: #e3e3e3; border-color: rgba(227, 227, 227, .35); }
+.ent-google.escuro:active { background: #1f2022; }
 .ent-erro-entrada {
   position: absolute; left: 29.5%; width: 41%; bottom: 13.5%;
   min-height: 18px; margin: 0; text-align: center;
