@@ -5450,8 +5450,8 @@
     marcarVermelha();
     aplicarTelaVermelha();
     say(telaVermelha
-      ? 'Tela vermelha <b>ligada</b> — com a vida baixa, as bordas do ecrã vão avermelhando.'
-      : 'Tela vermelha <b>desligada</b> — a vida baixa não pinta as bordas do ecrã.');
+      ? 'Tela vermelha <b>ligada</b> — com a vida baixa, as bordas da tela vão avermelhando.'
+      : 'Tela vermelha <b>desligada</b> — a vida baixa não pinta as bordas da tela.');
   });
   marcarVermelha();
 
@@ -8957,7 +8957,7 @@
         if (abaixo >= 0.5) supCritEmitir({
           categoria: 'visual', padrao: 'figura-pequena', actor: u.id, rodada: r, vez: u.id,
           medida: Math.round(supCritMediana(alturas)), limiar: 40, prioridade: 1 / Math.max(1, supCritMediana(alturas) / 40),
-          texto: `Quando é a vez de ${nomeCena(u.id)}, a figura mede só ${Math.round(supCritMediana(alturas))} pontinhos de ecrã (px) — pequeno demais para se ver o que ela faz.`
+          texto: `Quando é a vez de ${nomeCena(u.id)}, a figura mede só ${Math.round(supCritMediana(alturas))} pontinhos de tela (px) — pequeno demais para se ver o que ela faz.`
         });
       }
       /* V2 (correcção F3): o limiar «>25% fora» mede-se POR
@@ -8990,8 +8990,8 @@
         categoria: 'visual', padrao: 'fora-de-enquadramento', actor: u.id, rodada: r, vez: u.id,
         medida: piorParte, limiar: 25, prioridade: Math.max(1, piorParte / 25),
         texto: fronteiraFora && piorParte <= 25
-          ? `Na vez de ${nomeCena(u.id)}, a figura nem aparece no ecrã — a câmara ficou noutro sítio.`
-          : `${nomeCena(u.id)} passa parte do tempo fora do ecrã (${piorParte} em cada 100 momentos).`
+          ? `Na vez de ${nomeCena(u.id)}, a figura nem aparece na tela — a câmara ficou noutro sítio.`
+          : `${nomeCena(u.id)} passa parte do tempo fora da tela (${piorParte} em cada 100 momentos).`
       });
     }
     /* V3: pares colados — sobreposição >50% do recto menor em
@@ -9012,7 +9012,7 @@
           supCritEmitir({
             categoria: 'visual', padrao: 'figuras-coladas', actor: a, rodada: s.rodada, vez: s.vez,
             assunto: 'par:' + a + '+' + b, medida: Math.round(maior), limiar: 50, prioridade: maior / 50,
-            texto: `${nomeCena(a)} e ${nomeCena(b)} ficam um em cima do outro no ecrã durante a luta — não se percebe quem é quem.`
+            texto: `${nomeCena(a)} e ${nomeCena(b)} ficam um em cima do outro na tela durante a luta — não se percebe quem é quem.`
           });
         }
       }
@@ -10103,7 +10103,7 @@
     linhaPrevia.className = 'cfgrow vel';
     const rotPrevia = document.createElement('span');
     rotPrevia.className = 'cl';
-    rotPrevia.innerHTML = 'Ver como as jogadoras<small>Mostra no seu ecrã o campo como uma jogadora o vê.</small>';
+    rotPrevia.innerHTML = 'Ver como as jogadoras<small>Mostra na sua tela o campo como uma jogadora o vê.</small>';
     const grupoPrevia = document.createElement('div');
     grupoPrevia.className = 'seg';
     grupoPrevia.setAttribute('role', 'group');
@@ -10140,7 +10140,7 @@
    * #stats fica FORA da rolagem, como faixa de 22 px no fundo. */
   const CFG_ABAS_TODOS = [
     { id: 'jogo', nome: 'Jogo', subP: 'Câmera, zoom e ajuda do grid', subM: 'Câmera, velocidade e automático' },
-    { id: 'graficos', nome: 'Gráficos', subP: 'Qualidade, números e tela vermelha', subM: 'O seu ecrã e a luz do fogo' },
+    { id: 'graficos', nome: 'Gráficos', subP: 'Qualidade, números e tela vermelha', subM: 'A sua tela e a luz do fogo' },
     { id: 'som', nome: 'Som', subP: 'Volumes, música, efeitos e mudo', subM: 'Volumes, música e som do ambiente' },
     { id: 'controles', nome: 'Controles', subP: 'As teclas para jogar no computador', subM: 'As teclas para jogar no computador' }
   ];
@@ -10412,7 +10412,7 @@
   /* ---------- Gráficos ---------- */
   {
     const pane = paineisCfg.graficos;
-    const g = cfgGrupo(pane, 'O seu ecrã', null);
+    const g = cfgGrupo(pane, 'A sua tela', null);
     if (R.qualidade) g.appendChild(R.qualidade);
     if (R.danos) g.appendChild(R.danos);
     if (R.vermelha) g.appendChild(R.vermelha);
@@ -10506,7 +10506,7 @@
       if (R.visaoPrazo) g1.appendChild(R.visaoPrazo);
       if (R.visaoPrevia) g1.appendChild(R.visaoPrevia);
       const g2 = cfgGrupo(pane, 'Ver o mapa todo',
-        'Só no seu ecrã: andar e voar pelo mapa para o analisar.');
+        'Só na sua tela: andar e voar pelo mapa para o analisar.');
       if (R.camLivre) g2.appendChild(R.camLivre);
       if (R.camLivreAjuda) g2.appendChild(R.camLivreAjuda);
       g2.appendChild(cfgSubTabelaLivre());

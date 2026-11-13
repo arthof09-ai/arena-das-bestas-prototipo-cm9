@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_82';
+  var VERSAO_JOGO = 'REF_83';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -502,7 +502,7 @@
     celulasEnt[def[0]] = cel;
   });
   /* Aba Gráficos: grupo «O seu ecrã» + Restaurar no fundo. */
-  paineisEnt.graficos.appendChild(el('h3', 'ent-subtitulo', 'O seu ecrã'));
+  paineisEnt.graficos.appendChild(el('h3', 'ent-subtitulo', 'A sua tela'));
   var linhasDefG = el('div');
   paineisEnt.graficos.appendChild(linhasDefG);
   var zonaRestG = el('div', 'ent-restaurar-zona');
@@ -578,6 +578,12 @@
   contaEnt.appendChild(btnEsquecer);
   vistaConfig.appendChild(contaEnt);
   activarAbaEnt('graficos');
+  /* REF_83 (defeitos 5/6): o painel nasce PINTADO. Antes, as linhas
+     das definições só existiam depois de «abrir» por mostrar('config')
+     — com o painel preso visível (defeito 3), as abas Gráficos e Som
+     liam-se vazias: só o esqueleto (subtítulo, Restaurar, Conta).
+     pintarConfig continua a correr a cada abertura, como sempre. */
+  pintarConfig();
 
   /* ---------- RESTAURAR O PADRÃO (sentença J4) ----------
    * Lista branca EXPLÍCITA, chave a chave — a mesma do ⚙ do jogo.
@@ -1339,7 +1345,24 @@
   videoFilme.addEventListener('ended', function () {
     /* O filme acabou por si: este aparelho já o viu inteiro —
      * a marca grava-se ANTES de o título assumir (t-pular-filme).
-     * É o ÚNICO sítio que escreve a marca. */
+     * (Desde a REF_83, o fim pelo título completo — bloco a seguir —
+     * grava a marca pelo mesmo critério.) */
+    gravarFilmeVisto();
+    terminarFilme();
+  });
+  /* REF_83 (defeito 1 do olho do Mestre, 12/11 19:55): o TÍTULO do
+   * filme fica completo aos ~13,5 s (medido fotograma a fotograma),
+   * mas o ficheiro corre até 18,0 s com a cena final parada — a
+   * espera real dos botões era ~5,1 s DEPOIS do título pronto. A
+   * régua dele: botões no máximo 2 s depois do título. Aos 14,0 s de
+   * média (título completo + margem) o fim faz-se pelo MESMO caminho
+   * do fim natural — a marca grava-se aqui também: o filme foi visto
+   * até ao título; o que sai são os 4 s da cena parada, que o vídeo
+   * de fundo em ciclo continua sem corte. O «ended» fica como rede. */
+  var fimPorTitulo = false;
+  videoFilme.addEventListener('timeupdate', function () {
+    if (fimPorTitulo || videoFilme.currentTime < 14.0) return;
+    fimPorTitulo = true;
     gravarFilmeVisto();
     terminarFilme();
   });

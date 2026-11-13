@@ -186,6 +186,15 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
    Estreito 366 px (94vw) × 78vh com grelha 2+1 no topo. Sem
    faixas-régua. O conteúdo rola DENTRO da aba; a zona Conta fica
    depois das abas, fora da rolagem das abas. ---------- */
+/* REF_83 (defeito 3 do olho do Mestre, 12/11 19:55): a regra
+   «.ent-painel.com-abas { display:flex }» abaixo vencia a regra do
+   navegador «[hidden]{display:none}» (especificidade 0,2,0 contra
+   0,1,0) — o painel das Configurações nascia escondido no atributo
+   mas VISÍVEL no ecrã, e nem o ✕ nem o toque-fora o fechavam (só
+   mudavam o atributo, sem efeito). A guarda devolve ao atributo a
+   última palavra DENTRO da entrada: quem tem «hidden» não se vê. */
+#entrada [hidden] { display: none !important; }
+
 .ent-painel.com-abas { display: flex; flex-direction: column; overflow: hidden; }
 .entab-corpo { flex: 1; min-height: 0; display: flex; gap: 10px; }
 .entab-indice { flex: none; width: 172px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
@@ -251,6 +260,11 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   #entrada {
     inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%);
     width: min(100vw, 177.68vh); aspect-ratio: 1672 / 941; max-height: 100vh;
+    /* REF_83 (defeito 7): no celular, «vh» conta a área debaixo da
+       barra do navegador e o palco centrava fora da área VISÍVEL —
+       a logo (e o palco) liam-se descentrados. As unidades dinâmicas
+       centram na área que se vê; sem elas, vale a linha de cima. */
+    width: min(100dvw, 177.68dvh); max-height: 100dvh;
     background: url('fundo-v12.webp') center / 100% 100% no-repeat #0a0505;
     box-shadow: 0 0 60px rgba(0, 0, 0, .85);
     container-type: size;
@@ -391,6 +405,15 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
    o aparelho já viu o filme inteiro numa visita anterior). Quando
    o filme acaba ou é pulado, «a-tocar-filme» sai e o botão some
    no mesmo instante — nunca coexiste com as placas do título. -- */
+/* REF_83 (defeito 2 + adenda do tom, 12/11 19:55/20:02): o botão
+   encolhe ~40% SÓ pelo tamanho (caixa 172×52 → 103×31 · placa
+   172×30 → 103×18 · letra 14 → 9 px, a proporção aprovada das
+   maiúsculas ≈35% da placa mantém-se) e os dourados passam aos tons
+   AMOSTRADOS das letras do título no fotograma servido do filme
+   (banda do título, 32.393 px): claro #ecb86e · dominante #c88838 ·
+   sombra #9b6429. Antes: letra #f6e3ac · molduras #b8933f/#a37f33 ·
+   losangos #e8c877 · chevrons #eee0ae · brilhos #ffe9b0/#ffdf9a.
+   A âncora NÃO muda: canto extremo superior direito (2,76%/2,69%). */
 .ent-pular {
   position: absolute; z-index: 3; display: none;
   /* CANTO SUPERIOR DIREITO (palavra do Mestre, 11/11 09:35 —
@@ -431,15 +454,15 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
      polígonos dos chevrons mexeram dentro do SVG; a folga »→P fica
      16,1% como na pintura. Resultado: font-size 14px,
      letter-spacing 0, padding-left 23px. */
-  box-sizing: border-box; width: 172px; height: 52px;
-  padding: 0 14px 0 23px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 344 60' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='gp' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23241a0e'/%3E%3Cstop offset='.45' stop-color='%23100a04'/%3E%3Cstop offset='1' stop-color='%231a1108'/%3E%3C/linearGradient%3E%3CradialGradient id='rp' cx='.5' cy='.5' r='.5'%3E%3Cstop offset='0' stop-color='%23ffbe5a' stop-opacity='.07'/%3E%3Cstop offset='1' stop-color='%23ffbe5a' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cpolygon points='30,3 314,3 341,30 314,57 30,57 3,30' fill='url(%23gp)' stroke='%23b8933f' stroke-width='3'/%3E%3Cpolygon points='38,10 306,10 326,30 306,50 38,50 18,30' fill='url(%23rp)' stroke='%23a37f33' stroke-width='2'/%3E%3Cellipse cx='172' cy='3' rx='110' ry='3' fill='%23ffe9b0' opacity='.34'/%3E%3Cellipse cx='172' cy='57' rx='110' ry='3' fill='%23ffdf9a' opacity='.12'/%3E%3Cpolygon points='6,30 12,24 18,30 12,36' fill='%23e8c877'/%3E%3Cpolygon points='338,30 332,24 326,30 332,36' fill='%23e8c877'/%3E%3Cpolygon points='42.7,20.8 54.5,30 42.7,39.2' fill='%23eee0ae'/%3E%3Cpolygon points='61,20.8 72.6,30 61,39.2' fill='%23eee0ae'/%3E%3C/svg%3E") center / 100% 30px no-repeat;
+  box-sizing: border-box; width: 103px; height: 31px;
+  padding: 0 8px 0 14px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 344 60' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='gp' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23241a0e'/%3E%3Cstop offset='.45' stop-color='%23100a04'/%3E%3Cstop offset='1' stop-color='%231a1108'/%3E%3C/linearGradient%3E%3CradialGradient id='rp' cx='.5' cy='.5' r='.5'%3E%3Cstop offset='0' stop-color='%23ecb86e' stop-opacity='.07'/%3E%3Cstop offset='1' stop-color='%23ecb86e' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cpolygon points='30,3 314,3 341,30 314,57 30,57 3,30' fill='url(%23gp)' stroke='%23c88838' stroke-width='3'/%3E%3Cpolygon points='38,10 306,10 326,30 306,50 38,50 18,30' fill='url(%23rp)' stroke='%239b6429' stroke-width='2'/%3E%3Cellipse cx='172' cy='3' rx='110' ry='3' fill='%23ecb86e' opacity='.34'/%3E%3Cellipse cx='172' cy='57' rx='110' ry='3' fill='%23c88838' opacity='.12'/%3E%3Cpolygon points='6,30 12,24 18,30 12,36' fill='%23ecb86e'/%3E%3Cpolygon points='338,30 332,24 326,30 332,36' fill='%23ecb86e'/%3E%3Cpolygon points='42.7,20.8 54.5,30 42.7,39.2' fill='%23ecb86e'/%3E%3Cpolygon points='61,20.8 72.6,30 61,39.2' fill='%23ecb86e'/%3E%3C/svg%3E") center / 100% 18px no-repeat;
   border: none; border-radius: 0;
-  color: #f6e3ac;
+  color: #ecb86e;
   font-family: Georgia, 'DejaVu Serif', serif; font-weight: 700;
-  font-size: 14px; letter-spacing: 0; text-transform: uppercase;
-  text-align: center; line-height: 52px; white-space: nowrap;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, .9), 0 0 12px rgba(201, 162, 39, .30);
+  font-size: 9px; letter-spacing: 0; text-transform: uppercase;
+  text-align: center; line-height: 31px; white-space: nowrap;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, .9), 0 0 12px rgba(200, 136, 56, .30);
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .55));
   cursor: pointer;
 }
@@ -466,7 +489,7 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
    elemento logo a seguir. ---------- */
 #ent-video-logo {
   position: absolute; inset: 0; width: 100%; height: 100%;
-  object-fit: contain; background: #17181d;
+  object-fit: contain; background: #17191d; /* REF_83: a cor medida nos cantos do próprio vídeo (mediana #17191d num fotograma; noutro, #17181d — 1 unidade de diferença, imperceptível) */
   z-index: 4; opacity: 1; transition: opacity .35s ease;
 }
 #entrada.logo-fora #ent-video-logo { opacity: 0; pointer-events: none; }
