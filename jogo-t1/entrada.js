@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_95';
+  var VERSAO_JOGO = 'REF_96';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -550,7 +550,7 @@
      dos rótulos dos botões da Câmera do ⚙, I-3). */
   function fraseVistaEnt() {
     var nomes = [];
-    ['cam-fixa', 'cam-seguir', 'cam-360'].forEach(function (id) {
+    ['cam-fixa', 'cam-360'].forEach(function (id) {
       var b = document.getElementById(id);
       if (b) nomes.push(b.textContent.replace(/^[^\p{L}\p{N}]+/u, '').trim());
     });

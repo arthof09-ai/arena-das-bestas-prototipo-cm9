@@ -1620,7 +1620,7 @@
                     fogoTremular(f, Math.min(1, (now - f.t0) / 150), now);
             }
             function ambReaplicar() { if (ambDerivados) ambEscrever(ambAmostra(ambActual.hora), ambActual.chuva, 0); }
-            let width = 1, height = 1, selected = null, mode = 'fixa', quality = 'alta', disposed = false, raf, last = performance.now(), fps = 0, fpsAt = last, frames = 0, shadowAt = 0, yaw = 0, pitch = 1.05, viewWidth = 20, primeiraVista = true;
+            let width = 1, height = 1, selected = null, mode = '360', quality = 'alta', disposed = false, raf, last = performance.now(), fps = 0, fpsAt = last, frames = 0, shadowAt = 0, yaw = 0, pitch = 1.05, viewWidth = 20, primeiraVista = true;
             /* Offset de OLHAR deste aparelho (t-config-abas, SPEC §6.2):
                azimute somado ao ângulo base da câmera de batalha quando
                as teclas Q/E rodam a vista. Vive SÓ nesta closure: não
@@ -1629,7 +1629,292 @@
                frente das personagens nem no campo de visão (o véu
                deriva da frente delas, não da câmera). */
             let olharYaw = 0;
-            const zoom = { fixa: 1.5, seguir: 1, '360': 1 }, units = new Map(), events = new EventTarget(), times = [];
+            const zoom = { fixa: 1.5, '360': 1 }, units = new Map(), events = new EventTarget(), times = [];
+            /* ---------- CÂMERA DINÂMICA (tranche t-camera-dinamica, DESENHO) ----------
+             * Interruptor dentro do 360°: só escreve yaw, só em eventos
+             * elegíveis de MOVER/ATACAR, com pontuação determinística por
+             * evento (nunca por fotograma). pitch e zoom nunca são
+             * escritos aqui. O relógio da máquina é tCena = soma dos dt
+             * do ciclo; sem relógio nem aleatório na pontuação. */
+            let dinLigada = false, dinVel = 1, dinEstado = 'PARADA';
+            let dinDe = 0, dinPara = 0, dinDelta = 0, dinT = 0, dinDur = 0, dinTipo = null, dinResgate = false, dinResgateFoco = null;
+            let dinResgateEscolha = null;
+            let tCena = 0, dinFimUltima = -Infinity, dinUltimoTipo = null, dinUltimaFim = -Infinity;
+            const dinJanela = [];   // intervenções normais nos últimos 60 s: {t, graus}
+            let dinArrUltimo = -Infinity, dinArrSoma = 0, dinArrPerc = 0, dinArrT0 = -Infinity;
+            let dinTipoUltimo = null, dinScoreActual = null, dinScoreEscolhido = null, dinGanho = null, dinCand = 0, dinFallback = false, dinMotivo = null;
+            const DIN_VELOCIDADES = [1, 1.5, 2, 2.5, 3];
+            function dinJanelaLimpa() { while (dinJanela.length && dinJanela[0].t <= tCena - 60) dinJanela.shift(); }
+            function dinGraus60() { dinJanelaLimpa(); return dinJanela.reduce((s, e) => s + e.graus, 0); }
+            // Duração da viragem (§5.4): pico da derivada do quíntico = 150 graus/s.
+            function dinDuracao(delta) { return clamp(1.875 * Math.abs(delta * 180 / Math.PI) / 150, .35, 1.20); }
+            function dinFecharViragem() { dinEstado = 'PARADA'; dinFimUltima = tCena; dinUltimoTipo = dinTipo; dinUltimaFim = tCena; }
+            function dinCancelar(motivo) { if (dinEstado !== 'A_VIRAR') return; dinFecharViragem(); dinMotivo = motivo; }
+            function dinComecar(para, delta, dur, tipo, resgate, focoResgate, motivo, contar, escolha = null) {
+                dinDe = yaw; dinPara = para; dinDelta = delta; dinT = 0; dinDur = dur;
+                dinTipo = tipo; dinResgate = !!resgate; dinResgateFoco = resgate ? focoResgate : null; dinResgateEscolha = (resgate && focoResgate === 'alvo') ? escolha : null; dinEstado = 'A_VIRAR'; dinTipoUltimo = tipo; dinMotivo = motivo;
+                if (contar) { dinJanelaLimpa(); dinJanela.push({ t: tCena, graus: Math.abs(delta * 180 / Math.PI) }); }
+            }
+            function dinTick(dt) {
+                if (dinEstado !== 'A_VIRAR') return;
+                dinT += dt;
+                const u = clamp(dinT / dinDur, 0, 1), s = u * u * u * (u * (u * 6 - 15) + 10);   // smootherstep quíntico (§5.4)
+                yaw = dinDe + dinDelta * s;
+                if (dinT >= dinDur) { yaw = dinPara; dinFecharViragem(); }
+            }
+            function setDinamica(ligada, velocidade) {
+                if (typeof ligada !== 'boolean') throw new TypeError('Dinâmica: ligada booleano obrigatório.');
+                if (!DIN_VELOCIDADES.includes(velocidade)) throw new RangeError('Dinâmica: velocidade fora de {1; 1,5; 2; 2,5; 3}.');
+                dinLigada = ligada; dinVel = velocidade;
+                if (!ligada) dinCancelar('cancelada-modo');   // desligar a meio congela o yaw (§5.5)
+                emit('dinamica', { ligada: dinLigada, velocidade: dinVel });
+            }
+            /* Estado futuro assentado (§2.1) e oclusores por ordem fixa
+             * (§3.3): estáticos pela ordem da exportação do mundo,
+             * figuras por id ordenado com < simples. O movedor já está
+             * no destino; ninguém lê root.position. */
+            function dinContexto(tipo, princ, outro, destCasa) {
+                const vw = baseWidth() / zoom['360'], H = vw * height / width, s = vw * 36 / width;
+                const posFinal = u => (tipo === 'mover' && u === princ) ? { x: wx(destCasa.x), z: wz(destCasa.z), alt: destCasa.altitude ?? u.altitude } : { x: wx(u.x), z: wz(u.z), alt: u.altitude };
+                const cil = u => { const q = posFinal(u); return { id: u.id, x: q.x, z: q.z, base: world.height(q.x, q.z) + q.alt, r: Math.max(.40, .28 * u.size), h: u.size }; };
+                let figuras = [...units.values()].filter(u => u.vivo && !u.oculto).map(cil);
+                figuras.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+                const focoP = cil(princ);
+                const T = { x: focoP.x, y: focoP.base + .8, z: focoP.z };   // T* = figura seleccionada no fim + 0,8 em y (o want do ciclo)
+                if (figuras.length > 46) {   // tecto O≤64 (§3.2): cortam-se as figuras mais longe de T*, desempate por id
+                    const porDist = [...figuras].sort((a, b) => (Math.hypot(a.x - T.x, a.z - T.z) - Math.hypot(b.x - T.x, b.z - T.z)) || (a.id < b.id ? -1 : 1));
+                    const ficam = new Set(porDist.slice(0, 46).map(f => f.id));
+                    figuras = figuras.filter(f => ficam.has(f.id));
+                }
+                const estaticos = (world.obstaculos ?? []).map(o => ({ id: null, x: o.x, z: o.z, base: world.height(o.x, o.z), r: o.r, h: o.h }));
+                return { vw, H, s, T, figuras, estaticos, focoP, focoO: outro ? cil(outro) : null, dest: destCasa ? { x: wx(destCasa.x), z: wz(destCasa.z), base: world.height(wx(destCasa.x), wz(destCasa.z)) + (destCasa.altitude ?? 0) } : null };
+            }
+            /* A função de pontuação única (§2) e o conjunto de candidatos
+             * (§3.1): pontua-se o conjunto inteiro uma vez por evento.
+             * Cada candidato devolve também escP/escO (a fracção escondida
+             * de cada foco) — é deles que o resgate-alvo (§4.2) se decide. */
+            function dinAvaliar(ctx, tipo, theta, angleA, desloc) {
+                const p = pitch, sinp = Math.sin(p), cosp = Math.cos(p), retrato = width / height < .8;
+                const rectU = { u0: -.46 * ctx.vw, u1: .46 * ctx.vw, v0: -ctx.H / 2 - ctx.s + .05 * ctx.H, v1: ctx.H / 2 - ctx.s - .07 * ctx.H };
+                const inter = (a, b) => { const u0 = Math.max(a.u0, b.u0), u1 = Math.min(a.u1, b.u1), v0 = Math.max(a.v0, b.v0), v1 = Math.min(a.v1, b.v1); return u1 > u0 && v1 > v0 ? (u1 - u0) * (v1 - v0) : 0; };
+                let fallback = false;
+                function pontuar(a) {
+                    const ca = Math.cos(a), sa = Math.sin(a);
+                    const proj = (x, y, z) => { const dx = x - ctx.T.x, dy = y - ctx.T.y, dz = z - ctx.T.z; return { u: dx * ca - dz * sa, v: -dx * sa * sinp + dy * cosp - dz * ca * sinp, prof: dx * sa * cosp + dy * sinp + dz * ca * cosp }; };
+                    const rectDe = o => { const c = proj(o.x, o.base, o.z); return { u0: c.u - o.r, u1: c.u + o.r, v0: c.v - o.r * sinp, v1: c.v + o.h * cosp + o.r * sinp, prof: c.prof, u: c.u, v: c.v }; };
+                    function visFoco(f) {
+                        const rf = rectDe(f), area = (rf.u1 - rf.u0) * (rf.v1 - rf.v0), quadro = area > 0 ? inter(rf, rectU) / area : 0;
+                        // Faixa do torso: 60% centrais em u, 15%–80% da altura projectada.
+                        const torso = { u0: rf.u - .3 * (rf.u1 - rf.u0), u1: rf.u + .3 * (rf.u1 - rf.u0), v0: rf.v0 + .15 * (rf.v1 - rf.v0), v1: rf.v0 + .80 * (rf.v1 - rf.v0) };
+                        const areaT = (torso.u1 - torso.u0) * (torso.v1 - torso.v0);
+                        let esc = 0;
+                        const soma = o => { if (o.id != null && o.id === f.id) return; const ro = rectDe(o); if (ro.prof > rf.prof + .10 && o.h >= .5 * f.h) esc += inter(ro, torso); };
+                        ctx.figuras.forEach(soma); ctx.estaticos.forEach(soma);   // soma majorante (§2.2)
+                        esc = areaT > 0 ? Math.min(1, esc / areaT) : 0;
+                        const fora = rf.u < -ctx.vw / 2 || rf.u > ctx.vw / 2 || rf.v < -ctx.H / 2 - ctx.s || rf.v > ctx.H / 2 - ctx.s;
+                        return { vis: quadro * (1 - esc), esc, invalido: esc >= .60 || fora, u: rf.u, v: rf.v };
+                    }
+                    const vp = visFoco(ctx.focoP);
+                    let vo = null, vd = null;
+                    if (tipo === 'atacar') vo = visFoco(ctx.focoO);
+                    else {
+                        // Destino do mover: rect no chão de 1,5×1,5 m, oclusão só por figuras (§2.2).
+                        const c = proj(ctx.dest.x, ctx.dest.base, ctx.dest.z);
+                        const rd = { u0: c.u - .75, u1: c.u + .75, v0: c.v - .75 * sinp, v1: c.v + .75 * sinp, prof: c.prof };
+                        const areaD = (rd.u1 - rd.u0) * (rd.v1 - rd.v0);
+                        let esc = 0;
+                        for (const o of ctx.figuras) { if (o.id === ctx.focoP.id) continue; const ro = rectDe(o); if (ro.prof > rd.prof + .10) esc += inter(ro, rd); }
+                        const escD = areaD > 0 ? Math.min(1, esc / areaD) : 0;
+                        vd = { vis: (areaD > 0 ? inter(rd, rectU) / areaD : 0) * (1 - escD), esc: escD };
+                    }
+                    const prox = 1 - Math.abs(angleDelta(yaw, a)) / Math.PI, lat = Math.abs(Math.sin(theta - a));
+                    let S;
+                    if (tipo === 'atacar') {
+                        const frente = clamp((Math.cos(angleA - a) + .25) / 1.25, 0, 1);   // frenteAtacante (§2.4)
+                        if (fallback) { const dentro = (vo.u >= -.65 * ctx.vw && vo.u <= .65 * ctx.vw && vo.v >= -ctx.s - .65 * ctx.H && vo.v <= -ctx.s + .65 * ctx.H) ? 1 : 0; S = .45 * vp.vis + .30 * lat + .15 * dentro + .10 * prox; }
+                        else if (retrato) S = .40 * vp.vis + .32 * vo.vis + .15 * frente + .05 * lat + .08 * prox;
+                        else S = .40 * vp.vis + .25 * vo.vis + .15 * frente + .12 * lat + .08 * prox;
+                    }
+                    else if (desloc > .9 * ctx.vw) S = .28 * vp.vis + .54 * lat + .18 * prox;
+                    else S = .32 * vd.vis + .28 * vp.vis + .22 * lat + .18 * prox;
+                    const k = Math.round(a / (Math.PI / 4)); if (Math.abs(angleDelta(a, k * Math.PI / 4)) <= 5 * Math.PI / 180) S += .02;   // bónus cardinal (§2.3)
+                    return { a, S, visP: vp.vis, visO: vo ? vo.vis : null, escP: vp.esc, escO: vo ? vo.esc : null, invalido: vp.invalido || (vo ? vo.invalido : false) };
+                }
+                const cand = [yaw];
+                for (let k = 0; k < 16; k++) cand.push(k * Math.PI / 8);
+                cand.push(theta + Math.PI / 2, theta - Math.PI / 2, theta + Math.PI / 4, theta - Math.PI / 4);
+                const conj = [];
+                for (const a of cand) if (!conj.some(b => Math.abs(angleDelta(a, b)) < 1e-6)) conj.push(a);
+                let res = conj.map(pontuar);
+                // Fallback atacante+direcção (§2.4): visAlvo < 0,35 em TODOS, antes de filtros.
+                if (tipo === 'atacar' && res.every(r => r.visO < .35)) { fallback = true; res = conj.map(pontuar); }
+                const validos = res.filter(r => !r.invalido), pool = validos.length ? validos : res;   // todos inválidos: vale o menos mau (§2.2)
+                let winner = pool[0];
+                for (const r of pool.slice(1)) {   // desempate (§3.3): só troca com +0,005 ou empate com |Δ| menor
+                    const d = Math.abs(angleDelta(yaw, r.a)), dw = Math.abs(angleDelta(yaw, winner.a));
+                    if (r.S > winner.S + .005 || (Math.abs(r.S - winner.S) <= .005 && d < dw)) winner = r;
+                }
+                return { res, winner, actual: res[0], fallback, scoreDe: pontuar };
+            }
+            /* O evento (§1 elegibilidade, §4 portas, §5.3 retarget):
+             * a maioria dos eventos NÃO roda — silêncio é o omisso. */
+            function dinEvento(tipo, princ, outro, destCasa, extras) {
+                dinTipoUltimo = tipo; dinFallback = false;
+                if (!dinLigada) { dinMotivo = 'desligada'; return; }
+                if (mode !== '360') { dinMotivo = 'fora-360'; return; }
+                if (!princ || princ.id !== selected) { dinMotivo = 'nao-seleccionado'; return; }
+                let theta, desloc = 0;
+                if (tipo === 'mover') {
+                    desloc = Math.hypot(wx(destCasa.x) - wx(princ.x), wz(destCasa.z) - wz(princ.z));
+                    if (extras.casas < 4 || desloc < 4.5) { dinMotivo = 'curto'; return; }
+                    theta = Math.atan2(wx(destCasa.x) - wx(princ.x), wz(destCasa.z) - wz(princ.z));
+                } else theta = extras.angleA;
+                // Imunidade absoluta pós-arrasto [0; 1,5 s): nem resgate (§4).
+                if (dinArrT0 > -Infinity && tCena - dinArrT0 < 1.5) { dinMotivo = 'imunidade-arrasto'; return; }
+                const ctx = dinContexto(tipo, princ, outro, destCasa);
+                const av = dinAvaliar(ctx, tipo, theta, tipo === 'atacar' ? extras.angleA : null, desloc);
+                dinCand = av.res.length; dinFallback = av.fallback;
+                dinScoreActual = av.actual.S; dinScoreEscolhido = av.winner.S; dinGanho = av.winner.S - av.actual.S;
+                let delta = angleDelta(yaw, av.winner.a), adelta = Math.abs(delta), graus = adelta * 180 / Math.PI;
+                if (dinEstado === 'A_VIRAR') {   // retarget (§5.3): nunca há fila
+                    const sPara = av.scoreDe(dinPara).S;
+                    if (Math.abs(angleDelta(dinPara, av.winner.a)) <= Math.PI / 6 && av.winner.S >= sPara + .05) {
+                        const nd = angleDelta(yaw, av.winner.a);   // para = de + delta (§5.2)
+                        dinComecar(yaw + nd, nd, dinDuracao(nd), tipo, false, null, 'retarget', false);
+                    }
+                    else dinMotivo = Math.abs(angleDelta(dinPara, av.winner.a)) > Math.PI / 6 ? 'tecto' : 'ganho-baixo';
+                    return;
+                }
+                const retrato = width / height < .8, naJanela = dinArrT0 > -Infinity && tCena - dinArrT0 >= 1.5 && tCena - dinArrT0 < 8;
+                const ganhoResgate = naJanela ? .30 : .25;
+                // Resgate do foco principal (§4.2, verbatim): a definição; fura portas, nunca a elegibilidade nem a banda morta.
+                const resgatePrincipal = av.actual.visP <= .30 && av.res.some(r => r.visP >= .85) && dinGanho >= ganhoResgate && adelta <= Math.PI / 2 && adelta >= Math.PI / 12;
+                /* Resgate-alvo (§4.2, sentença P10): só no ataque, sobre o
+                 * vencedor único — gatilho escondida_alvo(actual) ≥ 0,80,
+                 * saída escondida_alvo(vencedor) ≤ 0,20 com o atacante sem
+                 * descer; o ramo «todos inválidos» não o alimenta. */
+                const resgateAlvoVencedor = tipo === 'atacar' && av.actual.escO >= .80 && !av.winner.invalido
+                    && av.winner.escO <= .20 && av.winner.visP >= av.actual.visP
+                    && dinGanho >= ganhoResgate && adelta <= Math.PI / 2 && adelta >= Math.PI / 12;
+                let escolhido = av.winner, escolha = null;   // escolha: null | 'vencedor' | 'segunda'
+                // (resgatePrincipal fica VERBATIM, calculado como hoje, sobre av.winner.)
+                if (resgateAlvoVencedor) escolha = 'vencedor';
+                const soAmplitude = !resgatePrincipal && !resgateAlvoVencedor
+                    && tipo === 'atacar'
+                    && av.actual.escO >= .80            // gatilho armado
+                    && !av.winner.invalido               // vencedor falha SÓ a amplitude:
+                    && av.winner.escO <= .20             //   saída cumprida
+                    && av.winner.visP >= av.actual.visP  //   atacante sem descer
+                    && dinGanho >= ganhoResgate          //   ganho (sobre o vencedor) cumprido
+                    && adelta > Math.PI / 2;             //   ← a única condição falhada
+                if (soAmplitude) {
+                    let melhor = null, melhorDelta = 0, melhorGanho = 0;
+                    for (const r of av.res) {            // ordem armazenada = ordem de construção; NÃO ordenar
+                        if (r.invalido || r.escO > .20 || r.visP < av.actual.visP) continue;
+                        const d = angleDelta(yaw, r.a), ad = Math.abs(d);
+                        if (ad > Math.PI / 2 || ad < Math.PI / 12) continue;
+                        const g = r.S - av.actual.S;
+                        if (g < ganhoResgate) continue;
+                        if (!melhor || r.S > melhor.S + .005
+                            || (Math.abs(r.S - melhor.S) <= .005 && ad < Math.abs(melhorDelta))) {
+                            melhor = r; melhorDelta = d; melhorGanho = g;
+                        }
+                    }
+                    if (melhor) {
+                        escolhido = melhor; escolha = 'segunda';
+                        delta = melhorDelta; adelta = Math.abs(delta); graus = adelta * 180 / Math.PI;
+                        dinScoreEscolhido = melhor.S; dinGanho = melhorGanho;
+                    }
+                    // sem `melhor`: nada muda — corre o veto original até ao motivo `tecto`
+                }
+                const resgateAlvo = resgateAlvoVencedor || escolha === 'segunda';
+                const resgate = resgatePrincipal || resgateAlvo;
+                const focoResgate = resgatePrincipal ? 'principal' : resgateAlvo ? 'alvo' : null;   // precedência declarada (§8)
+                if (adelta < Math.PI / 12) { dinMotivo = 'banda-morta'; return; }
+                const dur = dinDuracao(delta);
+                if (tipo === 'mover' && dur > .6 * extras.totalMs / 1000) { dinMotivo = 'duracao-mover'; return; }   // §1.1: porta de elegibilidade, o resgate não fura
+                if (tipo === 'atacar' && dinUltimoTipo === 'mover' && tCena - dinUltimaFim <= 1.5 && !resgate) { dinMotivo = 'cadeia'; return; }
+                if (tCena - dinFimUltima < 2.0 && !resgate) { dinMotivo = 'arrefecimento'; return; }
+                dinJanelaLimpa();
+                if ((dinJanela.length >= 6 || dinGraus60() + graus > 270) && !resgate) { dinMotivo = 'orcamento'; return; }
+                if (naJanela && !resgate) { dinMotivo = 'imunidade-arrasto'; return; }
+                let tecto;
+                if (tipo === 'atacar') tecto = dinVel === 3 ? 0 : retrato ? (dinVel <= 1.5 ? 35 : 25) : (dinVel <= 1.5 ? 45 : 30);
+                else tecto = retrato ? 60 : 75;
+                if (graus > tecto && !resgate) { dinMotivo = (tipo === 'atacar' && dinVel === 3) ? 'velocidade-3' : 'tecto'; return; }
+                if (!resgate && dinGanho < (retrato ? .20 : .15)) { dinMotivo = 'ganho-baixo'; return; }
+                dinComecar(yaw + delta, delta, dur, tipo, resgate, focoResgate, resgate ? 'resgate' : 'ok', !resgate, escolha);   // para = de + delta (§5.2)
+            }
+            /* ---------- ACOPLAMENTO ARRASTO→FRENTE (DESENHO §14) ----------
+             * Girar o 360° com o dedo é a dona a virar a SUA personagem
+             * (escritor E4): a frente visual segue o yaw do arrasto
+             * (pivot.rotation.y = yaw + FRENTE_OFFSET) e o cardinal
+             * compromete-se por estabilidade de 150 ms com histerese de
+             * 6° (§14.3.3) — o compromisso detecta-se AQUI, onde vive o
+             * relógio de fotogramas (tCena), e emite UM evento 'virar'
+             * por compromisso; quem faz os efeitos de mundo (visaoAplicar
+             * + transporte) é a casca, ao recebê-lo. A Dinâmica nunca
+             * passa por aqui: ela escreve só yaw (§14.9). */
+            const FRENTE_OFFSET = 0;   // §14.3.2: derivado 0 — a PC1 mede antes de contar como verificado
+            const ACOPL_CARDINAIS = [['S', 0], ['E', 90], ['N', 180], ['W', 270]];
+            let acoplId = null, acoplComprometido = null, acoplCandidato = null, acoplCandidatoDesde = 0, acoplPendente = false;
+            let acoplAssentadaGraus = 0, acoplCompromissos = 0, acoplRecalculos = 0;
+            let gestoArmado = false, gestoSuspenso = false, gestoIntencional = false;
+            const acoplGraus = rad => ((rad * 180 / Math.PI) % 360 + 360) % 360;
+            function acoplCardinalDe(graus) {
+                let melhor = 'S', md = Infinity;
+                for (const [nome, g] of ACOPL_CARDINAIS) { const d = Math.min(Math.abs(graus - g), 360 - Math.abs(graus - g)); if (d < md) { md = d; melhor = nome; } }
+                return melhor;
+            }
+            function acoplCandidatoDe(graus) {   // histerese de 6° sobre o cardinal comprometido (§14.3.3)
+                const perto = acoplCardinalDe(graus);
+                if (!acoplComprometido || perto === acoplComprometido) return perto;
+                const gAlvo = ACOPL_CARDINAIS.find(c => c[0] === perto)[1];
+                const dist = Math.min(Math.abs(graus - gAlvo), 360 - Math.abs(graus - gAlvo));
+                return dist <= 39 ? perto : acoplComprometido;   // 45° − 6° = 39°: S→E exige passar os 51°
+            }
+            function acoplOcupada(u) {   // E1/E2/E3 mandam: passo em curso, fila, ou a/b de apresentação viva (§14.2)
+                return !!(u.step || u.queue.length || (presentation && (presentation.a === u || presentation.b === u)));
+            }
+            function setFrenteAcoplada(id) {
+                if (id !== null && !units.has(id)) throw new RangeError('Figura desconhecida.');
+                if (id === acoplId) return;   // reafirmar o mesmo braço não repõe estado nenhum
+                acoplId = id; acoplPendente = false; gestoArmado = false; gestoSuspenso = false;
+                if (id) {
+                    const u = units.get(id);
+                    acoplAssentadaGraus = acoplGraus(u.pivot.rotation.y);
+                    acoplComprometido = acoplCardinalDe(acoplAssentadaGraus);
+                    acoplCandidato = acoplComprometido; acoplCandidatoDesde = tCena;
+                } else { acoplComprometido = null; acoplCandidato = null; }
+                emit('acoplamento', { idAcoplada: acoplId });
+            }
+            /* Detecção do compromisso (§14.3.3), uma vez por fotograma no
+             * animate: só corre com pendência nascida de um gesto armado
+             * (E4 escreveu a frente visual); candidato estável há 150 ms
+             * de tCena ⇒ compromete: frente assentada = frente visual
+             * desse instante, contadores sobem, UM 'virar' sai. */
+            function acoplTick() {
+                if (!acoplId || !acoplPendente) return;
+                const u = units.get(acoplId);
+                if (!u) { acoplPendente = false; return; }
+                const graus = acoplGraus(u.pivot.rotation.y);
+                const cand = acoplCandidatoDe(graus);
+                if (cand !== acoplCandidato) { acoplCandidato = cand; acoplCandidatoDesde = tCena; }
+                if (acoplCandidato === acoplComprometido) { acoplPendente = false; return; }
+                if (tCena - acoplCandidatoDesde < .150) return;
+                acoplComprometido = acoplCandidato;
+                acoplAssentadaGraus = graus;
+                acoplCompromissos++; acoplRecalculos++;
+                acoplPendente = false;
+                emit('virar', { id: acoplId, frenteGraus: acoplAssentadaGraus, cardinal: acoplComprometido });
+            }
+            function acoplEstado() {
+                const frentes = {};
+                for (const u of units.values())
+                    frentes[u.id] = (acoplId && u.id === acoplId) ? acoplAssentadaGraus : acoplGraus(u.pivot.rotation.y);
+                const u = acoplId ? units.get(acoplId) : null;
+                return { idAcoplada: acoplId, frenteVisualGraus: u ? acoplGraus(u.pivot.rotation.y) : null, cardinalCandidato: acoplId ? acoplCandidato : null, cardinalComprometido: acoplId ? acoplComprometido : null, compromissos: acoplCompromissos, recalculosPorGesto: acoplRecalculos, frentesAssentadas: frentes };
+            }
             /* ---------- CÂMERA LIVRE DO MESTRE (tranche t-camera-livre, desenho v2) ----------
              * Primeira pessoa dentro da arena, com a mecânica da sala/museu
              * copiada valor a valor (olhar 0,0045 rad/px · andar 4,2 u/s ·
@@ -1769,6 +2054,17 @@
                     throw new RangeError('Frente: ângulo finito obrigatório (radianos).');
                 const u = requireUnit(id);
                 u.pivot.rotation.y = frenteRad;
+                /* §14: uma escrita de mundo na frente da figura acoplada
+                   (prévia Q-02, restauro de save/snapshot) RE-BASEIA o
+                   compromisso — a frente assentada passa a ser esta e o
+                   cardinal comprometido deriva dela; pendência de gesto
+                   nenhum sobrevive a um facto do mundo. */
+                if (id === acoplId) {
+                    acoplAssentadaGraus = acoplGraus(frenteRad);
+                    acoplComprometido = acoplCardinalDe(acoplAssentadaGraus);
+                    acoplCandidato = acoplComprometido; acoplCandidatoDesde = tCena;
+                    acoplPendente = false;
+                }
                 renderer.shadowMap.needsUpdate = true;
                 return u.pivot.rotation.y;
             }
@@ -1827,6 +2123,8 @@
                     // Movimentos confirmados podem ter acabado na mesma casa. Não há frente.
                     if (!distance) { finishPresentation(); return; }
                     Object.assign(p,{started:true,angleA:Math.atan2(dx,dz),angleB:Math.atan2(-dx,-dz),fromA:p.a.pivot.rotation.y,fromB:p.b.pivot.rotation.y,dx:dx/distance,dz:dz/distance,lunge:Math.min(.45,Math.max(0,distance-CELL*.51))});
+                    // Dinâmica (§1.2): o gatilho é a transição started — as frentes finais já existem.
+                    dinEvento('atacar', p.a, p.b, null, { angleA: p.angleA });
                 }
                 p.t += dt;
                 const turn=clamp(p.t/.2,0,1), ease=turn*turn*(3-2*turn);
@@ -2060,10 +2358,15 @@
                 u.queue = path.map(c => ({ ...c, ms }));
                 mark(destination, p);
                 animation(u, true);
+                // Dinâmica (§1.1): o gatilho é aqui — validação feita, cancelFor feito, fila posta.
+                dinEvento('mover', u, null, { x: p.x, z: p.z, altitude }, { casas: path.length, totalMs: ms * path.length });
             }
             function setCamera(value) {
-                if (!['fixa', 'seguir', '360', 'livre'].includes(value))
+                // O modo Seguir morreu (palavra do Mestre, 11/11): o funil lê 'seguir' como '360'.
+                if (value === 'seguir') value = '360';
+                if (!['fixa', '360', 'livre'].includes(value))
                     throw new RangeError('Câmera inválida.');
+                if (value !== '360') dinCancelar('cancelada-modo');   // sair de 360 a meio congela o yaw (§5.5)
                 mode = value;
                 if (value === 'livre') {
                     /* Entrada fixa (desenho v2 §5): à beira sul do círculo,
@@ -2124,14 +2427,12 @@
                 ctrlLivre.pos.y = clamp(ctrlLivre.pos.y, alturaSolo + .4, 45);
             }
             function baseWidth() {
-                if (mode === 'seguir')
-                    return width < height ? 14.4 : 13.5;
                 if (mode === 'fixa' && width < height)
                     return Math.max(area.rows * CELL * 1.44, area.cols * CELL * Math.sin(.72) * 1.44 * width / Math.max(150, height - 110));
                 return Math.max(area.cols * CELL * 1.25, area.rows * CELL * Math.sin(1.12) * 1.25 * width / Math.max(150, height - 110));
             }
             function zoomRange() {
-                return { min: .45, max: baseWidth() / (mode === 'seguir' ? 3 : 4.5) };
+                return { min: .45, max: baseWidth() / 4.5 };
             }
             function setZoom(v) {
                 if (!Number.isFinite(v))
@@ -2236,7 +2537,8 @@
                 return { unitId: hits[0]?.id ?? null, cell };
             }
             function state() {
-                return { area: JSON.parse(JSON.stringify(area)), selected, camera: mode, zoom: mode === 'livre' ? null : zoom[mode], zoomRange: mode === 'livre' ? null : zoomRange(), livre: mode === 'livre' ? { pos: [livreRound(ctrlLivre.pos.x), livreRound(ctrlLivre.pos.y), livreRound(ctrlLivre.pos.z)], yaw: livreRound(ctrlLivre.yaw), pitch: livreRound(ctrlLivre.pitch) } : null, gridVisible: grid.visible, qualidade: quality, moving: [...units.values()].some(u => u.step || u.queue.length), units: [...units.values()].map(publicUnit) };
+                dinJanelaLimpa();
+                return { area: JSON.parse(JSON.stringify(area)), selected, camera: mode, zoom: mode === 'livre' ? null : zoom[mode], zoomRange: mode === 'livre' ? null : zoomRange(), livre: mode === 'livre' ? { pos: [livreRound(ctrlLivre.pos.x), livreRound(ctrlLivre.pos.y), livreRound(ctrlLivre.pos.z)], yaw: livreRound(ctrlLivre.yaw), pitch: livreRound(ctrlLivre.pitch) } : null, gridVisible: grid.visible, qualidade: quality, dinamica: { ligada: dinLigada, velocidade: dinVel, estado: dinEstado, yawRad: yaw, alvoYawRad: dinPara, deltaRad: dinDelta, duracaoS: dinDur, decorridoS: dinT, tipoUltimoEvento: dinTipoUltimo, scoreActual: dinScoreActual, scoreEscolhido: dinScoreEscolhido, ganho: dinGanho, candidatosAvaliados: dinCand, fallbackUsado: dinFallback, resgate: dinResgate, resgateFoco: dinResgateFoco, resgateEscolha: dinResgateEscolha, intervencoes60s: dinJanela.length, graus60s: dinGraus60(), arrefecimentoRestanteS: dinFimUltima === -Infinity ? 0 : Math.max(0, 2 - (tCena - dinFimUltima)), imunidadeRestanteS: dinArrT0 === -Infinity ? 0 : Math.max(0, 8 - (tCena - dinArrT0)), ultimoMotivo: dinMotivo }, acoplamento: acoplEstado(), moving: [...units.values()].some(u => u.step || u.queue.length), units: [...units.values()].map(publicUnit) };
             }
             function stats() {
                 return { movementCells:movementCells.map(p=>({...p})), presentation:presentation ? {attacker:presentation.a.id,target:presentation.b.id,phase:!presentation.started?'waiting':presentation.t<.2?'turn':'gesture'} : null, hoverVisible: hover.visible, destinationVisible: destination.visible, reachableCells: (moveLayer.children[0]?.geometry.attributes.position.count ?? 0)/6, fps, triangles: renderer.info.render.triangles, totalTriangles: count(scene), drawCalls: renderer.info.render.calls, ceuCalls: ceuDelta.calls, ceuTriangles: ceuDelta.triangles, dpr: renderer.getPixelRatio(), width, height, visibleWidthMeters: viewWidth, cellPixels: CELL / viewWidth * width, shadowSize: renderer.shadowMap.enabled ? 512 : 0, areaMeters: { width: area.cols * CELL, height: area.rows * CELL }, models: [...units.values()].map(u => ({ id:u.id, frente:((T.MathUtils.radToDeg(u.pivot.rotation.y)%360)+360)%360, drawOffset:{x:u.root.position.x-wx(u.x),y:u.root.position.y-world.height(wx(u.x),wz(u.z))-u.altitude,z:u.root.position.z-wz(u.z)}, modelo:u.model, loadError:u.loadError ?? null, triangles:count(u.pivot), markerTint:u.markerTint ?? null, skins:(()=>{const skins=new Set();u.pivot.traverse(o=>{if(o.isSkinnedMesh)skins.add(o.skeleton.bones.map(b=>b.uuid).join(','))});return skins.size})(), action:u.actionName ?? null, actionTime:u.action?.time ?? null, clips:u.animations.map(a=>a.name), clipDurations:u.animations.map(a=>({name:a.name,duration:a.duration})) })), animations: { idle: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.idle).length, walk: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.andar).length, advancing: [...units.values()].filter(u => u.mixer && u.mixer.time > 0).length } };
@@ -2249,8 +2551,11 @@
                 last = now;
                 if (document.hidden)
                     return;
+                tCena += dt;   // relógio único da Dinâmica e do acoplamento: soma dos dt do ciclo (§5.1)
                 let dirty = !!presentation;
                 updatePresentation(dt);
+                dinTick(dt);   // a viragem aplica-se aqui: depois da apresentação, antes de calcular a = yaw (§5.4)
+                acoplTick();   // compromisso do acoplamento (§14.3.3): candidato estável há 150 ms
                 raioActualizar(now);
                 units.forEach(u => {
                     if (!u.step && u.queue.length) {
@@ -2334,8 +2639,16 @@
                 } else {
                 const followed = units.get(selected), want = (mode === 'fixa' || !followed) ? new T.Vector3(0, .35, 0) : followed.root.position.clone().add(new T.Vector3(0, .8, 0));
                 target.lerp(want, 1 - Math.exp(-dt * 7));
-                const p = mode === '360' ? pitch : mode === 'seguir' ? 1 : width < height ? .72 : 1.12, a = (mode === '360' ? yaw : mode === 'fixa' && width < height ? Math.PI / 2 : 0) + olharYaw, distance = Math.max(45, extent * 2);
+                const p = mode === '360' ? pitch : width < height ? .72 : 1.12, a = (mode === '360' ? yaw : mode === 'fixa' && width < height ? Math.PI / 2 : 0) + olharYaw, distance = Math.max(45, extent * 2);
                 camera.position.set(target.x + Math.sin(a) * Math.cos(p) * distance, target.y + Math.sin(p) * distance, target.z + Math.cos(a) * Math.cos(p) * distance);
+                /* EMENDA DO PITCH (§15.2): nunca abaixo do chão — medido na
+                   construção F-14: a pitch 0,06 e distância 45 a câmera
+                   descia até ~1,03 m ABAIXO do terreno (terreno até ~4,1 m
+                   a essa distância). O menor remédio: a posição da câmera
+                   nunca fica a menos de 0,5 m do terreno sob ela. A
+                   pitch ≥ 0,55 a folga já é ≥ ~19,8 m — o clamp é inerte. */
+                { const soloCam = world.height(camera.position.x, camera.position.z) + .5;
+                  if (camera.position.y < soloCam) camera.position.y = soloCam; }
                 camera.lookAt(target);
                 if (primeiraVista) {
                     viewWidth = baseWidth() / zoom[mode];
@@ -2346,7 +2659,7 @@
                 camera.right = viewWidth / 2;
                 camera.top = viewWidth * height / width / 2;
                 camera.bottom = -camera.top;
-                const hudShift = viewWidth / width * (mode === 'seguir' ? 20 : 36);
+                const hudShift = viewWidth / width * 36;
                 camera.top -= hudShift;
                 camera.bottom -= hudShift;
                 camera.updateProjectionMatrix();
@@ -2709,7 +3022,7 @@
                 [...fantasmas.keys()].forEach(removeFantasma);
             }
             const ready = Promise.all((options.units || []).map(addUnit));
-            return Object.freeze({ ready, addUnit, removeUnit, move, select, apresentarAtaque, setCamera, setZoom, setQualidade, showMovement, showPrevia, setFrente, getFrente, setOculto, estaOculto: id => !!requireUnit(id).oculto, setCamadas, limparCamadas: () => setCamadas(null), addFantasma, removeFantasma, limparFantasmas, listaFantasmas: () => [...fantasmas.entries()].map(([chave, f]) => ({ chave, x: f.x, z: f.z })), livreOlhar(dx, dy) {
+            return Object.freeze({ ready, addUnit, removeUnit, move, select, apresentarAtaque, setCamera, setDinamica, setFrenteAcoplada, setZoom, setQualidade, showMovement, showPrevia, setFrente, getFrente, setOculto, estaOculto: id => !!requireUnit(id).oculto, setCamadas, limparCamadas: () => setCamadas(null), addFantasma, removeFantasma, limparFantasmas, listaFantasmas: () => [...fantasmas.entries()].map(([chave, f]) => ({ chave, x: f.x, z: f.z })), livreOlhar(dx, dy) {
                     /* O arrasto de olhar da sala: 0,0045 rad/px, pitch preso
                        a ±1,45. Fora do modo 'livre', é inerte. */
                     if (mode !== 'livre') return;
@@ -2769,8 +3082,40 @@
                     grid.visible = !!v;
                 }, showHover: p => mark(hover, p), orbit(dx, dy) {
                     if (mode === '360') {
-                        yaw -= dx * .008;
-                        pitch = clamp(pitch + dy * .005, .55, 1.4);
+                        /* Ordem do §14.2: (1) cancelar a Dinâmica; (2) aplicar
+                           yaw/pitch do arrasto; (3) escrita visual de E4, se
+                           armado; (4) reiniciar o temporizador de compromisso
+                           se o cardinal candidato mudou. */
+                        if (dinEstado === 'A_VIRAR') dinCancelar('cancelada-arrasto');   // (1) arrasto manda sempre (§5.5)
+                        // Gesto de arrasto (§4.1): sequência com intervalos ≤0,5 s; intencional com soma ≥3° ou percurso ≥8 px.
+                        const gestoNovo = tCena - dinArrUltimo > .5;
+                        if (gestoNovo) {
+                            dinArrSoma = 0; dinArrPerc = 0;
+                            /* Trava por gesto (§14.2): o braço de E4 fotografa-se
+                               no nascimento do gesto — gesto nascido desarmado
+                               não acopla a meio, mesmo que ela se liberte. */
+                            const ua = acoplId ? units.get(acoplId) : null;
+                            gestoArmado = !!(ua && ua.vivo && !ua.oculto && !acoplOcupada(ua));
+                            gestoSuspenso = false; gestoIntencional = false;
+                            acoplRecalculos = 0;
+                        }
+                        dinArrUltimo = tCena;
+                        dinArrSoma += Math.abs(dx * .008); dinArrPerc += Math.hypot(dx, dy);
+                        if (dinArrSoma >= 3 * Math.PI / 180 || dinArrPerc >= 8) { dinArrT0 = tCena; gestoIntencional = true; }
+                        yaw -= dx * .008;   // (2)
+                        pitch = clamp(pitch + dy * .005, .06, 1.4);   // (2) + pitch livre (§15: mínimo 0,06)
+                        // (3) E4: a frente visual segue o yaw — só com o gesto armado, deliberado e ela livre.
+                        if (acoplId && gestoArmado && !gestoSuspenso && gestoIntencional) {
+                            const u = units.get(acoplId);
+                            if (!u || !u.vivo || u.oculto || acoplOcupada(u)) gestoSuspenso = true;   // ficou ocupada a meio: suspende sem retoma neste gesto
+                            else {
+                                u.pivot.rotation.y = yaw + FRENTE_OFFSET;
+                                acoplPendente = true;
+                                // (4) candidato novo reinicia o relógio de estabilidade do compromisso.
+                                const cand = acoplCandidatoDe(acoplGraus(u.pivot.rotation.y));
+                                if (cand !== acoplCandidato) { acoplCandidato = cand; acoplCandidatoDesde = tCena; }
+                            }
+                        }
                     }
                 }, rodarOlhar(delta) {
                     /* Q/E (SPEC §6.2): roda SÓ o offset de olhar deste

@@ -122,6 +122,21 @@ window.CampoWorld = function (T, scene, area) {
         for (let j = 0; j < 1 + (i % 5); j++)
             ruins.push({ p: [x + (rnd()-.5)*.18, height(x, z) + .3 + j * .53, z], s: [.62+rnd()*.18, .36+rnd()*.15, .42+rnd()*.13], r: [rnd()*.18, rnd()*.4, (rnd()-.5)*.2] });
     }
+    /* Obstáculos para a Câmera Dinâmica (DESENHO §6.1): agregam-se
+       por coluna AQUI, antes do corte par/ímpar dos dois batch() —
+       só se lêem os valores já capturados em ruins (p/s); nenhum
+       rnd() novo, para a sequência da semente não se deslocar. */
+    const obstaculos = [];
+    {
+        let k = 0;
+        for (let i = 0; i < 15; i++) {
+            const x = -radius + i * 1.05, z = -radius * .8 + Math.sin(i * .8) * .35;
+            let topo = -Infinity;
+            for (let j = 0; j < 1 + (i % 5); j++, k++)
+                topo = Math.max(topo, ruins[k].p[1] + ruins[k].s[1] / 2);
+            obstaculos.push({ x, z, r: .55, h: topo - height(x, z) });
+        }
+    }
     // Icosaedros achatados: cantos quebrados, juntas irregulares, tons intercalados.
     batch(new T.IcosahedronGeometry(1,1), rock, ruins.filter((_,i)=>i%2));
     batch(new T.IcosahedronGeometry(1,1), mat(0x777369), ruins.filter((_,i)=>!(i%2)));
@@ -184,6 +199,8 @@ window.CampoWorld = function (T, scene, area) {
     }
     const posFires = [];
     for (const [x, z] of [[-area.cols * .75 - 1, -2], [area.cols * .75 + 1, 1], [1, -area.rows * .75 - 1]]) {
+        // Braseiro (DESENHO §6.1): r=0,48, h=1,30 (topo da taça; a chama não oclui).
+        obstaculos.push({ x, z, r: .48, h: 1.30 });
         const y = height(x, z), g = new T.Group();
         g.position.set(x, y, z);
         scene.add(g);
@@ -219,7 +236,7 @@ window.CampoWorld = function (T, scene, area) {
        estáticas (escala .65, sem rotação) e tochas na base. */
     let ambTremulacao = true;
     const fontes = { fogueira: hearth, tochas: fires.map(f => f.light), chamas: fires.flatMap(f => [f.flame, f.core]) };
-    return { ground, height, radius, fontes, ambienteBases, brasasFogueira, pecasFogueira, braseiros, recomputarPedras, definirFantasmaPedras, pedrasDiagnostico, setTremulacao(on) {
+    return { ground, height, radius, obstaculos: Object.freeze(obstaculos), fontes, ambienteBases, brasasFogueira, pecasFogueira, braseiros, recomputarPedras, definirFantasmaPedras, pedrasDiagnostico, setTremulacao(on) {
             ambTremulacao = !!on;
         }, update(time) {
             fires.forEach(({ flame, light }, i) => {

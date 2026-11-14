@@ -232,6 +232,22 @@
   try { qualidade = localStorage.getItem('hudt1-qualidade') || 'alta'; } catch (_) {}
   if (qualidade !== 'alta' && qualidade !== 'media' && qualidade !== 'baixa') qualidade = 'alta';
 
+  /* Câmera guardada (chave hudt1-camara — DESENHO §7.2): o omisso
+     novo é '360'; um 'seguir' guardado num aparelho lê-se '360' e
+     REGRAVA-SE já '360' (a migração consome-se numa carga). A cena
+     não toca em localStorage — quem lê e grava é a casca. */
+  let camaraModo = '360', camaraMigrou = false;
+  try {
+    const c = localStorage.getItem('hudt1-camara');
+    if (c === 'seguir') { camaraModo = '360'; camaraMigrou = true; }
+    else if (c === 'fixa' || c === '360') camaraModo = c;
+  } catch (_) {}
+  if (camaraMigrou) { try { localStorage.setItem('hudt1-camara', '360'); } catch (_) {} }
+  /* Interruptor Dinâmica (hudt1-camara-dinamica — DESENHO §7.3):
+     ligado por omissão, no padrão da casa (!== 'desligado'). */
+  let camaraDinamica = true;
+  try { camaraDinamica = localStorage.getItem('hudt1-camara-dinamica') !== 'desligado'; } catch (_) {}
+
   /* Opção "Números de dano" (pop-up ⚙): ligada por omissão, persistida
      como a qualidade. É uma OPÇÃO — mora nas configurações, nunca na
      barra. Desligada, nenhum número de dano aparece (ver mostrarDano). */
@@ -387,6 +403,11 @@
     msgTxt.innerHTML = '<b>O campo 3D não pôde ser mostrado</b> neste aparelho — tenta outro navegador.';
     return;
   }
+  view.setCamera(camaraModo);   // aplica o modo guardado/migrado (DESENHO §7.2)
+  view.setDinamica(camaraDinamica, velocidade);   // interruptor + velocidade actual (§7.3)
+  /* O acoplamento arrasto→frente (§14.5/§14.6) arma-se mais abaixo,
+     logo após a declaração de PROPRIA (a vista do Mestre com null;
+     a da jogadora com a PROPRIA) — ver «ACOPLAMENTO» junto dela. */
 
   /* ---------- Ambiente da partida (tranche AMBIENTE) ----------
    * Estado SEMÂNTICO da partida (desenho DESENHO-PAINEL-AMBIENTE +
@@ -1553,6 +1574,55 @@
 
   /* ---------- dados de combate (valores das fichas oficiais) ---------- */
   const PROPRIA = 'ong';                 // a personagem da jogadora deste aparelho
+  /* ════════════════════════════════════════════════════════════
+     ACOPLAMENTO ARRASTO→FRENTE (DESENHO §14) — lado da casca.
+     A cena escreve a frente VISUAL durante o gesto e detecta o
+     compromisso (150 ms + histerese de 6°, no relógio dela); a
+     casca faz os efeitos de mundo, UMA vez por compromisso:
+       · o braço: Mestre = null sempre (§14.5); jogadora = a
+         PROPRIA, e só na vez dela — iniciarVez/iniciarVezIA
+         chamam acoplamentoSincronizarVez() a cada troca de vez.
+       · ao evento 'virar' da cena: UM visaoAplicar() (o véu fica
+         congelado durante o gesto — nada aqui recalcula antes do
+         compromisso) + o registo do facto como evento do mundo
+         (supRegistar 'virar', o mesmo registo que transporta
+         andar/atacar nesta casca) + a frente assentada entra no
+         mapa que a ponte de saves captura (frentesAssentadas).
+     Quem RECEBE uma captura escreve os pivots via cena
+     (view.setFrente) ANTES do primeiro visaoAplicar do restauro.
+     ════════════════════════════════════════════════════════════ */
+  const frentesAssentadasMapa = {};   // id -> frente assentada em GRAUS (transporte §14.4)
+  /* Captura das frentes assentadas (§14.4.4): a sonda da cena é a
+     fonte (para a figura acoplada devolve a última COMPROMETIDA,
+     nunca a visual a meio do gesto; para as outras, o pivot, que
+     só muda por eventos do mundo); o mapa desta casca sobrepõe a
+     PROPRIA com o último 'virar' registado neste aparelho. */
+  function frentesAssentadasCaptura() {
+    const out = {};
+    try {
+      const ac = view.getState().acoplamento;
+      if (ac && ac.frentesAssentadas) for (const [id, g] of Object.entries(ac.frentesAssentadas))
+        if (typeof g === 'number' && Number.isFinite(g)) out[id] = Math.round(g * 1000) / 1000;
+    } catch (_) {}
+    for (const [id, g] of Object.entries(frentesAssentadasMapa)) out[id] = g;
+    return out;
+  }
+  /* Aplicar frentes vindas de fora (§14.4.2): escreve o pivot VIA
+     CENA (view.setFrente — o sítio que os leitores já lêem) e
+     actualiza o mapa. Chamado pelos restauros ANTES do primeiro
+     visaoAplicar, para o campo nascer já da frente certa. */
+  function frentesAssentadasAplicar(mapa) {
+    if (!mapa || typeof mapa !== 'object') return;
+    for (const [id, g] of Object.entries(mapa)) {
+      if (typeof g !== 'number' || !Number.isFinite(g)) continue;
+      frentesAssentadasMapa[id] = g;
+      try { if (typeof view.setFrente === 'function') view.setFrente(id, g * Math.PI / 180); } catch (_) {}
+    }
+  }
+  function acoplamentoSincronizarVez() {
+    try { view.setFrenteAcoplada(!MODO_MESTRE && vezAtual === PROPRIA ? PROPRIA : null); } catch (_) {}
+  }
+  view.setFrenteAcoplada(MODO_MESTRE ? null : PROPRIA);   // arranque: a vez nasce dela (vezAtual = PROPRIA)
   /* Vista da jogadora (decisão do Mestre, 03/11 07:52): neste aparelho
      SÓ a Ong é controlável. Tocar noutra figura NUNCA a torna a
      figura activa: abre o cartão de vista dela (T1.1) e marca-a como
@@ -4089,6 +4159,7 @@
     autoAtaqueEmCurso = false;
     autoAtaqueRecusado = false;       // D-REC-01: a recusa é por vez — a vez nova limpa-a
     if (id === PROPRIA) agendarPassoAuto();   // T1.5: hook do Modo automático (desligado, não agenda)
+    acoplamentoSincronizarVez();      // §14.2: a vez dela arma o E4; a dos outros desarma
     supSnapshot();                    // Supervisor: ponto de retorno deste turno
   }
   /* Único sítio onde a vez muda (com iniciarVezIA e o arranque). */
@@ -4183,6 +4254,7 @@
   function iniciarVezIA(id, aposOng) {
     vezAtual = id;
     vezManualAberta = false; comandada = null; ctxMovManual = null;   // D1: a vez da IA nunca é manual
+    acoplamentoSincronizarVez();      // §14.2: fora da vez dela, o E4 está desarmado
     estado = 'vez-ia';
     ESTADO_VLAB[id].reacaoDisponivel = true;   // a Reacção renova na vez da própria figura
     delete REACCOES_DECLARADAS[id];            // C-39: declaração por usar expira ao abrir a vez da figura (espelho de iniciarVez)
@@ -6135,7 +6207,24 @@
     if (!batalhaFim && !(ESTADO_VLAB.ong.estadoMorte && ESTADO_VLAB.ong.estadoMorte.fase === 'aMorrer'))
       agendarPassoAuto();   // T1.5: o moveend dela retoma o Modo automático (desligado, não agenda passo novo)
   });
-  view.on('camera', () => { sincronizarCamera(); mostrarZoom(); });
+  view.on('camera', () => {
+    sincronizarCamera(); mostrarZoom();
+    // Grava o modo (DESENHO §7.2): 'livre' nunca se grava — é ferramenta de sessão do Mestre.
+    const m = view.getState().camera;
+    if (m !== 'livre') { try { localStorage.setItem('hudt1-camara', m); } catch (_) {} }
+  });
+  /* §14.4: o compromisso do acoplamento chega como evento 'virar'
+     da cena — UM por compromisso. Efeitos de mundo, uma vez:
+     visaoAplicar() pelo caminho existente (o véu esteve congelado
+     durante o gesto) + registo do facto + frente assentada no
+     mapa do transporte (a ponte de saves captura-a e quem recebe
+     escreve o pivot via cena). */
+  view.on('virar', d => {
+    if (!d || typeof d.frenteGraus !== 'number') return;
+    frentesAssentadasMapa[d.id] = d.frenteGraus;
+    supRegistar('accao', { acao: 'virar', actor: d.id, frenteGraus: Math.round(d.frenteGraus * 1000) / 1000, cardinal: d.cardinal || null });
+    visaoAplicar();
+  });
   view.on('zoom', () => mostrarZoom());
   /* A linha de estatísticas (FPS · triângulos · chamadas) é texto
      técnico: o D3-P0-1 (item 1.2 do inventário fechado) fê-la nem
@@ -6363,16 +6452,29 @@
   function sincronizarCamera() {
     const modo = view.getState().camera;
     $('cam-fixa').classList.toggle('on', modo === 'fixa');
-    $('cam-seguir').classList.toggle('on', modo === 'seguir');
     $('cam-360').classList.toggle('on', modo === '360');
+    // O interruptor Dinâmica sincroniza aqui também (§7.1/§7.3): fora de 360 fica desactivado.
+    const din = $('cam-dinamica');
+    if (din) {
+      const dlig = view.getState().dinamica ? view.getState().dinamica.ligada : camaraDinamica;
+      din.classList.toggle('on', dlig);
+      din.textContent = dlig ? 'Ligada' : 'Desligada';
+      din.setAttribute('aria-pressed', String(dlig));
+      din.disabled = modo !== '360';
+    }
   }
   $('cam-fixa').addEventListener('click', () => {
     view.setCamera('fixa');
     say('Câmera <b>Fixa</b> — você vê o campo todo.');
   });
-  $('cam-seguir').addEventListener('click', () => {
-    view.setCamera('seguir');
-    say('Câmera <b>Seguir</b> — a vista acompanha a figura seleccionada.');
+  $('cam-dinamica').addEventListener('click', () => {
+    camaraDinamica = !camaraDinamica;
+    try { localStorage.setItem('hudt1-camara-dinamica', camaraDinamica ? 'ligado' : 'desligado'); } catch (_) {}
+    view.setDinamica(camaraDinamica, velocidade);
+    sincronizarCamera();
+    say(camaraDinamica
+      ? 'Dinâmica <b>ligada</b> — na câmera 360°, a vista vira sozinha para o melhor ângulo quando uma figura anda ou ataca. Se você arrastar, a vista volta a ser sua na hora.'
+      : 'Dinâmica <b>desligada</b> — a câmera 360° só gira quando você arrasta.');
   });
   $('cam-360').addEventListener('click', () => {
     view.setCamera('360');
@@ -6535,6 +6637,7 @@
     velocidade = v;
     try { localStorage.setItem('hudt1-velocidade', String(velocidade)); } catch (_) {}
     marcarVelocidade();
+    view.setDinamica(camaraDinamica, velocidade);   // a cena recebe a velocidade nova (§7.3)
   }
   marcarVelocidade();
 
@@ -7794,6 +7897,11 @@
          torada por figura) — o «voltar» repõe a batalha com o
          voo daquele turno, incapacidade incluída. */
       voo: vooCapturarEstado(),
+      /* ACOPLAMENTO (§14.4.4): a frente assentada de CADA unidade
+         entra no snapshot (um número em graus por unidade) — o
+         restauro aplica-a via pivot antes do primeiro
+         visaoAplicar. Snapshot sem o campo mantém as frentes. */
+      frentesAssentadas: frentesAssentadasCaptura(),
       /* Tranche VLAB (pós-Crítico 3, achado 5): o estado do motor
          (estados, arma caída/quebrada, desvantagem, deslocamento a
          metade, reacção, corrida de morte) TAMBÉM entra no snapshot
@@ -7912,6 +8020,11 @@
         } else view.setVivo(su.id, su.vivo);
       }
     }
+    /* ACOPLAMENTO (§14.4.4): as frentes assentadas do snapshot
+       aplicam-se via pivot (view.setFrente) AQUI — depois das
+       posições e ANTES do visaoAssentar/visaoAplicar abaixo, para
+       o campo restaurado nascer já das frentes certas. */
+    if (snap.frentesAssentadas) frentesAssentadasAplicar(snap.frentesAssentadas);
     danoSofrido = snap.danoSofrido; paGasto = snap.paGasto;
     transformada = snap.transformada;
     reservaMovimento = snap.reservaMovimento; atacou = snap.atacou;
@@ -8222,7 +8335,7 @@
     /* Tranche VOO (F-36): 'voo' é campo OPCIONAL do estado, na
        mesma régua (save antigo sem ele é válido — ninguém traz
        asa torada); o 'z' das unidades confere-se junto delas. */
-    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala' && k !== 'visao' && k !== 'furtividade' && k !== 'previaPublica' && k !== 'voo')) return INV;
+    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala' && k !== 'visao' && k !== 'furtividade' && k !== 'previaPublica' && k !== 'voo' && k !== 'frentesAssentadas')) return INV;
     /* Os ids válidos são os do elenco MAIS as figuras de teste
        que o próprio save declara nas unidades (aplicar um save
        admite as que ele traz; um save não pode inventar figuras
@@ -8378,6 +8491,21 @@
         if (typeof av.asaTorada !== 'boolean') return INV;
       }
     }
+    /* ACOPLAMENTO (§14.4): 'frentesAssentadas', presente, é um
+       mapa id -> frente em GRAUS (número finito em [-360, 360],
+       só ids deste save); ausente, save válido (frentes ficam as
+       do mundo restaurado pelas posições). NOTA DE GÉMEO: o
+       validador gémeo de saves-mestre.js (fora desta árvore) tem
+       de aprender esta chave — resíduo lavrado no relatório da
+       construção F-14, como o da Q-02. */
+    if ('frentesAssentadas' in e) {
+      const fa = e.frentesAssentadas;
+      if (!fa || typeof fa !== 'object' || Array.isArray(fa)) return INV;
+      for (const k of Object.keys(fa)) {
+        if (!ids.includes(k)) return INV;
+        if (typeof fa[k] !== 'number' || !Number.isFinite(fa[k]) || Math.abs(fa[k]) > 360) return INV;
+      }
+    }
     /* PORTA C-23: o bloco do motor confere-se com a mesma régua. */
     return validarVlabParaAplicar(e.vlab, ids);
   }
@@ -8470,7 +8598,14 @@
           ? { previaPublica: ataquePreviaPublicaActual() } : {}),
         /* VOO (F-36): a asa torada viaja no bloco opcional
            'voo' — só nasce quando existe (ver vooBlocoSaveCaptura). */
-        ...vooBlocoSaveCaptura()
+        ...vooBlocoSaveCaptura(),
+        /* ACOPLAMENTO (§14.4): as frentes assentadas de todas as
+           unidades viajam na captura (mapa id -> graus) — é por
+           este canal, o mesmo que transporta posições de andar e
+           resultados de ataque, que o evento 'virar' chega aos
+           outros aparelhos; quem aplica escreve os pivots via
+           cena antes do primeiro visaoAplicar. */
+        frentesAssentadas: frentesAssentadasCaptura()
       };
     },
     aplicar(e) {
@@ -8526,6 +8661,9 @@
           /* Q-02: a frente actual entra no pré-estado — uma
              aplicação falhada também não muda a frente. */
           previaFrente: (() => { try { return typeof view.getFrente === 'function' ? view.getFrente(PROPRIA) : null; } catch (_) { return null; } })(),
+          /* §14: as frentes assentadas entram no pré-estado — uma
+             aplicação falhada também não muda frente nenhuma. */
+          frentesAssentadas: frentesAssentadasCaptura(),
           previaPublicaAplicada: previaPublicaAplicada ? JSON.parse(JSON.stringify(previaPublicaAplicada)) : null,
           reaccoes: { ...REACCOES_DECLARADAS },
           mortePropriaAdjudicada, partidaPendente, correrUsado,
@@ -8581,6 +8719,13 @@
             } else view.setVivo(su.id, su.vivo);
           }
         }
+        /* ACOPLAMENTO (§14.4.2/§14.4.4): as frentes assentadas do
+           save escrevem-se nos pivots VIA CENA aqui — depois das
+           posições e ANTES da reentrada na vez e do visaoAssentar
+           abaixo (o primeiro visaoAplicar do restauro), para o
+           campo nascer já das frentes certas. Sem o campo (save
+           antigo), as frentes ficam as das posições restauradas. */
+        if ('frentesAssentadas' in e) frentesAssentadasAplicar(e.frentesAssentadas);
         /* Números e bandeiras — ordem HONRADA (atribuída, não
            ignorada) e batalhaFim como validado (sem correcção
            silenciosa: a coerência já foi conferida acima). */
@@ -8726,6 +8871,7 @@
             ordem = [...preSave.ordem];
             rodada = preSave.rodada; indiceVez = preSave.indiceVez;
             vezAtual = preSave.vez;
+            acoplamentoSincronizarVez();   // §14: o braço segue a vez reposta
             danoSofrido = preSave.danoSofrido; paGasto = preSave.paGasto;
             transformada = preSave.transformada;
             for (const id of Object.keys(ESTADO_VLAB)) {
@@ -8771,6 +8917,8 @@
             if (preSave.previaFrente !== null && preSave.previaFrente !== undefined) {
               try { if (typeof view.setFrente === 'function') view.setFrente(PROPRIA, preSave.previaFrente); } catch (__) {}
             }
+            /* §14: idem para as frentes assentadas de todas. */
+            if (preSave.frentesAssentadas) { try { frentesAssentadasAplicar(preSave.frentesAssentadas); } catch (__) {} }
             previaPublicaAplicada = preSave.previaPublicaAplicada || null;
             if (previaPublicaAplicada && MODO_MESTRE && previaPublicaAplicada.desenho) {
               try { if (typeof view.showPrevia === 'function') view.showPrevia(JSON.parse(JSON.stringify(previaPublicaAplicada.desenho))); } catch (__) {}
@@ -9267,7 +9415,7 @@
       teclasCamLivre.clear();
       sobeCamLivreVal = 0;
       view.livreEntrada({ joyX: 0, joyY: 0, sobe: 0, teclas: {} });
-      view.setCamera(camLivreModoAnterior && camLivreModoAnterior !== 'livre' ? camLivreModoAnterior : 'fixa');
+      view.setCamera(camLivreModoAnterior && camLivreModoAnterior !== 'livre' ? camLivreModoAnterior : '360');
       say('Câmera do jogo — de volta à vista de antes.');
     });
     view.on('camera', camLivreSincronizarHud);
@@ -10675,7 +10823,7 @@
     if (minuscula === 'f') { if (!fichaAberta) chipEl.click(); return; }
     if (minuscula === 'i') return;       // sem superfície de inventário no vivo — inerte (ver relatório)
     if (minuscula === 'v') {
-      const botoes = ['cam-fixa', 'cam-seguir', 'cam-360'].map(id => $(id)).filter(Boolean);
+      const botoes = ['cam-fixa', 'cam-360'].map(id => $(id)).filter(Boolean);
       const actual = botoes.findIndex(b => b.id === 'cam-' + view.getState().camera);
       if (botoes.length && actual >= 0) botoes[(actual + 1) % botoes.length].click();
       return;
@@ -11538,7 +11686,7 @@
   function cfgFraseVista() {
     /* I-3: a lista de modos da frase do V nasce dos rótulos dos
        próprios botões da Câmera que existirem no DOM. */
-    const nomes = ['cam-fixa', 'cam-seguir', 'cam-360'].map(cfgRotuloCam).filter(Boolean);
+    const nomes = ['cam-fixa', 'cam-360'].map(cfgRotuloCam).filter(Boolean);
     return 'Vista: troca a câmera — ' + nomes.join(', ') + '.';
   }
   function cfgTabelaTeclas() {
@@ -11635,6 +11783,7 @@
     if (el === bandaCfg || el === corpoCfg || el.id === 'stats') continue;
     if (el.tagName === 'H3') { el.remove(); continue; }   // títulos de secção → títulos de aba/grupo
     if (temCfg(el, '#cam-fixa')) R.cam = el;
+    else if (temCfg(el, '#cam-dinamica')) R.dinamica = el;
     else if (temCfg(el, '#zoom-menos')) R.zoom = el;
     else if (temCfg(el, '#tog-grid')) R.grid = el;
     else if (temCfg(el, '#tog-danos')) R.danos = el;
@@ -11688,6 +11837,10 @@
     if (MODO_MESTRE) cfgFraseAba(pane, 'Aqui manda na câmera da batalha e em como ela anda.');
     const g = cfgGrupo(pane, 'Vista da batalha', null);
     if (R.cam) g.appendChild(R.cam);
+    /* F-14 (fusão das câmeras): a linha do interruptor Dinâmica
+       nasceu depois das abas — mora na aba Jogo, no grupo da vista
+       da batalha, logo abaixo da linha da câmera (§9 do desenho). */
+    if (R.dinamica) g.appendChild(R.dinamica);
     if (R.zoom) g.appendChild(R.zoom);
     if (R.grid) g.appendChild(R.grid);
     /* Fusão REF_76 (emenda da cadeia): a linha só-leitura da
