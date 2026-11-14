@@ -1989,7 +1989,7 @@
                 catch (e) {
                     if (units.has(u.id))
                         removeUnit(u.id);
-                    emit('error', { message: 'Falha no modelo local: ' + model });
+                    emit('error', { origem: 'modelo', message: 'Falha no modelo local: ' + model });
                     throw e;
                 }
             }
@@ -2393,7 +2393,7 @@
             }
             const contextLost = e => {
                 e.preventDefault();
-                emit('error', { message: 'Contexto gráfico perdido. Atualize a página.' });
+                emit('error', { origem: 'contexto', message: 'Contexto gráfico perdido. Atualize a página.' });
             };
             renderer.domElement.addEventListener('webglcontextlost', contextLost);
             /* [VÉU-BRILHOS v2] Estado do véu declarado ANTES da

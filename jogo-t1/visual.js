@@ -436,9 +436,11 @@
          * 04/11/2026 13:36): a marca do ritual vive NA textura do chão —
          * textura pintada pela Oficina (o anel da volta 3 cozido na terra,
          * mesma posição e escala; geometria provada: faixa 8,69–9,61 m,
-         * elipse ×1,22). Versão aligeirada medida: JPEG 4096 q88 4:4:4 —
-         * 1.251.178 B contra 7.785.579 B do PNG-fonte (fidelidade de cor
-         * medida no relatório desta tranche). O mapa procedural fica como
+         * elipse ×1,22). A fonte verdadeira da pintura é a recozedura
+         * x15 (oficina-audit/teste-chao-circulo/recozedura-x15/
+         * textura-chao-pintado-x15.png), provado por PSNR na REF_40 —
+         * o PNG de 7,79 MB NÃO é a fonte (uma versão antiga deste
+         * comentário dava-o como fonte; fica corrigido). O mapa procedural fica como
          * fundo até a textura chegar; __chaoPintadoPronto é o recibo. */
         window.__chaoPintadoPronto = false;
         new T.TextureLoader().load('textura-chao-pintado.jpg', t => {

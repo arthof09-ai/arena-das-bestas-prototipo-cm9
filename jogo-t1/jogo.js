@@ -371,7 +371,7 @@
   try {
     view = Campo3D.create(mapaEl, { area: AREA, units: ELENCO, qualidade });
   } catch (error) {
-    msgTxt.innerHTML = '<b>WebGL indisponível</b> — tente outro navegador.';
+    msgTxt.innerHTML = '<b>O campo 3D não pôde ser mostrado</b> neste aparelho — tenta outro navegador.';
     return;
   }
 
@@ -3271,8 +3271,11 @@
   const unidade = id => view.getState().units.find(u => u.id === id);
   const nomeCena = id => (ELENCO.find(u => u.id === id) || {}).nome
     || (unidade(id) || {}).nome || id;
+  let ultimoSay = null;   // A-24 (E2 da sentença do P-A): a última frase escrita na faixa
   function say(html) {
     if (!campoPronto) { msgTxt.textContent = falhaArranque || 'A preparar o campo…'; return; }
+    if (html === ultimoSay) return;   // repetição consecutiva da mesma frase: a faixa já a mostra — não se reescreve (as retentativas do controlador e os cliques repetidos deixam de a fazer piscar)
+    ultimoSay = html;
     msgTxt.innerHTML = html;
   }
 
@@ -5592,13 +5595,31 @@
   });
   view.on('camera', () => { sincronizarCamera(); mostrarZoom(); });
   view.on('zoom', () => mostrarZoom());
+  /* D3-P0-1 (item 1.2 do inventário fechado): a linha de estatísticas
+     (FPS · triângulos · chamadas) é texto técnico — na vista da Party
+     o nó nem nasce no DOM; no Mestre, comportamento igual ao de hoje.
+     A amostragem de fluidez do Supervisor e do Crítico corre nas DUAS
+     vistas (alimenta-se também da página da Party) — a guarda cobre
+     SÓ a escrita no nó, nunca o handler inteiro. */
+  if (!MODO_MESTRE) { const stSemMestre = $('stats'); if (stSemMestre) stSemMestre.remove(); }
   view.on('stats', s => {
-    $('stats').textContent = `${Math.round(s.fps)} FPS · ${s.triangles ?? '—'} triângulos · ${s.drawCalls ?? '—'} chamadas`;
+    if (MODO_MESTRE) { const st = $('stats'); if (st) st.textContent = `${Math.round(s.fps)} FPS · ${s.triangles ?? '—'} triângulos · ${s.drawCalls ?? '—'} chamadas`; }
     supAmostraStats(s);                      // Supervisor: fluidez (amostras e lacunas grandes)
     try { supCritAmostraStats(s); } catch (_) { supCritErrosCamada++; }   // T1.7: amostras do Crítico (passivo)
   });
-  view.on('error', e => say((e && e.message) || 'Erro na vista 3D.'));
-  view.on('modelerror', d => { supRegistar('modelo-indisponivel', { id: d && d.id }); if (d && d.message) say(d.message); });
+  /* D3-P0-1 (itens 1.6 e 1.8 do inventário fechado): a mensagem crua
+     de erro da vista 3D NUNCA chega à Party. No Mestre diz-se verbatim
+     (o bastidor é a superfície dele); na Party vale o mapa fechado por
+     origem: modelo em falta = silêncio (a consequência visível é a
+     frase de mundo da abertura); perda de contexto ou origem
+     desconhecida = a frase funcional da lista fechada. Origem nova
+     entra no mapa por emenda, nunca por passagem directa da mensagem. */
+  view.on('error', e => {
+    if (MODO_MESTRE) { say((e && e.message) || 'Erro na vista 3D.'); return; }
+    if (e && e.origem === 'modelo') return;
+    say('A imagem perdeu-se. Atualiza a página para voltar à batalha.');
+  });
+  view.on('modelerror', d => { supRegistar('modelo-indisponivel', { id: d && d.id }); if (MODO_MESTRE && d && d.message) say(d.message); });
 
   /* Câmera livre (tranche t-camera-livre, desenho v2): o estado do
      gesto de olhar e a pergunta «a livre está activa?», lidos pelos
@@ -10095,7 +10116,7 @@
        nunca a sobrescreve (observação do juiz na análise do pacote). */
     say('É a vez da <b>Ong</b>. Aperte <b>Mover</b> e toque numa casa acesa para andar.'
       + (falhas.length
-        ? `<br>Modelo indisponível: ${falhas.map(m => nomeCena(m.id)).join(', ')}. Marcador ativo.`
+        ? `<br>${falhas.map(m => nomeCena(m.id)).join(', ')} ${falhas.length > 1 ? 'entram' : 'entra'} em cena como boneco de treino.`
         : ''));
   }).catch(error => {
     /* Correcção E-07 da assimilação: falha de DADOS (a validação da

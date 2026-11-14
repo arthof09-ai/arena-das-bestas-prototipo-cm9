@@ -56,7 +56,11 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
   background:linear-gradient(160deg, rgba(26,20,12,.55), rgba(14,11,7,.55));border:1px solid var(--linha);
   border-radius:12px;padding:9px 12px}
 #cfgpop[hidden]{display:none}
-#cfgpop h3{font-family:Georgia,'DejaVu Serif',serif;font-size:10px;letter-spacing:.18em;
+/* T-D3-TEXTOS12 (D3-P0-4, executada na F-21): os textos do pop-up do
+   ⚙ vivem a pelo menos 12 px (a cláusula nomeia .cl, small, h3 e
+   .stats; a subida cobre todas as regras de texto do pop-up) — e a
+   mensagem da faixa acompanha (11,5/10,5 → 12). */
+#cfgpop h3{font-family:Georgia,'DejaVu Serif',serif;font-size:12px;letter-spacing:.18em;
   color:var(--ouro);text-transform:uppercase;margin-bottom:5px}
 /* Faixa de cabeçalho PEGAJOSA do pop-up (t-config-entrada, lei
    11/11 10:36): primeiro filho, colada ao topo quando a lista
@@ -72,19 +76,19 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
    mesmas classes — as folhas carregam juntas na página única) */
 .volctl{display:flex;align-items:center;gap:8px;flex:1;min-width:0;justify-content:flex-end}
 .vol-range{flex:1;min-width:56px;min-height:44px;accent-color:var(--ouro)}
-.vol-valor{font-size:11px;color:var(--pergaminho);font-variant-numeric:tabular-nums;
+.vol-valor{font-size:12px;color:var(--pergaminho);font-variant-numeric:tabular-nums;
   min-width:36px;text-align:right}
-.cfg-nota{font-size:10.5px;line-height:1.45;color:var(--pergaminho-fraco);
+.cfg-nota{font-size:12px;line-height:1.45;color:var(--pergaminho-fraco);
   border:1px dashed rgba(201,162,39,.35);border-radius:8px;padding:7px 9px;margin:7px 0}
 .cfg-restaurar{width:100%;height:40px;border:1px solid rgba(201,162,39,.8);border-radius:8px;
   background:rgba(28,21,12,.85);color:var(--ouro-claro);font-size:12px;font-weight:700;cursor:pointer}
 .cfgrow{display:flex;align-items:center;justify-content:space-between;gap:8px;
   padding:5px 0;border-top:1px dashed rgba(201,162,39,.25)}
 .cfgrow:first-of-type{border-top:0}
-.cfgrow .cl{font-size:11px;color:var(--pergaminho)}
-.cfgrow .cl small{display:block;font-size:10px;color:var(--pergaminho-mudo)}
+.cfgrow .cl{font-size:12px;color:var(--pergaminho)}
+.cfgrow .cl small{display:block;font-size:12px;color:var(--pergaminho-mudo)}
 .seg{display:flex;border:1px solid rgba(201,162,39,.8);border-radius:8px;overflow:hidden;height:46px}
-.seg button{background:rgba(28,21,12,.75);color:var(--pergaminho-fraco);font-size:11px;font-weight:700;
+.seg button{background:rgba(28,21,12,.75);color:var(--pergaminho-fraco);font-size:12px;font-weight:700;
   padding:0 10px;display:flex;align-items:center}
 .seg button.on{background:var(--ouro);color:#1c1508}
 .cfgrow.vel{flex-direction:column;align-items:stretch;gap:5px}
@@ -93,14 +97,14 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 .zoomctl .zb{width:44px;height:44px;border-radius:8px;border:1px solid rgba(201,162,39,.8);
   background:rgba(28,21,12,.85);color:var(--ouro-claro);font-size:15px;
   display:flex;align-items:center;justify-content:center}
-.zoomctl .zv{font-size:11px;font-weight:700;color:#fff3d0;min-width:36px;text-align:center}
+.zoomctl .zv{font-size:12px;font-weight:700;color:#fff3d0;min-width:36px;text-align:center}
 .tog{min-width:74px;height:44px;display:inline-flex;align-items:center;justify-content:center;
-  font-size:11px;font-weight:700;padding:0 8px;border-radius:8px;
+  font-size:12px;font-weight:700;padding:0 8px;border-radius:8px;
   border:1px solid rgba(201,162,39,.8);background:rgba(28,21,12,.85);color:var(--pergaminho-fraco)}
 .tog.on{background:var(--ouro);color:#1c1508}
 #cfgpop .stats{flex:none;height:22px;line-height:22px;margin:6px 0 0;padding:0;
   border-top:1px dashed rgba(201,162,39,.25);
-  font-size:10px;color:var(--pergaminho-mudo);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;visibility:hidden}
+  font-size:12px;color:var(--pergaminho-mudo);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;visibility:hidden}
 /* ---------- estrutura das abas do ⚙ ----------
    REF_88: a barra de abas é UMA fileira horizontal só com os
    nomes (a explicação de cada aba vive dentro da aba, no topo) —
@@ -112,7 +116,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 .cfg-indice{flex:1;min-width:0;min-height:0;overflow-x:auto;overflow-y:hidden;display:flex;flex-direction:row;gap:4px;align-items:stretch}
 .cfg-celulas-todos,.cfg-celulas-suas{display:contents}
 .cfg-faixa{flex:none;display:flex;align-items:center;justify-content:center;padding:0 4px;
-  font-family:Georgia,'DejaVu Serif',serif;font-size:9px;letter-spacing:.12em;
+  font-family:Georgia,'DejaVu Serif',serif;font-size:12px;letter-spacing:.12em;
   color:var(--ouro);text-transform:uppercase;text-align:center;white-space:nowrap}
 .cfg-celula{height:36px;flex:none;display:flex;align-items:center;justify-content:center;
   text-align:center;padding:4px 12px;border:1px solid rgba(201,162,39,.45);border-radius:8px;
@@ -121,18 +125,18 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 .cfg-celula.on{background:var(--ouro);border-color:var(--ouro)}
 .cfg-celula.on b{color:#1c1508}
 .cfg-mais{position:absolute;top:0;right:0;bottom:0;display:none;align-items:center;justify-content:flex-end;
-  padding:0 4px 0 22px;font-size:10px;font-weight:700;color:var(--ouro-claro);
+  padding:0 4px 0 22px;font-size:12px;font-weight:700;color:var(--ouro-claro);
   background:linear-gradient(to left,var(--painel-denso) 55%,rgba(20,15,8,0));pointer-events:none}
 .cfg-mais.on{display:flex}
-.cfg-mais-conteudo{position:absolute;left:0;right:0;bottom:0;display:none;justify-content:center;padding:12px 0 2px;font-size:10px;font-weight:700;color:var(--ouro-claro);background:linear-gradient(rgba(20,15,8,0),rgba(14,11,7,.97) 45%);pointer-events:none;z-index:2}
+.cfg-mais-conteudo{position:absolute;left:0;right:0;bottom:0;display:none;justify-content:center;padding:12px 0 2px;font-size:12px;font-weight:700;color:var(--ouro-claro);background:linear-gradient(rgba(20,15,8,0),rgba(14,11,7,.97) 45%);pointer-events:none;z-index:2}
 .cfg-mais-conteudo.on{display:flex}
 .cfg-conteudo{flex:1;min-width:0;min-height:0;overflow-y:auto}
 .cfg-aba{display:none}
 .cfg-aba.activa{display:block}
 .cfg-grupo{margin-top:10px}
 .cfg-grupo:first-child{margin-top:0}
-.cfg-frase{font-size:10.5px;line-height:1.45;color:var(--pergaminho-fraco);margin:2px 0 6px}
-.cfg-aba-frase{font-size:11px;line-height:1.45;color:var(--pergaminho);margin:0 0 8px}
+.cfg-frase{font-size:12px;line-height:1.45;color:var(--pergaminho-fraco);margin:2px 0 6px}
+.cfg-aba-frase{font-size:12px;line-height:1.45;color:var(--pergaminho);margin:0 0 8px}
 .cfg-restaurar-zona{margin-top:10px}
 .cfg-glossario b{color:var(--ouro-claro)}
 .seg.disabled{opacity:.45}
@@ -140,19 +144,19 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 .cfg-keys td{padding:4px;border-top:1px dashed rgba(201,162,39,.25);vertical-align:top}
 .cfg-keys tr:first-child td{border-top:0}
 .cfg-chip{display:inline-block;border:1px solid rgba(201,162,39,.8);border-radius:6px;
-  padding:2px 6px;font-size:10px;font-weight:700;color:var(--ouro-claro);white-space:nowrap}
-.cfg-kact{font-size:11px;font-weight:700;color:var(--pergaminho);white-space:nowrap;width:86px}
-.cfg-ktut{font-size:10.5px;line-height:1.4;color:var(--pergaminho-fraco)}
+  padding:2px 6px;font-size:12px;font-weight:700;color:var(--ouro-claro);white-space:nowrap}
+.cfg-kact{font-size:12px;font-weight:700;color:var(--pergaminho);white-space:nowrap;width:86px}
+.cfg-ktut{font-size:12px;line-height:1.4;color:var(--pergaminho-fraco)}
 .cfg-keys-livre td{border-top:0;padding:2px 4px}
 @media (max-width:599px){
-  #cfgpop{width:min(366px,94vw);top:auto;bottom:64px;height:min(78vh,calc(100vh - 170px));max-height:none}
+  #cfgpop{width:min(366px,94vw);top:auto;bottom:calc(64px + env(safe-area-inset-bottom, 0px));height:min(78vh,calc(100vh - 170px));max-height:none}
   .cfg-corpo{gap:6px}
   .cfg-mais-conteudo{left:0}
 }
 /* Cartão da desgraça (T-DESGRACA-NADA): o cartão de decisão do
    Mestre sobre a falha crítica — a mesma pele dos painéis da casa
    (fundo denso, linha de ouro), por cima do mundo e por baixo do ⚙. */
-#desgraca-cartao{position:fixed;left:50%;transform:translateX(-50%);bottom:66px;z-index:26;
+#desgraca-cartao{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(66px + env(safe-area-inset-bottom, 0px));z-index:26;
   width:min(430px,calc(100vw - 20px));max-height:calc(100vh - 140px);overflow-y:auto;
   background:var(--painel-denso);border:1px solid var(--linha);
   border-radius:12px;padding:10px 12px;box-shadow:0 8px 28px rgba(0,0,0,.55)}
@@ -216,7 +220,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 }
 
 /* ---------- ficha fechada: chip flutuante (só a própria) ---------- */
-#fichachip{position:fixed;left:12px;bottom:68px;width:182px;z-index:20;text-align:left;
+#fichachip{position:fixed;left:max(12px,env(safe-area-inset-left, 0px));bottom:calc(68px + env(safe-area-inset-bottom, 0px));width:182px;z-index:20;text-align:left;
   background:var(--painel);border:1px solid var(--linha);border-radius:11px;padding:8px 10px 9px}
 #fichachip[hidden]{display:none}
 #fichachip .fh{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
@@ -230,7 +234,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 #fichachip .bar{margin-top:4px}
 
 /* ---------- ficha aberta: coluna lateral de 25% ---------- */
-#ficha{position:fixed;top:0;right:0;bottom:56px;width:25%;min-width:200px;max-width:320px;z-index:25;
+#ficha{position:fixed;top:0;right:0;bottom:calc(56px + env(safe-area-inset-bottom, 0px));width:25%;min-width:200px;max-width:320px;z-index:25;
   /* D3-P1-11(a): fundo a alfa 0,55, local a este selector (ver #cfgpop). */
   overflow-y:auto;background:linear-gradient(160deg, rgba(26,20,12,.55), rgba(14,11,7,.55));border-left:2px solid var(--ouro);padding:9px 12px}
 #ficha[hidden]{display:none}
@@ -277,9 +281,14 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 #ficha footer{margin-top:9px;font-size:10px;color:#8a7c58;letter-spacing:.02em;line-height:1.35}
 
 /* ---------- faixa de baixo: UMA, fixa, 56 px ---------- */
-#faixa{position:fixed;left:0;right:0;bottom:0;height:56px;z-index:30;
+/* T-D3-SAFEAREA (D3-P0-4, executada na F-21): a faixa sobe o
+   safe-area-inset-bottom do aparelho (entalhe/indicador de gestos);
+   sem entalhe o inset é 0 e a geometria é a de sempre. Tudo o que
+   ancora na altura da faixa (#ficha, #fichachip, #desgraca-cartao e a
+   folha do ⚙ em ecrãs baixos) soma o mesmo inset. */
+#faixa{position:fixed;left:0;right:0;bottom:0;height:calc(56px + env(safe-area-inset-bottom, 0px));z-index:30;
   background:var(--painel);border-top:1px solid var(--linha);
-  display:flex;align-items:center;gap:6px;padding:6px}
+  display:flex;align-items:center;gap:6px;padding:6px 6px calc(6px + env(safe-area-inset-bottom, 0px))}
 .turn{display:flex;align-items:center;gap:5px;padding:0 6px 0 2px;height:44px;flex:none;
   border-right:1px solid rgba(201,162,39,.35);white-space:nowrap}
 .turn .tl{font-size:10px;letter-spacing:.12em;color:var(--pergaminho-fraco)}
@@ -288,7 +297,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 /* A mensagem NUNCA encolhe a zero: quebra em até 3 linhas dentro dos 44 px
    da faixa (a faixa não cresce — o texto reparte-se, as acções encolhem). */
 #mensagem{flex:1;min-width:0;height:44px;display:flex;align-items:center;overflow:hidden;
-  font-size:11.5px;line-height:1.3;color:var(--pergaminho-fraco)}
+  font-size:12px;line-height:1.22;color:var(--pergaminho-fraco)}
 #mensagem-txt{display:block;white-space:normal}
 #mensagem b{color:#fff3d0}
 .actions{display:flex;gap:6px;align-items:center;flex:none}
@@ -346,7 +355,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 
 /* ---------- retrato: a mesma lei, apertada (não é modo degradado) ---------- */
 @media (max-width:560px){
-  #faixa{gap:4px;padding:6px 4px}
+  #faixa{gap:4px;padding:6px 4px calc(6px + env(safe-area-inset-bottom, 0px))}
   /* A vez vira coluna estreita (nome sobre a rodada), com tecto de largura:
      nem o nome mais comprido ("Lobo da Caverna") rouba o espaço da mensagem. */
   .turn{flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;
@@ -354,7 +363,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
   .turn .tl{display:none}
   .turn .tn{font-size:12px;max-width:44px;overflow:hidden;text-overflow:ellipsis}
   .turn .rd{padding:1px 4px}
-  #mensagem{font-size:10.5px}
+  #mensagem{font-size:12px}
   .actions{gap:4px}
   .btn{padding:0 7px;font-size:11px}
   /* Estado base em retrato: botões compactos (ícone sobre o rótulo),
