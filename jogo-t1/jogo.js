@@ -3071,6 +3071,10 @@
         mostrarImpacto(PROPRIA);
         supRegistar('accao', { acao: 'ataque', actor: aoo.inimigoId, alvo: PROPRIA, acerto: true, dano: s.totalEfectivo, oportunidade: true });
         const desfecho = vlabAplicarAlvoDepois(PROPRIA, s);
+        /* F-19 (D3-P0-2): golpe de oportunidade que ela recebe —
+           os números das parcelas + total, como na vez da IA. */
+        if (numerosDano) mostrarDano(PROPRIA, s.danoAplicado.parcelas.map(p => ({
+          classe: p.tipo || 'tecnica', rotulo: p.tipo || 'dano', valor: p.subtotal })));
         if (desfecho === 'falhaDeMorte') {
           /* Espelho do ramo da IA: a falha por golpe regista-se e
              narra-se como agravamento, sem anunciar outra queda.
@@ -3823,8 +3827,10 @@
    * por requestAnimationFrame. O interruptor "Números de dano" vive
    * no pop-up ⚙ (opção, nunca na barra); desligado, mostrarDano nem
    * é chamado — o efeito de impacto (anel curto) é outra coisa: é o
-   * estalo visual do acerto, sem números. Golpes DOS monstros não
-   * geram flutuantes: marcam-se com o impacto + a frase (T1.3). */
+   * estalo visual do acerto, sem números. Desde a F-19 (D3-P0-2),
+   * os golpes dos monstros nela TAMBÉM geram os flutuantes das
+   * parcelas — ver os dois sítios de golpe recebido (vez da IA e
+   * ataques de oportunidade). */
   const danosEl = $('danos');
   const flutuantes = [];   // { el, id, dx, atraso, dur, tipo, t0 }
   let rafDanos = 0;
@@ -3845,14 +3851,17 @@
     /* Desde a tranche VLAB as parcelas são as do DMG (uma por tipo
        de dano) + o total por cima: o desfasamento e a dispersão apertam para a sequência
        caber legível em ≈2 s e a 390 px de largura (aceite A9 da
-       T1.4) — e o tick, abaixo, prende a posição ao ecrã. */
+       T1.4) — e o tick, abaixo, prende a posição ao ecrã.
+       F-19 (D3-P0-2): tamanhos 26/34 px e contorno vivem no jogo.css;
+       a dispersão sobe de 22 para 34 px para os glifos de 26 px não
+       se sobreporem entre parcelas vizinhas. */
     let atraso = 40, total = 0;
     parcelas.forEach((p, i) => {
       total += p.valor;
       const el = document.createElement('span');
       el.className = 'dano t-' + p.classe;
       el.innerHTML = `<b>${p.valor}</b><small>${p.rotulo}</small>`;
-      lancarFlutuante(el, id, (i - (parcelas.length - 1) / 2) * 22, atraso, 1100, 'dano');
+      lancarFlutuante(el, id, (i - (parcelas.length - 1) / 2) * 34, atraso, 1100, 'dano');
       atraso += 100;
     });
     const el = document.createElement('span');
@@ -4957,6 +4966,12 @@
     if (seqTurno !== seq || batalhaFim || supCongelado || supEpoca !== epocaAcertoIA) { continuarAposApresentacao = false; return; }   // R1-Priv: idem
     mostrarImpacto(PROPRIA);
     const desfecho = vlabAplicarAlvoDepois(PROPRIA, s);
+    /* F-19 (D3-P0-2): o golpe que ela recebe também mostra os
+       números — as parcelas do DMG por tipo + o total, pela mesma
+       porta (mostrarDano) e com o mesmo interruptor dos golpes
+       dela; a soma já foi conferida pelo Supervisor acima. */
+    if (numerosDano) mostrarDano(PROPRIA, s.danoAplicado.parcelas.map(p => ({
+      classe: p.tipo || 'tecnica', rotulo: p.tipo || 'dano', valor: p.subtotal })));
     if (desfecho === 'morreu') { fimDeBatalha('morte'); return; }
     if (desfecho === 'aMorrer') { entrarAMorrer(); return; }
     if (desfecho === 'falhaDeMorte') {

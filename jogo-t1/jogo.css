@@ -339,14 +339,19 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 .reacao-btn:disabled{opacity:.45;cursor:default}
 .dano{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;
   will-change:transform,opacity;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,.85)}
-.dano b{font-family:Georgia,'DejaVu Serif',serif;font-size:19px}
+/* F-19 (D3-P0-2): parcela 19→26 px e contorno real no número — pilha de
+   sombras em 8 direcções (tinta escura, raio 1,5 px) + sombra de
+   profundidade; a sombra suave da .dano sozinha era o «sem contorno»
+   medido pela V8. O total herda este contorno. */
+.dano b{font-family:Georgia,'DejaVu Serif',serif;font-size:26px;
+  text-shadow:-1.5px 0 0 rgba(26,17,5,.95),1.5px 0 0 rgba(26,17,5,.95),0 -1.5px 0 rgba(26,17,5,.95),0 1.5px 0 rgba(26,17,5,.95),-1.1px -1.1px 0 rgba(26,17,5,.95),1.1px -1.1px 0 rgba(26,17,5,.95),-1.1px 1.1px 0 rgba(26,17,5,.95),1.1px 1.1px 0 rgba(26,17,5,.95),0 2px 5px rgba(0,0,0,.55)}
 .dano small{font-size:8.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
 .dano.t-dados{color:#fff3d0}
 .dano.t-bonus{color:var(--ouro-vivo)}
 .dano.t-tecnica{color:#8ad6ff}
 .dano.t-agua{color:#8ad6ff}
 .dano.t-total{color:var(--ouro-claro)}
-.dano.t-total b{font-size:26px}
+.dano.t-total b{font-size:34px}   /* F-19 (D3-P0-2): total 26→34 px */
 .impacto{position:absolute;left:0;top:0;will-change:transform,opacity}
 .impacto i{display:block;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;
   border:2px solid rgba(255,233,168,.9);box-shadow:inset 0 0 12px rgba(255,217,77,.5);
