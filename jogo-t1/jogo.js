@@ -3198,6 +3198,22 @@
   let reservaMovimento = DESLOCAMENTO_ONG_M;   // metros que ela ainda pode andar NESTA vez
   let custoPendente = null;     // casas do caminho por toque, a descontar no moveend dela
   let caminhoPendente = null;   // o path (motor) desse caminho — custo do Parar pelas casas andadas (D-13.15)
+  /* D1 (defeitos do Mestre, 13/11): COMANDO DAS FIGURAS — o
+     interruptor da aba Testes («Comandar as figuras»). Nasce
+     DESLIGADO em cada abertura da página, como os outros testes;
+     ligado, as vezes das figuras que não a Ong abrem MANUAIS para
+     o Mestre (iniciarVezManual) em vez de serem jogadas pela IA.
+     Desligado — e sempre na vista da Party —, nenhum caminho novo
+     é alcançável: o comportamento é o de hoje, ao byte. A reserva
+     da vez manual é SEPARADA da reservaMovimento dela (R3: os
+     tectos do Supervisor e dos saves são da Ong). */
+  let comandoMestreFiguras = false;   // o interruptor (só MODO_MESTRE o vê)
+  let vezManualAberta = false;        // a vez corrente é uma vez manual do Mestre
+  let comandada = null;               // a figura da vez manual (= vezAtual quando aberta)
+  let reservaManual = 0;              // metros que a figura comandada ainda pode andar nesta vez
+  let atacouManual = false;           // uso de atacar da vez manual
+  let ctxMovManual = null;            // { id, destino:{x,y,z}, passos } do movimento manual em curso
+  const comandoMestreActivo = () => MODO_MESTRE && comandoMestreFiguras;
   let passoEmCurso = false;     // um passo de seta está a animar (pressões novas ignoram-se)
   /* Tranche ESCALA: o preço da casa captura-se no DESPACHO do
      movimento (custoPendentePreco / passoPreco) — o débito do
@@ -3412,7 +3428,7 @@
          «tentou golpeá-la de oportunidade ao sair e falhou». */
       dgPropostaEl.innerHTML = p.origem === 'oportunidade'
         ? `<b>${nomeCena(p.atacanteId)}</b> tentou golpeá-la de oportunidade ao sair e falhou. A proposta é <b>${fc.desgraca.nome}</b>. Escolha a desgraça que acontece — ou nenhuma.`
-        : `<b>${nomeCena(p.atacanteId)}</b> ${verbosM.falha} a <b>Ong</b> e falhou. A proposta é <b>${fc.desgraca.nome}</b>. Escolha a desgraça que acontece — ou nenhuma.`;
+        : `<b>${nomeCena(p.atacanteId)}</b> ${verbosM.falha} a <b>${nomeCena(p.alvoId || PROPRIA)}</b> e falhou. A proposta é <b>${fc.desgraca.nome}</b>. Escolha a desgraça que acontece — ou nenhuma.`;
       const nomeMarcada = marcada === 'nada' ? 'Não acontece nada'
         : ((fc.tabelaEfectiva || []).find(l => l.id === marcada) || {}).nome;
       if (nomeMarcada) html += `<p class="dg-escolhida">Escolhida: <b>${nomeMarcada}</b></p>`;
@@ -3443,6 +3459,38 @@
     const rp = retrato();
     document.getElementById('faixa').dataset.estado = estado;
     acoesEl.classList.toggle('compacta', estado === 'base' || estado === 'atacar');
+    if (vezManualAberta) {
+      /* D1: a faixa da vez manual — só as acções da figura
+         comandada (sem Consumível nem Transformação, que são
+         dela). Os ganchos de repintura do fim correm como sempre,
+         para o cartão de desgraça e o contador VD acompanharem. */
+      if (estado === 'base') {
+        acoesEl.innerHTML =
+          B('atacar', '⚔', 'Atacar', 'primary') +
+          B('mover', '🚶', 'Mover') +
+          B('encerrar', '✓', rp ? 'Fim' : 'Encerrar', 'ghost');
+      } else if (estado === 'atacar') {
+        acoesEl.innerHTML =
+          B('voltar', '←', 'Voltar', 'ghost') +
+          B('ataque-basico-mestre', '⚔', `${(DADOS_COMBATE[comandada] || {}).arma || 'Ataque'}`, 'primary');
+      } else if (estado === 'mover') {
+        acoesEl.innerHTML =
+          B('cancelar', '✕', 'Cancelar', 'ghost') +
+          (vooOrigemDe(comandada)
+            ? B('subir-camada', '⬆', 'Subir camada') + B('descer-camada', '⬇', 'Descer camada')
+            : '');
+      } else if (estado === 'movendo') {
+        acoesEl.innerHTML = 'A andar…';
+      } else if (estado === 'resultado') {
+        acoesEl.innerHTML = B('continuar', '', 'Continuar ▸', 'primary');
+      } else if (estado === 'desgraca-lista') {
+        acoesEl.innerHTML = 'A escolher a desgraça…';
+      }
+      ataquePreviaDesenhar();
+      sincronizarCartaoDesgraca();
+      atualizarContadorVD();
+      return;
+    }
     if (estado === 'base') {
       // Rótulos curtos em retrato (dívida S-2 do desenho): é o que liberta
       // os ≥120 px da linha de mensagem sem tocar nos alvos de 44 px.
@@ -3992,6 +4040,7 @@
   }
   function iniciarVez(id) {
     vezAtual = id;
+    vezManualAberta = false; comandada = null; ctxMovManual = null;   // D1: a vez dela nunca é manual de monstro
     atacou = false;
     /* C-39: a declaração de reacção é da ronda — ao abrir a vez
        dela, a declaração por usar expira e a Reacção renova
@@ -4071,7 +4120,8 @@
            VIVO — um morto não abre vez nem com ela aMorrer. */
         avancarParaFiguraComVez();
         if (ordem[indiceVez] === PROPRIA) return;   // sem monstro vivo com vez (defensivo; o terminal trata)
-        iniciarVezIA(ordem[indiceVez], true);
+        if (comandoMestreActivo()) iniciarVezManual(ordem[indiceVez]);
+        else iniciarVezIA(ordem[indiceVez], true);
         if (fraseMorte) say(fraseAmbPV + fraseMorte + ` Vez de <b>${nomeCena(ordem[indiceVez])}</b>.`);
         return;
       }
@@ -4083,7 +4133,8 @@
            vivo, pelo mesmo caminho do ramo da corrida de morte. */
         avancarParaFiguraComVez();
         if (ordem[indiceVez] === PROPRIA) return;   // sem monstro vivo com vez (defensivo; o terminal trata)
-        iniciarVezIA(ordem[indiceVez], true);
+        if (comandoMestreActivo()) iniciarVezManual(ordem[indiceVez]);
+        else iniciarVezIA(ordem[indiceVez], true);
         say(fraseAmbPV + `A <b>Ong</b> continua caída — estabilizou, mas só uma cura a levanta. Vez de <b>${nomeCena(ordem[indiceVez])}</b>.`);
         return;
       }
@@ -4094,7 +4145,10 @@
     } else {
       // Depois da vez dela, o anúncio da vez seguinte traz a frase
       // do Encerrar (§1.4) — as duas contam-se numa linha só.
-      iniciarVezIA(seguinte, vezAtual === PROPRIA);
+      // D1: com o comando das figuras ligado, a vez seguinte é
+      // MANUAL do Mestre; desligado, é a vez da IA de sempre.
+      if (comandoMestreActivo()) iniciarVezManual(seguinte);
+      else iniciarVezIA(seguinte, vezAtual === PROPRIA);
     }
   }
 
@@ -4106,6 +4160,7 @@
    * serial e vive sob o símbolo de geração seqTurno (G-13.4). */
   function iniciarVezIA(id, aposOng) {
     vezAtual = id;
+    vezManualAberta = false; comandada = null; ctxMovManual = null;   // D1: a vez da IA nunca é manual
     estado = 'vez-ia';
     ESTADO_VLAB[id].reacaoDisponivel = true;   // a Reacção renova na vez da própria figura
     delete REACCOES_DECLARADAS[id];            // C-39: declaração por usar expira ao abrir a vez da figura (espelho de iniciarVez)
@@ -4156,6 +4211,419 @@
       vezDaIA(id, minhaSeq);
     });
   }
+  /* ---------- D1: a vez MANUAL do Mestre sobre outra figura ----------
+   * Gémea enxuta de iniciarVezIA: os mesmos portões de abertura
+   * (o tick do ambiente e a morte do caído, F-13 — são lei da
+   * batalha, não comportamento da IA), mas a vez NÃO se agenda:
+   * fica à espera das mãos do Mestre. A reserva nasce do
+   * orçamento da própria figura (orcamentoIA — a régua efectiva,
+   * com as metades de Fraco/corpo partido), em metros, numa
+   * variável separada da dela. Sem Transformação, sem consumível,
+   * sem prévia: mover, atacar com a arma da figura, encerrar. */
+  function iniciarVezManual(id) {
+    vezAtual = id;
+    vezManualAberta = false; comandada = null; ctxMovManual = null;
+    ESTADO_VLAB[id].reacaoDisponivel = true;   // a Reacção renova na vez da própria figura
+    delete REACCOES_DECLARADAS[id];            // C-39: a declaração por usar expira ao abrir a vez
+    if (ambTickInicioTurno(id) === 'caiu') {
+      if (batalhaFim) return;
+      say(rfTomarFrasePendente() + `<b>${nomeCena(id)}</b> caiu com o ambiente — a vez dele não acontece.`);
+      aguardar(ESPERA_FIM_MS).then(() => { if (!batalhaFim) passarVez(); });
+      return;
+    }
+    if ((ESTADO_VLAB[id].estados || []).includes('caido')) {
+      /* F-13: monstro caído = monstro MORTO ao abrir a vez — o
+         mesmo assento de iniciarVezIA, sem a vez acontecer. */
+      ESTADO_VLAB[id].estados = ESTADO_VLAB[id].estados.filter(e => e !== 'caido');
+      if (VIDA_MONSTROS[id] != null)
+        ESTADO_VLAB[id].danoSofrido = VIDA_MONSTROS[id];
+      vooCairCorpoSeEmVoo(id);
+      try {
+        const pm = view.apresentarMorte(id);
+        if (pm && pm.catch) pm.catch(() => {});
+      } catch (_) { view.setVivo(id, false); }
+      ambAoMorrerFigura(id);
+      say(`<b>${nomeCena(id)}</b> está caído — e monstro caído não se levanta: morreu.`);
+      if (vlabTodosMonstrosForaDeCombate()) { fimDeBatalha('vitoria'); return; }
+      if (batalhaFim) return;
+      aguardar(ESPERA_FIM_MS).then(() => { if (!batalhaFim) passarVez(); });
+      return;
+    }
+    if (fichaAberta) fecharFicha();          // a vez apresenta-se em ecrã limpo, como a da IA
+    vezManualAberta = true; comandada = id;
+    selecionar(id);
+    reservaManual = orcamentoIA(id) * CASA_M;
+    atacouManual = false;
+    alvo = null; ataquePendente = null;
+    estado = 'base';
+    atualizarVez(); renderAcoes();
+    say(rfTomarFrasePendente() + `Vez de <b>${nomeCena(id)}</b> — <b>você comanda</b> esta figura: <b>Mover</b>, <b>Atacar</b> (toque primeiro no alvo) ou <b>Encerrar</b>.`);
+    supSnapshot();                    // Supervisor: ponto de retorno deste turno
+  }
+  function entrarMoverManual() {
+    const id = comandada;
+    const u = unidade(id);
+    if (!u) return;
+    if (estado === 'movendo' || view.getState().moving) { say('Espere — a figura ainda está a andar.'); return; }
+    if (reservaManual < CASA_M) {
+      say(`<b>${nomeCena(id)}</b> andou o que podia andar nesta vez — aperte <b>Atacar</b> ou <b>Encerrar</b>.`);
+      return;
+    }
+    alcance = calcularAlcancePara(id, Math.floor(reservaManual / CASA_M));
+    estado = 'mover';
+    desenharAlcance();
+    renderAcoes();
+    say(`A mover <b>${nomeCena(id)}</b> · restam <b>${fmtM(reservaManual)}</b> — toque numa casa acesa${vooOrigemDe(id) ? ', ou <b>Subir camada</b> / <b>Descer camada</b> para voar um nível' : ''}.`);
+  }
+  /* O despacho do movimento manual: a mesma view.move da IA, com
+     o caminho e a conversão de voo da figura — mas SEM os
+     capturadores de partida dela (R2: a saída de adjacência e os
+     ataques de oportunidade são maquinaria da partida da Ong) e
+     com contexto próprio (ctxMovManual), que o moveend assenta. */
+  function despacharMovimentoManual(destino) {
+    const id = comandada;
+    const u = unidade(id);
+    if (!u) return;
+    estado = 'movendo'; renderAcoes();
+    const ctx = { id, destino: { x: destino.x, y: destino.y, z: destino.z || 0 }, passos: destino.passos };
+    ctxMovManual = ctx;
+    view.showMovement([]); view.showHover(null);
+    say(`<b>${nomeCena(id)}</b> está a andar…`);
+    { const deEv = { x: u.posicao.x, y: u.posicao.y };
+      if (camadaDe(id) > 0) deEv.z = camadaDe(id);
+      const paraEv = { x: destino.x, y: destino.y };
+      if ((destino.z || 0) > 0) paraEv.z = destino.z;
+      supRegistar('accao', { acao: 'mover', actor: id, de: deEv, para: paraEv, passos: destino.passos,
+        path: destino.path.map(p => { const q = { x: p.x, y: p.y }; if ((p.z || 0) > 0) q.z = p.z; return q; }) }); }
+    const voa = vooOrigemDe(id) != null;
+    try {
+      view.move(id, voa ? casaVistaVoo(destino) : casaVista(destino), {
+        path: destino.path.map(p => voa ? casaVistaVoo(p) : casaVista(p)),
+        durationMs: ritmo(Math.min(1200, Math.max(220, destino.passos * 140)))
+      });
+    } catch (_) {
+      ctxMovManual = null; estado = 'mover'; desenharAlcance(); renderAcoes();
+      say(`<b>${nomeCena(id)}</b> não conseguiu andar.`);
+      return;
+    }
+    /* Guarda contra um moveend perdido — NÃO destrutiva: a cena
+       anima em câmara lenta quando o desenho está pesado (o dt
+       por frame é truncado), por isso uma chegada pode demorar
+       muito mais que o relógio. Enquanto a figura se mexer, a
+       guarda rearma; se ela já estiver no destino (o evento é
+       que se perdeu), a guarda assenta a chegada ela própria,
+       pelo mesmo caminho do moveend. Só ao fim de várias voltas
+       sem movimento nem destino é que devolve a vez ao Mover. */
+    vigiarChegadaManual(ctx, 0);
+  }
+  function vigiarChegadaManual(ctx, tentativas) {
+    setTimeout(() => {
+      if (ctxMovManual !== ctx || estado !== 'movendo' || !vezManualAberta) return;
+      const s = view.getState();
+      const u = s.units.find(v => v.id === ctx.id);
+      const zU = Math.round(((u && u.altitude) || 0) / VOO_METROS_CAMADA);
+      if (u && u.posicao.x === ctx.destino.x && u.posicao.y === ctx.destino.y
+          && (ctx.destino.z || 0) === zU) {
+        assentarMovimentoManual(u, zU);
+        return;
+      }
+      if (s.moving && tentativas < 5) { vigiarChegadaManual(ctx, tentativas + 1); return; }
+      ctxMovManual = null;
+      estado = 'mover';
+      alcance = calcularAlcancePara(ctx.id, Math.floor(reservaManual / CASA_M));
+      desenharAlcance(); renderAcoes();
+      say(`<b>${nomeCena(ctx.id)}</b> parou.`);
+    }, 30000);
+  }
+  /* O assento de uma chegada manual (do moveend, ou da guarda
+     quando o evento se perde): a camada assenta (voo), a reserva
+     manual desconta os passos e o Mover repinta ou fecha. */
+  function assentarMovimentoManual(u, zChegada) {
+    const ctxM = ctxMovManual;
+    if (!ctxM) return;
+    ctxMovManual = null;
+    if (vooEstado[u.id]) vooEstado[u.id].z = zChegada;   // VOO: a camada assenta na chegada casada
+    reservaManual = Math.max(0, reservaManual - ctxM.passos * CASA_M);
+    if (estado === 'movendo' || estado === 'mover') {
+      if (reservaManual < CASA_M) {
+        estado = 'base'; alcance = new Map(); view.showMovement([]);
+        renderAcoes();
+        say(`<b>${nomeCena(u.id)}</b> chegou — e andou o que podia andar nesta vez.`);
+      } else {
+        estado = 'mover';
+        alcance = calcularAlcancePara(u.id, Math.floor(reservaManual / CASA_M));
+        desenharAlcance();
+        renderAcoes();
+        say(`<b>${nomeCena(u.id)}</b> chegou. Restam <b>${fmtM(reservaManual)}</b> — continue a andar, ou aperte <b>Cancelar</b>.`);
+      }
+    }
+  }
+  /* Subir/descer UM nível dentro do Mover (o desenho do voo,
+     REF_89): o passo vertical é a entrada (x, y, z±1) do próprio
+     alcance — ocupada ou fora da reserva, não existe e recusa-se. */
+  function passoCamadaManual(dz) {
+    const id = comandada;
+    if (estado !== 'mover' || !vooOrigemDe(id)) return;
+    if (dz > 0 && !vooPodeVoar(id)) { say(`<b>${nomeCena(id)}</b> não pode voar nesta batalha.`); return; }
+    const u = unidade(id);
+    if (!u) return;
+    const zNovo = camadaDe(id) + dz;
+    if (zNovo < 0) { say(`<b>${nomeCena(id)}</b> já está no chão.`); return; }
+    if (zNovo > VOO_TECTO) { say(`<b>${nomeCena(id)}</b> já está na camada mais alta.`); return; }
+    const destino = alcance.get(chave3(u.posicao.x, u.posicao.y, zNovo));
+    if (!destino) { say('Não dá para mudar de camada aqui — o ponto está ocupado ou longe demais.'); return; }
+    despacharMovimentoManual(destino);
+  }
+  /* Um passo de seta da figura comandada (só no Mover, só no
+     plano dela): a entrada vizinha do alcance, pelo mesmo
+     despacho do toque. Sem capturadores de partida (R2). */
+  function passoSetaManual(dx, dy) {
+    const id = comandada;
+    if (!id || estado !== 'mover') return;
+    if (view.getState().moving) return;
+    const u = unidade(id);
+    if (!u) return;
+    const destino = vooOrigemDe(id)
+      ? alcance.get(chave3(u.posicao.x + dx, u.posicao.y + dy, camadaDe(id)))
+      : alcance.get(chave(u.posicao.x + dx, u.posicao.y + dy));
+    if (!destino) { say('Não dá para andar para aí.'); return; }
+    despacharMovimentoManual(destino);
+  }
+
+  /* As acções da vez manual: só as três da figura comandada.
+     Tudo o resto (Consumível, Transformação, declarações dela)
+     responde com a frase de âmbito — nunca cai nos caminhos da
+     Ong, que validariam e registariam como se fosse ela. */
+  function tratarAcaoManual(acao) {
+    const id = comandada;
+    if (!id || batalhaFim) return;
+    if (acao === 'encerrar') { passarVez(); return; }
+    if (acao === 'continuar') {
+      if (estado === 'resultado') { estado = 'base'; renderAcoes(); say(`É a vez de <b>${nomeCena(id)}</b> — você comanda.`); }
+      return;
+    }
+    if (acao === 'voltar') {
+      if (estado === 'mover') sairMover();
+      if (estado === 'atacar' || estado === 'mover') { estado = 'base'; renderAcoes(); }
+      return;
+    }
+    if (acao === 'cancelar') {
+      if (estado === 'mover') { sairMover(); say(`Você fica por aqui — restavam <b>${fmtM(reservaManual)}</b> nesta vez.`); }
+      return;
+    }
+    if (acao === 'mover') { entrarMoverManual(); return; }
+    if (acao === 'atacar') {
+      estado = 'atacar'; renderAcoes();
+      say(alvo && alvo !== id
+        ? `Aperte <b>${(DADOS_COMBATE[id] || {}).arma || 'Ataque'}</b> para atacar <b>${nomeCena(alvo)}</b>.`
+        : `Toque na figura que <b>${nomeCena(id)}</b> vai atacar; depois abra <b>Atacar</b> e aperte a arma.`);
+      return;
+    }
+    if (acao === 'ataque-basico-mestre') { atacarManualMestre(); return; }
+    if (acao === 'subir-camada') { passoCamadaManual(1); return; }
+    if (acao === 'descer-camada') { passoCamadaManual(-1); return; }
+    say(`Essa acção não é da figura comandada — <b>${nomeCena(id)}</b> só move, ataca e encerra a vez.`);
+  }
+  /* O ataque manual do Mestre: a gémea parametrizada de atacarIA
+     — o mesmo motor (vlabResolverAtaqueCompleto em «proposta»,
+     com a semente e a verificação capturadas antes), o mesmo
+     parque de desgraças quando a falha crítica pede confirmação
+     (o pendente nasce com origem 'monstro' e o alvo nomeado, e é
+     o cartão de sempre que o assenta), os mesmos assentos de
+     aplicação. O que muda: o alvo é o marcado pelo Mestre (não
+     está cablado à Ong) e a vez não fecha sozinha — quem a fecha
+     é o Encerrar dele. A apresentação do confronto corre como
+     nos golpes da IA; a esquiva do alvo só se tenta quando o
+     alvo é a Ong (o único uso provado dessa máquina). */
+  async function atacarManualMestre() {
+    const id = comandada;
+    if (!id || (estado !== 'atacar' && estado !== 'base')) return;
+    if (atacouManual) { say(`<b>${nomeCena(id)}</b> já atacou nesta vez.`); return; }
+    if (!alvo || alvo === id) { say(`Toque primeiro na figura que <b>${nomeCena(id)}</b> vai atacar.`); return; }
+    const alvoId = alvo;
+    const alvoU = unidade(alvoId);
+    if (!alvoU || alvoU.vivo === false) { say('Esse alvo já não está em combate.'); return; }
+    if (distanciaEntre(id, alvoId) > alcanceEmCasas(DADOS_COMBATE[id].alcance)) {
+      supRegistar('bloqueada', { acao: 'ataque', actor: id, alvo: alvoId, razao: 'Alvo fora de alcance da figura comandada' });
+      say(`<b>${nomeCena(id)}</b> não alcança <b>${nomeCena(alvoId)}</b> — aproxime-o com <b>Mover</b>.`);
+      return;
+    }
+    const verbos = FRASES_IA[id] || { acerto: 'atacou', falha: 'tentou atacar' };
+    const sementeDG = vlabSemente(), verificacaoDG = vlabVerificacao();
+    const s = vlabResolverAtaqueCompleto(id, alvoId, {
+      modoDesgraca: 'proposta', semente: sementeDG, verificacao: verificacaoDG });
+    if (s.erro) {
+      supRegistar('bloqueada', { acao: 'ataque', actor: id, alvo: alvoId, razao: s.erro.codigo });
+      say(s.erro.codigo === 'ARMA_QUEBRADA'
+        ? `<b>${nomeCena(id)}</b> não consegue atacar — a arma dele está quebrada.`
+        : `<b>${nomeCena(id)}</b> não consegue atacar agora.`);
+      estado = 'base'; renderAcoes();
+      return;
+    }
+    atacouManual = true;
+    if (s.resultado === 'falhaCritica') {
+      const fcProp = s.soDoMestre && s.soDoMestre.falhaCritica;
+      if (fcProp && fcProp.requerConfirmacao) {
+        /* O PARQUE, como o da IA: estaciona sem registar nada; o
+           registo nasce depois da decisão dele, com a escolha. */
+        const pendente = {
+          origem: 'monstro', atacanteId: id, alvoId, seq: seqTurno, supEpoca,
+          semente: sementeDG, verificacao: verificacaoDG,
+          recibo: s, proposta: fcProp.desgraca.id,
+          escolhaMarcada: undefined, assentador: null
+        };
+        desgracaMonstroPendente = pendente;
+        estado = 'desgraca-lista'; renderAcoes();
+        const desfecho = await new Promise(res => { pendente.assentador = res; });
+        if (!desfecho || desfecho.morta || batalhaFim || supCongelado
+            || supEpoca !== pendente.supEpoca || !vezManualAberta || vezAtual !== id) return;
+        const escolha = desfecho.escolha;
+        estado = 'base';
+        if (escolha === 'nada') {
+          supRegistar('accao', { acao: 'ataque', actor: id, alvo: alvoId, acerto: false, falhaCritica: null });
+          supRegistar('accao', { acao: 'desgraca-escolha', actor: id, proposta: pendente.proposta, escolha: 'nada' });
+          say(`<b>${nomeCena(id)}</b> ${verbos.falha} <b>${nomeCena(alvoId)}</b> e falhou. ` + vlabFraseDesgraca(id, null));
+          renderAcoes();
+          return;
+        }
+        const s2 = vlabResolverAtaqueCompleto(id, alvoId, {
+          modoDesgraca: 'escolha', semente: pendente.semente, verificacao: pendente.verificacao,
+          desgracaEscolhida: escolha,
+          confirmacaoDeProposta: { proposta: pendente.proposta } });
+        if (s2.erro) {
+          supRegistar('bloqueada', { acao: 'ataque', actor: id, alvo: alvoId, razao: s2.erro.codigo });
+          say(`<b>${nomeCena(id)}</b> ${verbos.falha} <b>${nomeCena(alvoId)}</b> e falhou.`);
+          renderAcoes();
+          return;
+        }
+        const fc = vlabAplicarAtacanteDepois(id, s2);
+        supRegistar('accao', { acao: 'ataque', actor: id, alvo: alvoId, acerto: false, falhaCritica: fc ? fc.desgraca.id : null });
+        supRegistar('accao', { acao: 'desgraca-escolha', actor: id, proposta: pendente.proposta, escolha });
+        if (s2.desgracaPendente)
+          supRegistar('accao', { acao: 'desgraca-pendente', actor: id, tipo: s2.desgracaPendente.tipo, aplicada: false, motivo: 'desgraça pendente não aplicada nesta casca (sem aliados ao alcance — contexto da batalha a solo)' });
+        say(`<b>${nomeCena(id)}</b> ${verbos.falha} <b>${nomeCena(alvoId)}</b> e falhou. ` + vlabFraseDesgraca(id, fc));
+        renderAcoes();
+        return;
+      }
+      const fc = vlabAplicarAtacanteDepois(id, s);
+      supRegistar('accao', { acao: 'ataque', actor: id, alvo: alvoId, acerto: false, falhaCritica: fc ? fc.desgraca.id : null });
+      if (s.desgracaPendente)
+        supRegistar('accao', { acao: 'desgraca-pendente', actor: id, tipo: s.desgracaPendente.tipo, aplicada: false, motivo: 'desgraça pendente não aplicada nesta casca (sem aliados ao alcance — contexto da batalha a solo)' });
+      say(`<b>${nomeCena(id)}</b> ${verbos.falha} <b>${nomeCena(alvoId)}</b> e falhou. ` + vlabFraseDesgraca(id, fc));
+      estado = 'base'; renderAcoes();
+      return;
+    }
+    if (s.resultado === 'erra') {
+      supRegistar('accao', { acao: 'ataque', actor: id, alvo: alvoId, acerto: false });
+      if (alvoId === PROPRIA) tentarEsquiva(id, PROPRIA);
+      const epocaFalhaM = supEpoca;
+      await apresentarConfronto(id, alvoId, true);
+      if (seqTurnoMorto(epocaFalhaM, id)) return;
+      estado = 'resultado'; renderAcoes();
+      say(`<b>${nomeCena(id)}</b> ${verbos.falha} <b>${nomeCena(alvoId)}</b> e falhou.`);
+      return;
+    }
+    if (!supConferirSoma(s.danoAplicado.parcelas.map(p => ({ valor: p.subtotal })), s.danoAplicado.total, id)) { estado = 'base'; renderAcoes(); return; }
+    const total = s.totalEfectivo;
+    supRegistar('accao', { acao: 'ataque', actor: id, alvo: alvoId, acerto: true, dano: total });
+    const epocaAcertoM = supEpoca;
+    await apresentarConfronto(id, alvoId, true);
+    if (seqTurnoMorto(epocaAcertoM, id)) { continuarAposApresentacao = false; return; }
+    mostrarImpacto(alvoId);
+    const desfecho = vlabAplicarAlvoDepois(alvoId, s);
+    if (alvoId === PROPRIA) {
+      if (desfecho === 'morreu') { fimDeBatalha('morte'); return; }
+      if (desfecho === 'aMorrer') {
+        entrarAMorrer();
+        vezManualAberta = false; comandada = null; ctxMovManual = null;
+        aguardar(ESPERA_FIM_MS).then(() => { if (!batalhaFim) passarVez(); });
+        return;
+      }
+      if (desfecho === 'falhaDeMorte') {
+        const em = ESTADO_VLAB.ong.estadoMorte;
+        supRegistar('accao', { acao: 'falha-de-morte-por-golpe', actor: id, alvo: PROPRIA,
+          sucessos: em ? em.sucessos : null, falhas: em ? em.falhas : null });
+        estado = 'resultado'; renderAcoes();
+        say(`<b>${nomeCena(id)}</b> ${verbos.acerto} a <b>Ong</b> caída — ela piora visivelmente.`);
+        return;
+      }
+    } else if (desfecho === 'caiu') {
+      if (alvo === alvoId) alvo = null;
+      if (vlabTodosMonstrosForaDeCombate()) { fimDeBatalha('vitoria'); return; }
+    }
+    estado = 'resultado'; renderAcoes();
+    say(`<b>${nomeCena(id)}</b> ${verbos.acerto} <b>${nomeCena(alvoId)}</b> — perdeu <b>${total}</b> de vida.`);
+  }
+  /* A guarda de época das continuações do ataque manual: a
+     resolução pertence à linha do tempo que a rolou — restauro,
+     gelo, fim de batalha ou a vez já fechada matam-na em silêncio,
+     como nos ramos da IA. */
+  function seqTurnoMorto(epoca, id) {
+    return supEpoca !== epoca || batalhaFim || supCongelado || !vezManualAberta || vezAtual !== id;
+  }
+  /* O toque no mundo durante a vez manual: tocar noutra figura
+     marca-a como alvo DA FIGURA COMANDADA (nunca «alvo da Ong»);
+     tocar no chão em Mover despacha o movimento dela; tocar na
+     própria figura comandada só a nomeia. As guardas de estado
+     são as do toque de sempre (resultado por ler, decisão por
+     resolver, figura a andar). */
+  function tratarToqueManual(clientX, clientY) {
+    const id = comandada;
+    if (estado === 'movendo' || view.getState().moving) { say(`Espere — <b>${nomeCena(id)}</b> ainda está a andar.`); return; }
+    if (estado === 'resultado' || apresentacaoEmCurso) { say('Aperte <b>Continuar</b> para seguir.'); return; }
+    if (decisaoPorResolver()) { say(FRASE_DECISAO_PENDENTE); return; }
+    const hit = view.hitTest(clientX, clientY);
+    if (hit.unitId) {
+      const fig = unidade(hit.unitId);
+      const nome = fig ? fig.nome : nomeCena(hit.unitId);
+      if (hit.unitId === id) {
+        if (estado === 'mover') { say(`<b>${nome}</b> já está aqui — toque numa casa acesa para andar.`); return; }
+        abrirFicha(hit.unitId);
+        say(`Você comanda <b>${nome}</b> nesta vez.`);
+        return;
+      }
+      alvo = hit.unitId;
+      if (estado === 'mover') sairMover();
+      else if (estado === 'atacar') { estado = 'base'; renderAcoes(); }
+      abrirFicha(hit.unitId);
+      say(`<b>${nome}</b> é o alvo. Aperte <b>Atacar</b> para <b>${nomeCena(id)}</b> o atacar.`);
+      return;
+    }
+    if (estado === 'mover') {
+      const cel = casaMotor(hit.cell);
+      if (!cel) { say('Toque numa casa do campo para andar.'); return; }
+      const u = unidade(id);
+      /* O destino é a entrada do alcance nessa coluna: na camada
+         actual, se existir; numa voadora, a mais próxima da camada
+         dela (a subida/descida deliberada faz-se pelos botões). */
+      const zAct = camadaDe(id);
+      let destino = null;
+      for (const c of alcance.values()) {
+        if (c.x !== cel.x || c.y !== cel.y) continue;
+        if ((c.z || 0) === zAct) { destino = c; break; }
+        if (!destino
+            || Math.abs((c.z || 0) - zAct) < Math.abs((destino.z || 0) - zAct)
+            || (Math.abs((c.z || 0) - zAct) === Math.abs((destino.z || 0) - zAct) && c.passos < destino.passos))
+          destino = c;
+      }
+      if (!destino) {
+        supRegistar('bloqueada', { acao: 'mover', actor: id, razao: 'Casa fora da reserva de movimento' });
+        say(ajudaGrid
+          ? 'Essa casa está longe demais — escolha uma das <b>casas acesas</b>.'
+          : `Longe demais — <b>${nomeCena(id)}</b> ainda tem <b>${fmtM(reservaManual)}</b> nesta vez.`);
+        return;
+      }
+      if (u && destino.x === u.posicao.x && destino.y === u.posicao.y && (destino.z || 0) === zAct) {
+        say(`<b>${u.nome}</b> já está nessa casa — escolha outra.`);
+        return;
+      }
+      despacharMovimentoManual(destino);
+      return;
+    }
+    if (estado !== 'base') { say('Isso é o chão. Aperte <b>Voltar</b> para regressar às acções base.'); return; }
+    say('Isso é o chão. Aperte <b>Mover</b>, toque numa casa acesa. Alvo: toque na figura.');
+  }
+
   function vezDaIA(id, seq) {
     if (distanciaEntre(id, PROPRIA) <= alcanceEmCasas(DADOS_COMBATE[id].alcance)) {
       agendarAtaqueIA(id, seq);              // já ao alcance: não anda, ataca
@@ -4687,6 +5155,17 @@
         renderAcoes();
         return;
       }
+    }
+    /* D1: na vez manual do Mestre, as acções são da figura
+       comandada — tratam-se no caminho próprio, ANTES da guarda
+       de vez (que as fecharia a todas) e ANTES do validador dela
+       (que as registaria com actor PROPRIA). Com um parque de
+       desgraça aberto, só a decisão (acima) passa; o resto ouve
+       a frase da decisão pendente, como na vez dela. */
+    if (vezManualAberta) {
+      if (desgracaMonstroPendente) { say(FRASE_DECISAO_PENDENTE); return; }
+      tratarAcaoManual(acao);
+      return;
     }
     if (vezAtual !== PROPRIA || batalhaFim) { fraseEsperaVez(); return; }
     /* M1 (§3.3): a guarda única em tratarAcao — com um parque de
@@ -5233,6 +5712,9 @@
     if (supCongelado) { say('A batalha parou — aperte <b>Recomeçar</b>.'); return; }
     // Na vez de um monstro (ou no fim), o chip responde como os
     // toques: frase de espera (§1.5); a ficha dela vê-se antes e depois.
+    // D1: na vez manual, a frase nomeia o comando em vez de mandar
+    // esperar por uma IA que não vai jogar.
+    if (vezManualAberta) { say(`É a vez de <b>${nomeCena(vezAtual)}</b> — você comanda essa figura. A ficha da <b>Ong</b> vê-se na vez dela.`); return; }
     if (vezAtual !== PROPRIA || batalhaFim) { fraseEsperaVez(); return; }
     // Passo de seta em curso: o toque não cancela o passo (E-T13L-2).
     if (estado === 'mover' && (passoEmCurso || view.getState().moving)) { say('Espere — ainda está a andar.'); return; }
@@ -5268,6 +5750,10 @@
        (EXP-R1): responde com a frase do mundo, sem silêncio. */
     if (supCongelado) { say('A batalha parou — aperte <b>Recomeçar</b>.'); return; }
     fecharCfg();
+    /* D1: na vez manual do Mestre, o toque é o comando dele sobre
+       a figura da vez — caminho próprio, antes da intercepção de
+       espera (que o trataria como espectador da IA). */
+    if (vezManualAberta) { tratarToqueManual(clientX, clientY); return; }
     // Intercepção à entrada (§1.5/§1.7): na vez de um monstro ou no
     // fim da batalha, qualquer toque só produz a frase de espera —
     // não abre cartão, não marca alvo, não selecciona.
@@ -5465,8 +5951,36 @@
         || (cC && cC.x === u.posicao.x && cC.y === u.posicao.y && (cC.z || 0) === zChegada))
         vooEstado[u.id].z = zChegada;
     }
+    /* D1: a camada de uma chegada MANUAL assenta TAMBÉM AQUI,
+       antes da conferência de invariantes — como a da IA assenta
+       no bloco acima (reserva/contexto). Sem isto, a invariante
+       «Camada e altitude desencontradas» lê a altitude nova da
+       cena contra a camada velha da casca e congela a batalha a
+       meio do voo do Mestre. O resto do assento da chegada
+       (reserva, repintura da faixa) corre no ramo próprio, mais
+       abaixo, depois das conferências. */
+    if (ctxMovManual && vezManualAberta && u.id === ctxMovManual.id
+      && u.posicao.x === ctxMovManual.destino.x && u.posicao.y === ctxMovManual.destino.y
+      && (ctxMovManual.destino.z || 0) === zChegada
+      && vooEstado[u.id]) {
+      vooEstado[u.id].z = zChegada;
+    }
     supConferirInvariantes('moveend');         // Supervisor: invariantes após cada movimento
     try { supCritFecharMovimento(u.id); } catch (_) { supCritErrosCamada++; }   // T1.7: fecha o segmento de movimento (passivo)
+    /* D1: a chegada de um movimento MANUAL do Mestre tem dono
+       próprio (ctxMovManual), como a da IA tem o contextoIA:
+       casa com o destino prometido → a camada assenta (voo), a
+       reserva manual desconta os passos e o Mover repinta. Sem
+       casamento, ignora-se — e NUNCA cai no ramo da IA abaixo,
+       que a leria como um voo dela. */
+    if (ctxMovManual && vezManualAberta && u.id === ctxMovManual.id) {
+      const ctxM = ctxMovManual;
+      if (u.posicao.x === ctxM.destino.x && u.posicao.y === ctxM.destino.y
+          && (ctxM.destino.z || 0) === zChegada) {
+        assentarMovimentoManual(u, zChegada);
+      }
+      return;
+    }
     if (u.id !== PROPRIA) {
       /* Reserva de destino em voo: esta figura pousou — a reserva
          dela morre aqui, chegue o moveend a tempo ou tarde (depois
@@ -10007,7 +10521,11 @@
     const SETAS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
     const dir = SETAS[e.key];
     if (!dir) return;
-    if (estado !== 'mover' || vezAtual !== PROPRIA || batalhaFim || fichaAberta || !cfgEl.hidden) return;
+    if (estado !== 'mover' || batalhaFim || fichaAberta || !cfgEl.hidden) return;
+    /* D1: na vez manual, a seta anda a figura comandada (o mesmo
+       Mover, pelo despacho do toque); na vez dela, é a de sempre. */
+    if (vezManualAberta) { e.preventDefault(); passoSetaManual(dir[0], dir[1]); return; }
+    if (vezAtual !== PROPRIA) return;
     e.preventDefault();          // o ramo actua: a página não rola a meio do gesto
     passoSeta(dir[0], dir[1]);
   });
@@ -11333,6 +11851,33 @@
         sincVoo();
       });
       sincVoo();
+      /* — Comandar as figuras (teste): o comando manual do
+         Mestre sobre as figuras que não a Ong (D1). Nasce
+         DESLIGADO em cada abertura da página, como os outros
+         testes; ligado, as vezes deles abrem manuais para ele
+         (mover, atacar, voar) em vez de serem jogadas pela IA. */
+      const g3 = cfgGrupo(pane, 'Comandar as figuras (teste)',
+        'Ligado: nas vezes dos monstros e das outras figuras, é você que comanda — mover, atacar e voar com o Grifo. Desligado: a IA joga por eles, como hoje. Vale a partir da próxima vez deles.');
+      const linhaTogCmd = document.createElement('div'); linhaTogCmd.className = 'cfgrow';
+      const rotTogCmd = document.createElement('span'); rotTogCmd.className = 'cl';
+      rotTogCmd.innerHTML = 'Comandar as figuras<small>a IA não joga por elas</small>';
+      const togCmd = document.createElement('button');
+      togCmd.type = 'button'; togCmd.id = 'teste-comando'; togCmd.className = 'tog';
+      linhaTogCmd.appendChild(rotTogCmd); linhaTogCmd.appendChild(togCmd);
+      g3.appendChild(linhaTogCmd);
+      const sincCmd = () => {
+        togCmd.classList.toggle('on', comandoMestreFiguras);
+        togCmd.textContent = comandoMestreFiguras ? 'Ligado' : 'Desligado';
+        togCmd.setAttribute('aria-pressed', String(comandoMestreFiguras));
+      };
+      togCmd.addEventListener('click', () => {
+        comandoMestreFiguras = !comandoMestreFiguras;
+        sincCmd();
+        say(comandoMestreFiguras
+          ? 'Comando das figuras <b>ligado</b> — a partir da próxima vez de um monstro, é você que o comanda.'
+          : 'Comando das figuras <b>desligado</b> — a IA volta a jogar pelos monstros.');
+      });
+      sincCmd();
     }
   }
   activarAbaCfg('jogo');

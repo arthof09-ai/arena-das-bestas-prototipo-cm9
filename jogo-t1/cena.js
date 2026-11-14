@@ -778,7 +778,7 @@
                    neve a desligar (a neve não respinga). Os derivados
                    da âncora não contam a camada — ficam byte-iguais. */
                 const cfTeste052 = testeChuva052.nivel;
-                let resp = (testeChuva052.ligada && !deNeve && cf > 0) ? Math.round(ambNivel(quality === 'baixa' ? RESP_CONT_BAIXA : RESP_CONT, cfTeste052)) : 0;
+                let resp = (testeChuva052.ligada && !deNeve) ? Math.round(ambNivel(quality === 'baixa' ? RESP_CONT_BAIXA : RESP_CONT, cfTeste052)) : 0;
                 if (ambCapChuva != null) resp = Math.min(resp, ambCapChuva);
                 respGeo.setDrawRange(0, resp);
                 respPts.visible = resp > 0;

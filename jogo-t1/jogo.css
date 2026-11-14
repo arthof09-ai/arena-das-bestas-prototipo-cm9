@@ -104,7 +104,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 .tog.on{background:var(--ouro);color:#1c1508}
 #cfgpop .stats{flex:none;height:22px;line-height:22px;margin:6px 0 0;padding:0;
   border-top:1px dashed rgba(201,162,39,.25);
-  font-size:12px;color:var(--pergaminho-mudo);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;visibility:hidden}
+  font-size:12px;color:var(--pergaminho-mudo);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
 /* ---------- estrutura das abas do ⚙ ----------
    REF_88: a barra de abas é UMA fileira horizontal só com os
    nomes (a explicação de cada aba vive dentro da aba, no topo) —
