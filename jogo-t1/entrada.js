@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_94';
+  var VERSAO_JOGO = 'REF_95';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -320,7 +320,10 @@
     { chave: 'hudt1-tela-vermelha', rotulo: 'Tela vermelha', tipo: 'tog',
       padrao: 'ligado', ligado: 'Ligada', desligado: 'Desligada' },
     { chave: 'hudt1-tela-vermelha-piscar', rotulo: 'Piscar da tela vermelha', tipo: 'tog',
-      padrao: 'ligado', ligado: 'Ligado', desligado: 'Desligado' }
+      padrao: 'ligado', ligado: 'Ligado', desligado: 'Desligado' },
+    { chave: 'hudt1-mostrar-fps', rotulo: 'Mostrar FPS', tipo: 'tog',
+      padrao: 'desligado', ligado: 'Ligado', desligado: 'Desligado',
+      sub: 'quadros por segundo, no fundo das configurações do jogo' }
   ];
   function lerDefinicao(def) {
     try {
@@ -620,6 +623,7 @@
     ['hudt1-numeros-dano', 'ligado'],
     ['hudt1-tela-vermelha', 'ligado'],
     ['hudt1-tela-vermelha-piscar', 'ligado'],
+    ['hudt1-mostrar-fps', 'desligado'],
     ['hudt1-som-geral', '100'],
     ['hudt1-som-musica', '100'],
     ['hudt1-som-efeitos', '100'],

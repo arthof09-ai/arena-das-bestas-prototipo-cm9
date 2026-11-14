@@ -263,6 +263,19 @@
      parte do interruptor geral. */
   let telaVermelhaPiscar = true;
   try { telaVermelhaPiscar = localStorage.getItem('hudt1-tela-vermelha-piscar') !== 'desligado'; } catch (_) {}
+
+  /* Opção "Mostrar FPS" (configurações → Gráficos): palavra do
+     Mestre, 14/11/2026 07:26 — «Mostrar o FPS tem que ser uma
+     configuração de gráfico, e fica pré setado como desligada,
+     liga quem quer». A faixa de estatísticas (FPS · triângulos ·
+     chamadas) no fundo do ⚙ só aparece a quem a ligar, nos dois
+     papéis; nasce DESLIGADA — sem chave guardada lê-se desligado
+     (o mesmo lado do omisso do Mudo). Substitui o fim da D2 da
+     REF_93 (faixa sempre visível no Mestre). Só a MOSTRA muda:
+     a amostragem de fluidez do Supervisor, do Crítico e da escada
+     de degradação corre sempre, ligue-se ou não a faixa. */
+  let mostrarFps = false;
+  try { mostrarFps = localStorage.getItem('hudt1-mostrar-fps') === 'ligado'; } catch (_) {}
   let mortePropriaAdjudicada = false;
   const camadaVermelha = document.createElement('div');
   camadaVermelha.id = 'tela-vermelha';
@@ -6124,15 +6137,19 @@
   });
   view.on('camera', () => { sincronizarCamera(); mostrarZoom(); });
   view.on('zoom', () => mostrarZoom());
-  /* D3-P0-1 (item 1.2 do inventário fechado): a linha de estatísticas
-     (FPS · triângulos · chamadas) é texto técnico — na vista da Party
-     o nó nem nasce no DOM; no Mestre, comportamento igual ao de hoje.
-     A amostragem de fluidez do Supervisor e do Crítico corre nas DUAS
-     vistas (alimenta-se também da página da Party) — a guarda cobre
-     SÓ a escrita no nó, nunca o handler inteiro. */
-  if (!MODO_MESTRE) { const stSemMestre = $('stats'); if (stSemMestre) stSemMestre.remove(); }
+  /* A linha de estatísticas (FPS · triângulos · chamadas) é texto
+     técnico: o D3-P0-1 (item 1.2 do inventário fechado) fê-la nem
+     nascer no DOM na vista da Party, e a REF_93 (D2) repô-la sempre
+     visível no Mestre. A palavra do Mestre de 14/11/2026 07:26
+     supersede os dois fins: «Mostrar FPS» é configuração de
+     gráfico, nasce DESLIGADA e liga quem quer — o nó só existe no
+     DOM de quem a ligou, nos dois papéis. A amostragem de fluidez
+     do Supervisor e do Crítico corre nas DUAS vistas (alimenta-se
+     também da página da Party) — a guarda cobre SÓ a escrita no
+     nó, nunca o handler inteiro. */
+  if (!mostrarFps) { const stOff = $('stats'); if (stOff) stOff.remove(); }
   view.on('stats', s => {
-    if (MODO_MESTRE) { const st = $('stats'); if (st) st.textContent = `${Math.round(s.fps)} FPS · ${s.triangles ?? '—'} triângulos · ${s.drawCalls ?? '—'} chamadas`; }
+    if (mostrarFps) { const st = $('stats'); if (st) st.textContent = `${Math.round(s.fps)} FPS · ${s.triangles ?? '—'} triângulos · ${s.drawCalls ?? '—'} chamadas`; }
     supAmostraStats(s);                      // Supervisor: fluidez (amostras e lacunas grandes)
     try { supCritAmostraStats(s); } catch (_) { supCritErrosCamada++; }   // T1.7: amostras do Crítico (passivo)
   });
@@ -6587,6 +6604,56 @@
   });
   marcarPiscar();
 
+  /* ---------- Mostrar FPS (REF_95) ----------
+   * Linha «Mostrar FPS» criada aqui (o index.html é sagrado),
+   * depois do Piscar e antes de #stats, classificada para a aba
+   * Gráficos — palavra do Mestre, 14/11/2026 07:26: «Mostrar o
+   * FPS tem que ser uma configuração de gráfico, e fica pré
+   * setado como desligada, liga quem quer.» O estado vive junto
+   * das outras preferências (topo, chave hudt1-mostrar-fps); aqui
+   * moram a linha, o ouvinte e a presença do nó #stats: ligado,
+   * o nó está no fundo do ⚙ e recebe os valores vivos; desligado,
+   * o nó nem está no DOM — como a vista da Party sempre viveu. */
+  const linhaFps = document.createElement('div');
+  linhaFps.className = 'cfgrow';
+  const rotuloFps = document.createElement('span');
+  rotuloFps.className = 'cl';
+  rotuloFps.innerHTML = 'Mostrar FPS<small>os quadros por segundo, no fundo das configurações</small>';
+  const togFps = document.createElement('button');
+  togFps.id = 'tog-fps';
+  togFps.className = 'tog';
+  togFps.type = 'button';
+  linhaFps.appendChild(rotuloFps);
+  linhaFps.appendChild(togFps);
+  cfgEl.insertBefore(linhaFps, $('stats'));
+  function marcarFps() {
+    togFps.classList.toggle('on', mostrarFps);
+    togFps.textContent = mostrarFps ? 'Ligado' : 'Desligado';
+    togFps.setAttribute('aria-pressed', String(mostrarFps));
+  }
+  function aplicarMostrarFps() {
+    let st = $('stats');
+    if (mostrarFps) {
+      if (!st) {
+        st = document.createElement('p');
+        st.id = 'stats';
+        st.className = 'stats';
+        st.textContent = '— FPS';
+        cfgEl.appendChild(st);
+      }
+    } else if (st) st.remove();
+  }
+  togFps.addEventListener('click', () => {
+    mostrarFps = !mostrarFps;
+    try { localStorage.setItem('hudt1-mostrar-fps', mostrarFps ? 'ligado' : 'desligado'); } catch (_) {}
+    marcarFps();
+    aplicarMostrarFps();
+    say(mostrarFps
+      ? 'Mostrar FPS <b>ligado</b> — os quadros por segundo aparecem no fundo das configurações.'
+      : 'Mostrar FPS <b>desligado</b> — os quadros por segundo não aparecem.');
+  });
+  marcarFps();
+
   /* ---------- Secção SOM pessoal (tranche t-config-entrada) ----------
    * Os volumes desta pessoa, neste aparelho — as mesmas chaves, os
    * mesmos rótulos e a mesma nota do painel da entrada (a entrada
@@ -6685,6 +6752,7 @@
     somGravar('hudt1-numeros-dano', 'ligado');
     somGravar('hudt1-tela-vermelha', 'ligado');
     somGravar('hudt1-tela-vermelha-piscar', 'ligado');
+    somGravar('hudt1-mostrar-fps', 'desligado');
     somGravar('hudt1-som-geral', '100');
     somGravar('hudt1-som-musica', '8');
     somGravar('hudt1-som-efeitos', '100');
@@ -6698,6 +6766,7 @@
     numerosDano = true; marcarDanos();
     telaVermelha = true; marcarVermelha();
     telaVermelhaPiscar = true; marcarPiscar();
+    mostrarFps = false; marcarFps(); aplicarMostrarFps();
     aplicarTelaVermelha();
     somGeral = 100; somMusica = 8; somEfeitos = 100; somMudo = false;
     for (const par of [[somUI.geral, 100], [somUI.musica, 8], [somUI.efeitos, 100]]) {
@@ -11569,6 +11638,7 @@
     else if (temCfg(el, '#zoom-menos')) R.zoom = el;
     else if (temCfg(el, '#tog-grid')) R.grid = el;
     else if (temCfg(el, '#tog-danos')) R.danos = el;
+    else if (temCfg(el, '#tog-fps')) R.fps = el;
     else if (temCfg(el, '[data-qualidade]')) R.qualidade = el;
     else if (temCfg(el, '#cfg-terminar')) R.terminar = el;
     else if (temCfg(el, '#tog-auto')) R.auto = el;
@@ -11643,6 +11713,7 @@
     const g = cfgGrupo(pane, 'A sua tela', null);
     if (R.qualidade) g.appendChild(R.qualidade);
     if (R.danos) g.appendChild(R.danos);
+    if (R.fps) g.appendChild(R.fps);
     if (R.vermelha) g.appendChild(R.vermelha);
     if (R.piscar) g.appendChild(R.piscar);
     if (R.vd) g.appendChild(R.vd);
