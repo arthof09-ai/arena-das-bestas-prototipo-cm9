@@ -22,7 +22,7 @@ window.TronoWorld = function (T, scene, area) {
     scene.add(grupo);
     scene.fog = new T.Fog(C(0x100d0a), 55, 190);
     window.__tronoModeloPronto = false;
-    new T.GLTFLoader().load('modelos/cenario/sala-trono.glb', gltf => {
+    const aoModelo = gltf => {
         const modelo = gltf.scene;
         modelo.traverse(o => {
             if (o.isMesh) {
@@ -35,9 +35,199 @@ window.TronoWorld = function (T, scene, area) {
                 if (/^(Teto_|Viga_|Roseta_)/.test(o.name || '')) o.visible = false;
             }
         });
-        grupo.add(modelo);
+        grupo.add(fundirSala(modelo));
         window.__tronoModeloPronto = true;
-    }, undefined, () => { window.__tronoModeloPronto = 'erro'; });
+    };
+    /* FUSÃO POR MATERIAL (t-trono-otimizacao O3, sintoma B): a sala
+       chega com ~300 malhas visíveis — uma draw call por malha. Como
+       ela é estática e os materiais são só 14, as malhas visíveis
+       fundem-se numa por material, com as transformações do mundo
+       cozidas nos vértices. Nem um píxel muda: mesmos materiais
+       (as mesmas instâncias), mesma geometria, mesmas posições —
+       só deixa de haver centenas de chamadas de desenho. As malhas
+       escondidas (corte do tecto) ficam fora, como já estavam fora
+       do ecrã. Malha com assinatura de atributos diferente da do
+       seu grupo não se funde — entra como está (defensivo). */
+    const fundirSala = (raiz) => {
+        raiz.updateMatrixWorld(true);
+        const malhas = [];
+        raiz.traverse(o => { if (o.isMesh && o.visible) malhas.push(o); });
+        const grupos = new Map();
+        const soltas = [];
+        for (const o of malhas) {
+            if (Array.isArray(o.material) || !o.geometry || !o.geometry.attributes.position) { soltas.push(o); continue; }
+            const assinatura = Object.keys(o.geometry.attributes).sort().join(',');
+            const chave = o.material.uuid + '|' + assinatura;
+            if (!grupos.has(chave)) grupos.set(chave, { material: o.material, assinatura, lista: [] });
+            grupos.get(chave).lista.push(o);
+        }
+        const fundido = new T.Group();
+        const v3 = new T.Vector3();
+        for (const { material, lista } of grupos.values()) {
+            if (lista.length === 1) { soltas.push(lista[0]); continue; }
+            const nomes = Object.keys(lista[0].geometry.attributes).sort();
+            let totalV = 0, totalI = 0;
+            for (const o of lista) {
+                totalV += o.geometry.attributes.position.count;
+                totalI += o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count;
+            }
+            const atributos = {};
+            for (const nome of nomes) {
+                const a0 = lista[0].geometry.attributes[nome];
+                atributos[nome] = new Float32Array(totalV * a0.itemSize);
+            }
+            const indices = new Uint32Array(totalI);
+            let offV = 0, offI = 0;
+            const mNorm = new T.Matrix3();
+            /* DESQUANTIZAÇÃO (correcção medida no arnês de fotos,
+               15/11): o GLB preparado (O2) traz os atributos
+               quantizados (KHR_mesh_quantization) — inteiros
+               NORMALIZADOS (Int16/Uint16…) que a GPU desquantiza
+               ao desenhar. Quem lê os valores crus e os coze numa
+               geometria nova tem de dividir pelo máximo do tipo,
+               senão as posições saem ~32767× maiores (a sala
+               «explodia» fora da câmera). Nas soltas não se toca:
+               a geometria original + a GPU tratam disso. */
+            const divisorDe = (at) => {
+                if (!at.normalized) return 1;
+                const a = at.array;
+                if (a instanceof Int8Array) return 127;
+                if (a instanceof Uint8Array) return 255;
+                if (a instanceof Int16Array) return 32767;
+                if (a instanceof Uint16Array) return 65535;
+                if (a instanceof Int32Array) return 2147483647;
+                if (a instanceof Uint32Array) return 4294967295;
+                return 1;
+            };
+            for (const o of lista) {
+                const g = o.geometry, M = o.matrixWorld;
+                mNorm.getNormalMatrix(M);
+                for (const nome of nomes) {
+                    const at = g.attributes[nome], dest = atributos[nome], tam = at.itemSize;
+                    const div = divisorDe(at);
+                    /* LEITURA POR getX/getY/getZ/getW — NUNCA pelo
+                       array cru (correcção medida, 15/11): o decode
+                       meshopt entrega position/normal como atributos
+                       ENTRELAÇADOS (InterleavedBufferAttribute,
+                       stride 4); ler arr[i*3] mistura posição com
+                       normal e a sala renderiza «amarrotada» apesar
+                       de caixas/índices certos. Os getters respeitam
+                       stride+offset e devolvem o valor cru, ao qual
+                       se aplica a desquantização (div). */
+                    if (nome === 'position' || nome === 'normal' || nome === 'tangent') {
+                        for (let i = 0; i < at.count; i++) {
+                            v3.set(at.getX(i) / div, at.getY(i) / div, at.getZ(i) / div);
+                            if (nome === 'position') v3.applyMatrix4(M); else v3.applyMatrix3(mNorm).normalize();
+                            dest[(offV + i) * tam] = v3.x; dest[(offV + i) * tam + 1] = v3.y; dest[(offV + i) * tam + 2] = v3.z;
+                            if (tam === 4) dest[(offV + i) * tam + 3] = at.getW(i) / div;
+                        }
+                    } else {
+                        for (let i = 0; i < at.count; i++) {
+                            dest[(offV + i) * tam] = at.getX(i) / div;
+                            if (tam > 1) dest[(offV + i) * tam + 1] = at.getY(i) / div;
+                            if (tam > 2) dest[(offV + i) * tam + 2] = at.getZ(i) / div;
+                            if (tam > 3) dest[(offV + i) * tam + 3] = at.getW(i) / div;
+                        }
+                    }
+                }
+                /* ESPELHOS (correcção medida no render do arnês,
+                   15/11): a sala tem nós espelhados (determinante
+                   da matriz < 0). Ao desenhar solto, o three
+                   corrige o frontFace por objecto; fundido, essa
+                   correcção perde-se e a peça espelhada renderiza
+                   do avesso (fragmentos gigantes no ecrã). A cura
+                   é trocar a ordem dos índices de cada triângulo
+                   das peças espelhadas ao fundir. */
+                const espelhada = M.determinant() < 0;
+                if (g.index) {
+                    const ia = g.index.array;
+                    for (let i = 0; i < ia.length; i += 3) {
+                        indices[offI + i] = ia[i] + offV;
+                        indices[offI + i + 1] = ia[espelhada ? i + 2 : i + 1] + offV;
+                        indices[offI + i + 2] = ia[espelhada ? i + 1 : i + 2] + offV;
+                    }
+                    offI += ia.length;
+                } else {
+                    const n = g.attributes.position.count;
+                    for (let i = 0; i < n; i += 3) {
+                        indices[offI + i] = offV + i;
+                        indices[offI + i + 1] = offV + i + (espelhada ? 2 : 1);
+                        indices[offI + i + 2] = offV + i + (espelhada ? 1 : 2);
+                    }
+                    offI += n;
+                }
+                offV += g.attributes.position.count;
+            }
+            const geo = new T.BufferGeometry();
+            for (const nome of nomes) geo.setAttribute(nome, new T.BufferAttribute(atributos[nome], lista[0].geometry.attributes[nome].itemSize));
+            geo.setIndex(new T.BufferAttribute(indices, 1));
+            geo.computeBoundingSphere();
+            const mesh = new T.Mesh(geo, material);
+            mesh.castShadow = false; mesh.receiveShadow = true;
+            mesh.updateMatrix(); mesh.matrixAutoUpdate = false;
+            fundido.add(mesh);
+        }
+        for (const o of soltas) {
+            // solta: entra com a transformação do mundo cozida no
+            // próprio objecto (o pai passa a ser o grupo fundido).
+            // decompose (e não comprimentos de coluna à mão): os
+            // nós espelhados (determinante < 0) precisam do sinal
+            // negativo numa escala, senão a peça vira do avesso.
+            o.updateMatrixWorld(true);
+            o.matrixWorld.decompose(o.position, o.quaternion, o.scale);
+            fundido.add(o);
+        }
+        fundido.updateMatrix(); fundido.matrixAutoUpdate = false;
+        return fundido;
+    };
+    const aoErroModelo = () => { window.__tronoModeloPronto = 'erro'; };
+    const comecarModelo = () => {
+        const loaderTrono = new T.GLTFLoader();
+        if (typeof MeshoptDecoder !== 'undefined') loaderTrono.setMeshoptDecoder(MeshoptDecoder);
+        /* PRÉ-CARGA (t-trono-otimizacao O1): se o Mestre escolheu a
+           sala na preparação, a entrada já desceu o ficheiro em fundo
+           (window.__tronoPreCarga) — aqui faz-se só o parse do buffer,
+           sem segunda ida à rede. Sem pré-carga, ou se ela falhou, o
+           caminho é o de sempre (load do URL; o erro continua a cair
+           na vigia do item 9). Se a pré-carga ainda vai a meio, espera
+           por ela em vez de duplicar o pedido. */
+        const preCarga = (typeof window !== 'undefined') ? window.__tronoPreCarga : null;
+        if (preCarga && preCarga.estado === 'pronto' && preCarga.buffer) {
+            loaderTrono.parse(preCarga.buffer, '', aoModelo, aoErroModelo);
+        } else if (preCarga && preCarga.estado === 'a-carregar') {
+            const esperaPre = setInterval(() => {
+                if (preCarga.estado === 'pronto' && preCarga.buffer) {
+                    clearInterval(esperaPre);
+                    loaderTrono.parse(preCarga.buffer, '', aoModelo, aoErroModelo);
+                } else if (preCarga.estado === 'erro') {
+                    clearInterval(esperaPre);
+                    loaderTrono.load('modelos/cenario/sala-trono.glb', aoModelo, undefined, aoErroModelo);
+                }
+            }, 150);
+        } else {
+            loaderTrono.load('modelos/cenario/sala-trono.glb', aoModelo, undefined, aoErroModelo);
+        }
+    };
+    /* DECODER MESHOPT (t-trono-otimizacao O2): o GLB da sala traz a
+       geometria comprimida (EXT_meshopt_compression) e o loader
+       vendored só a lê com o MeshoptDecoder posto. O decoder é um
+       ficheiro pequeno (29 KB) carregado SÓ neste caminho — o
+       campo nunca o pede. Se ele falhar a carregar, o modelo cai
+       no erro de sempre (a vigia do item 9 avisa o Mestre). */
+    if (typeof MeshoptDecoder !== 'undefined') {
+        comecarModelo();
+    } else if (window.__tronoDecoderPromessa) {
+        window.__tronoDecoderPromessa.then(comecarModelo, aoErroModelo);
+    } else {
+        window.__tronoDecoderPromessa = new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = 'vendor/meshopt_decoder.js';
+            s.onload = () => resolve();
+            s.onerror = () => reject(new Error('decoder meshopt'));
+            document.head.appendChild(s);
+        });
+        window.__tronoDecoderPromessa.then(comecarModelo, aoErroModelo);
+    }
     /* O feixe do óculo (valores da sala ajustada: spot à rotação do
        sol, energia baixa, cone de 16°): em Three.js o cone de luz
        desenha-se com um fuste translúcido aditivo do óculo ao chão

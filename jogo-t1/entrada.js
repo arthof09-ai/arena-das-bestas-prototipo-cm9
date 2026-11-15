@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_101';
+  var VERSAO_JOGO = 'REF_102';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -483,6 +483,19 @@
     { id: 'time', nome: 'No time das jogadoras' }
   ];
   var preparacaoFeita = false;
+  /* Registo da pré-carga do modelo da sala (t-trono-otimizacao O1):
+   * nasce ao primeiro clique no mapa «Sala do Trono» e vive na
+   * janela — { estado: 'a-carregar'|'pronto'|'erro', buffer, erro }.
+   * O TronoWorld (mundo.js) lê-o por window.__tronoPreCarga. */
+  function preCarregarTrono() {
+    if (window.__tronoPreCarga) return;
+    var reg = { estado: 'a-carregar', buffer: null, erro: null };
+    window.__tronoPreCarga = reg;
+    fetch('modelos/cenario/sala-trono.glb')
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+      .then(function (buf) { reg.buffer = buf; reg.estado = 'pronto'; })
+      .catch(function (e) { reg.erro = e; reg.estado = 'erro'; });
+  }
   var prepEscolhas = { mapa: MAPAS_PARTIDA[0].id, monstros: {}, npcs: {} };
   MONSTROS_PARTIDA.forEach(function (m) {
     prepEscolhas.monstros[m.id] = { contra: 0, neutro: 0, time: 0 };
@@ -505,6 +518,18 @@
     b.addEventListener('click', function () {
       prepEscolhas.mapa = mp.id;
       pintarPreparacao();
+      /* PRÉ-CARGA DO TRONO (t-trono-otimizacao O1, palavra do
+       * Mestre 15/11/2026 11:32: «demorou muito para entrar…
+       * quero que otimize»): o modelo da sala são 28,8 MB e a
+       * rede é o maior termo da espera — por isso, quando o
+       * Mestre ESCOLHE a Sala do Trono, o ficheiro começa logo a
+       * descer em fundo, enquanto ele acaba de montar a batalha.
+       * Ao «Começar», o TronoWorld consome este buffer em vez de
+       * ir buscar o ficheiro outra vez. Só rede: o parse continua
+       * no mundo, com o loader de sempre. Se a escolha mudar para
+       * o campo, o buffer fica guardado na janela (sem custo) e
+       * serve se ele voltar à sala. */
+      if (mp.id === 'trono') preCarregarTrono();
     });
     prepMapaBotoes[mp.id] = b;
     vistaPreparacao.appendChild(b);
