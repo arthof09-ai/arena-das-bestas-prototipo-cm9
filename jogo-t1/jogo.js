@@ -123,11 +123,26 @@
   /* ---------- elenco oficial do jogo (a figura de teste UAL1 fica
      SÓ na demo do Codex — não é personagem do jogo) ---------- */
   const AREA = { cols: 10, rows: 7, origin: { x: 0, y: 0 } };
+  /* ---------- MODELOS PROVISÓRIOS (t-modelos-provisorios, palavra do
+     * Mestre 15/11/2026 10:43): no jogo só entram modelos que possam
+     * MESMO ser usados no jogo, no estilo do RPG. Os modelos chibi
+     * anteriores (ong-rogue, orc-quaternius, capanga-knight) saíram;
+     * no lugar estão genéricos com esqueleto animável, cada um
+     * PROVISÓRIO registado (sede t-modelos-provisorios/PROVISORIOS.md):
+     * a figura-jogadora usa «a roxa» (Mannequin_F UAL da A2, com os
+     * clipes parado/andar/ataque dela); o Capanga usa o Mannequin_M;
+     * o Orc usa a escultura do Orc da Oficina com rig UAL1 e clipes
+     * (sem clipe de ataque no ficheiro — o slot fica por declarar);
+     * o Lobo deixa de ser marcador e usa o lobo cinzento da fera
+     * T1/051 (clipes próprios: Idle/Walk/Bite/Hit). As heroínas e o
+     * Capanga não têm clipe de reacção nestes ficheiros — slot por
+     * declarar, sem invenção. Troca-se cada um pelo modelo certo
+     * quando ele existir. ---------- */
   const ELENCO_BASE = [
-    { id: 'orc',     nome: 'Orc',             modelo: 'modelos/orc-quaternius.glb', x: 3, y: 3, alturaMetros: 3.6,  vivo: true },
-    { id: 'ong',     nome: 'Ong',             modelo: 'modelos/ong-rogue.glb',     x: 6, y: 2, alturaMetros: 2.625, vivo: true, animacoes: { idle: 'Idle_B', andar: 'Walking_B', ataque: 'Melee_Unarmed_Attack_Punch_A', reacao: 'Hit_B' } },
-    { id: 'capanga', nome: 'Capanga 1',       modelo: 'modelos/capanga-knight.glb', x: 7, y: 4, alturaMetros: 2.7,  vivo: true, animacoes: { idle: 'Idle_B', andar: 'Walking_B', ataque: 'Melee_Unarmed_Attack_Punch_A', reacao: 'Hit_B' } },
-    { id: 'lobo',    nome: 'Lobo da Caverna', modelo: 'marcador-lobo',     x: 2, y: 5, alturaMetros: 1.35,  vivo: true }
+    { id: 'orc',     nome: 'Orc',             modelo: 'modelos/orc-rig-ual.glb', x: 3, y: 3, alturaMetros: 3.6,  vivo: true, animacoes: { idle: 'Idle_Loop_Orc', andar: 'Walk_Loop_Orc', reacao: 'Hit_Chest_Orc' } },
+    { id: 'ong',     nome: 'Ong',             modelo: 'modelos/manequim-f-roxa.glb', x: 6, y: 2, alturaMetros: 2.625, vivo: true, animacoes: { idle: 'parado_v3_fase2', andar: 'andar_v3_fase2', ataque: 'ataque_v3_f_fase2' } },
+    { id: 'capanga', nome: 'Capanga 1',       modelo: 'modelos/manequim-m.glb', x: 7, y: 4, alturaMetros: 2.7,  vivo: true, animacoes: { idle: 'parado_v3_m_fase2', andar: 'andar_v3_m_fase2', ataque: 'ataque_v3_m_fase2' } },
+    { id: 'lobo',    nome: 'Lobo da Caverna', modelo: 'modelos/lobo-cinzento-051.glb', x: 2, y: 5, alturaMetros: 1.35,  vivo: true, animacoes: { idle: 'Idle', andar: 'Walk', ataque: 'Bite', reacao: 'Hit' } }
   ];
   /* ---------- PREPARAÇÃO DA BATALHA (t-escolha-mapa, palavra do
    * Mestre 14/11/2026 20:31 + acrescentos 20:40 e 20:43) ----------
