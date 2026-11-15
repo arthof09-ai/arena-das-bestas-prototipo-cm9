@@ -239,9 +239,10 @@
     const prep = (typeof window !== 'undefined') ? window.PREPARACAO_MESTRE : null;
     if (!MODO_MESTRE || !prep || typeof prep !== 'object' || !prep.monstros)
       return ELENCO_BASE;
-    /* O mapa escolhido (prep.mapa) fica registado e não tem efeito
-       mecânico aqui: esta casca tem um mundo só («campo») — a
-       costura para um segundo mapa entra com o mapa, não antes. */
+    /* O mapa escolhido (prep.mapa) não tem efeito mecânico aqui:
+       o elenco é o mesmo em qualquer mapa (regra do Mestre:
+       mecânicas não dependem de mapa). Quem lê a escolha para
+       montar o mundo é MAPA_PARTIDA, junto ao ELENCO. */
     const ocupadas = new Set();
     const saida = [];
     const casaLivre = () => {
@@ -308,6 +309,21 @@
     return saida;
   }
   const ELENCO = elencoEfectivo();
+  /* MAPA DA PARTIDA (t-mapa-trono, palavra do Mestre 15/11/2026
+     06:25): o mundo onde a batalha nasce. Só a preparação do
+     Mestre escolhe — e só o id registado em MAPAS_PARTIDA
+     (entrada.js) conta; qualquer outro valor, a Jogadora e o
+     caminho sem preparação nascem no «campo», como sempre
+     (diferencial zero). O mapa é da PARTIDA: fixa-se aqui, ao
+     nascer, e viaja nos saves da ponte (chave opcional 'mapa')
+     — um save da sala restaura na sala, nunca no campo. */
+  function mapaDaPartida() {
+    const prep = (typeof window !== 'undefined') ? window.PREPARACAO_MESTRE : null;
+    if (MODO_MESTRE && prep && typeof prep === 'object' && prep.mapa === 'trono')
+      return 'trono';
+    return 'campo';
+  }
+  const MAPA_PARTIDA = mapaDaPartida();
   /* Tranche T-D (contrato apresentarAtaque): Ong e Capanga declaram
      também ataque/reacao com os clipes que os GLB viajantes JÁ trazem
      (parse registado no DIFF-API §5: Punch 1,167 s e Hit_A 0,667 s
@@ -577,10 +593,37 @@
 
   let view;
   try {
-    view = Campo3D.create(mapaEl, { area: AREA, units: ELENCO, qualidade });
+    view = Campo3D.create(mapaEl, { area: AREA, units: ELENCO, qualidade, mapa: MAPA_PARTIDA });
   } catch (error) {
     msgTxt.innerHTML = '<b>O campo 3D não pôde ser mostrado</b> neste aparelho — tenta outro navegador.';
     return;
+  }
+  /* CORRECÇÃO t-mapa-trono (bancada, item 9): se o modelo da Sala
+     do Trono falhar a chegar (rede/404), o Mestre fica a saber na
+     linha de mensagem — nunca uma batalha muda numa arena vazia.
+     Só neste mapa; a vigia pára quando o modelo chega, quando o
+     erro aparece, ou ao fim de 2 minutos.
+     L1 (2.ª bancada, SENTENCA-2 §1): a vigia original dizia o
+     aviso no 1.º tick com 'erro' e desarmava-se — mas com
+     campoPronto===false o say() descarta o texto, e a falha
+     rápida (404) cai exactamente nessa janela: o aviso nunca
+     entrava no DOM (medido 3/3 FALHA). Agora, com 'erro', a
+     vigia só diz o aviso e se desarma quando campoPronto===true;
+     enquanto o arranque não está pronto, fica viva. O tecto de
+     240 voltas só conta depois de a bandeira sair de false;
+     tecto absoluto de ~10 min desde o nascimento. */
+  if (MAPA_PARTIDA === 'trono') {
+    let vigiaTronoVoltas = 0, vigiaTronoTotal = 0;
+    const vigiaTrono = setInterval(() => {
+      if (window.__tronoModeloPronto === 'erro' && campoPronto) {
+        clearInterval(vigiaTrono);
+        say('O modelo da <b>Sala do Trono</b> não chegou — a batalha está sem a sala. Saia e comece a batalha outra vez para tentar de novo.');
+      } else if (window.__tronoModeloPronto === true ||
+                 (campoPronto && ++vigiaTronoVoltas > 240) ||
+                 ++vigiaTronoTotal > 1200) {
+        clearInterval(vigiaTrono);
+      }
+    }, 500);
   }
   view.setCamera(camaraModo);   // aplica o modo guardado/migrado (DESENHO §7.2)
   view.setDinamica(camaraDinamica, velocidade);   // interruptor + velocidade actual (§7.3)
@@ -8833,7 +8876,7 @@
     /* Tranche VOO (F-36): 'voo' é campo OPCIONAL do estado, na
        mesma régua (save antigo sem ele é válido — ninguém traz
        asa torada); o 'z' das unidades confere-se junto delas. */
-    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala' && k !== 'visao' && k !== 'furtividade' && k !== 'previaPublica' && k !== 'voo' && k !== 'frentesAssentadas' && k !== 'lados')) return INV;
+    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala' && k !== 'visao' && k !== 'furtividade' && k !== 'previaPublica' && k !== 'voo' && k !== 'frentesAssentadas' && k !== 'lados' && k !== 'mapa')) return INV;
     /* Os ids válidos são os do elenco MAIS as figuras de teste
        que o próprio save declara nas unidades (aplicar um save
        admite as que ele traz; um save não pode inventar figuras
@@ -8978,6 +9021,12 @@
        presente, tem de trazer o bloco no seu domínio
        (ladosBlocoValido). */
     if ('lados' in e && !ladosBlocoValido(e.lados)) return INV;
+    /* MAPA-TRONO: 'mapa' é campo OPCIONAL do estado, na mesma
+       régua (save antigo sem ele é válido — aplica na batalha
+       que estiver a correr); presente, só pode ser um dos ids
+       de MAPAS_PARTIDA. A recusa de um save de OUTRO mapa faz-se
+       no aplicar, contra o mapa desta batalha. */
+    if ('mapa' in e && e.mapa !== 'campo' && e.mapa !== 'trono') return INV;
     /* EMENDA Q-02: 'previaPublica', presente, confere-se no seu
        domínio (validarPreviaPublica) — ausente, save válido. */
     if ('previaPublica' in e) { const erroPP = validarPreviaPublica(e.previaPublica); if (erroPP) return erroPP; }
@@ -9115,7 +9164,12 @@
            entram na captura (cópia — o save é um valor) —
            guardar e carregar a meio da batalha não apaga a
            guerra de uma neutra já com a Vida gasta na luta. */
-        lados: ladosCaptura()
+        lados: ladosCaptura(),
+        /* MAPA-TRONO: o mapa onde a batalha nasceu viaja na
+           captura — carregar este save noutro mapa é recusado
+           no aplicar (SAVE_MAPA_DIFERENTE), nunca aplicado em
+           silêncio sobre o cenário errado. */
+        mapa: MAPA_PARTIDA
       };
     },
     aplicar(e) {
@@ -9124,6 +9178,13 @@
          inválido não muda NADA (também fora do caminho UI). */
       const erroVal = validarEstadoParaAplicar(e);
       if (erroVal) return { ok: false, erro: erroVal };
+      /* MAPA-TRONO: um save nascido noutro mapa recusa-se AQUI,
+         antes de qualquer mutação (a mesma promessa do save
+         inválido: não muda NADA) — restaurar a batalha da sala
+         é começar uma batalha na sala e aplicar lá dentro. Save
+         antigo sem 'mapa' aplica como sempre aplicou. */
+      if ('mapa' in e && e.mapa !== MAPA_PARTIDA)
+        return { ok: false, erro: 'SAVE_MAPA_DIFERENTE' };
       /* M1 (§3.5 do desenho): aplicar um save MATA um parque de
          monstro aberto — o fecho entra DEPOIS da validação passar
          (um save inválido promete «não muda NADA»: matar o parque
@@ -11479,7 +11540,16 @@
      visaoCampoOlho e o gancho __visao.campo recebem exactamente
      o que recebiam). Quem lê o grau é visaoOpacosComGrau(),
      derivado desta mesma lista. */
-  const VISAO_OPACOS_DECLARACAO = [[4, 2, 'total'], [5, 2, 'total'], [4, 3, 'total'], [5, 3, 'total']];
+  /* CORRECÇÃO t-mapa-trono (bancada, item 1 — o maior): a declaração
+     é a geografia DESTE mapa, não uma constante cega. O registo de
+     opacos e a zona fechada nasceram medidos sobre o anel de pedras
+     DO CAMPO; na Sala do Trono não há pedra nenhuma (o miolo é o
+     medalhão aberto sob o óculo) — lá o registo é VAZIO e as três
+     funções consumidoras (visaoOpacos, visaoOpacosComGrau,
+     visaoZonaFiltrar) lêem-no daqui, de uma só fonte. No campo os
+     valores ficam byte-iguais aos de sempre. MAPA_PARTIDA é
+     constante por batalha: nenhuma chave de cache nova. */
+  const VISAO_OPACOS_DECLARACAO = (MAPA_PARTIDA === 'trono') ? [] : [[4, 2, 'total'], [5, 2, 'total'], [4, 3, 'total'], [5, 3, 'total']];
   function visaoOpacos() { return VISAO_OPACOS_DECLARACAO.map(([x, y]) => [x, y]); }
   function visaoOpacosComGrau() { return VISAO_OPACOS_DECLARACAO.map(([x, y, grau]) => ({ x, y, grau })); }
   /* ZONA FECHADA DO CÍRCULO (Opção C — palavra do Mestre, 2026-11-11
@@ -11497,7 +11567,7 @@
      ou se lê (visaoCampo, visaoCampoOlho e o gancho de prova). Sem
      estado novo: a zona é constante e o filtro só depende do campo e
      da casa de quem olha. Desenho + bancada: t-zona-fechada-circulo. */
-  const VISAO_ZONA_FECHADA = new Set(['4,2', '5,2', '4,3', '5,3', '4,4', '5,4']);
+  const VISAO_ZONA_FECHADA = (MAPA_PARTIDA === 'trono') ? new Set() : new Set(['4,2', '5,2', '4,3', '5,3', '4,4', '5,4']);
   function visaoZonaFiltrar(campo, x, y) {
     const dentro = VISAO_ZONA_FECHADA.has(x + ',' + y);
     const out = new Set();

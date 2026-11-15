@@ -71,7 +71,11 @@
             sun.shadow.bias = -.0005;
             sun.shadow.normalBias = .04;
             scene.add(sun);
-            const world = CampoWorld(T, scene, area), camera = new T.OrthographicCamera(-10, 10, 10, -10, .1, 1600), cameraLivre = new T.PerspectiveCamera(50, 1, .1, 400), target = new T.Vector3(), ray = new T.Raycaster();
+            /* MAPA-TRONO: com options.mapa === 'trono' o mundo é a
+               Sala do Trono (TronoWorld, em mundo.js — chão plano da
+               nave, o modelo como cenário); em qualquer outro caso
+               é o CampoWorld de sempre, ao bit (diferencial zero). */
+            const world = (options.mapa === 'trono' && typeof window.TronoWorld === 'function') ? window.TronoWorld(T, scene, area) : CampoWorld(T, scene, area), camera = new T.OrthographicCamera(-10, 10, 10, -10, .1, 1600), cameraLivre = new T.PerspectiveCamera(50, 1, .1, 400), target = new T.Vector3(), ray = new T.Raycaster();
             /* ---------- AMBIENTE (tranche AMBIENTE — desenho LIBERA 05/11) ----------
              * aplicarAmbiente(estado) é o ÚNICO escritor de: exposição ·
              * hemisférica · sol · fundo · cor da névoa · bases do mundo
@@ -175,6 +179,15 @@
             });
             const ceuCupula = new T.Mesh(new T.SphereGeometry(10, 32, 16), ceuGradMat);
             ceuCupula.frustumCulled = false; ceuCupula.renderOrder = 0; ceuCena.add(ceuCupula);
+            /* CORRECÇÃO t-mapa-trono (bancada, item 6): na Sala do Trono
+               o céu não se desenha — a sala é fechada e o que rodeia a
+               caixa é a escuridão quente da própria névoa do mundo
+               (cor de limpeza do renderer), nunca o céu azul com neve
+               das fotos b03/b10. Só neste mapa. */
+            if (options.mapa === 'trono') {
+                ceuCena.visible = false;
+                renderer.setClearColor(0x100d0a, 1);
+            }
             /* Estrelas (E7): ShaderMaterial próprio — PointsMaterial não
                faz tamanhos/cintilação por ponto. */
             const ceuEstrelasGeo = new T.BufferGeometry();
@@ -715,9 +728,26 @@
                 const horFinal = amostra.horizonte.clone().lerp(ambCor(0x8a939c), cinz);
                 renderer.toneMappingExposure = amostra.exp;
                 hemi.intensity = amostra.hemiInt + .38 * pulsoE;
+                /* CORRECÇÃO t-mapa-trono (bancada, item 5): a luz do
+                   ambiente da cena atenua-se NESTE mapa (hemisférica
+                   ×0,55, sol ×0,62, exposição ×0,92) — sem isto o
+                   interior lê-se «meio-dia de museu», chão claro por
+                   todo o lado e a poça do feixe clipada a branco no
+                   mármore. Com a atenuação os cantos da nave caem em
+                   sombra quente e a poça é o foco. Só no trono: os
+                   derivados da âncora do campo não se tocam. */
+                if (options.mapa === 'trono') {
+                    hemi.intensity *= .55;
+                    renderer.toneMappingExposure = amostra.exp * .92;
+                }
                 hemi.color.copy(ceuFinal);
                 hemi.groundColor.copy(amostra.hemiChao);
-                sun.intensity = amostra.solInt;
+                /* O factor do sol (×0,62 no trono) aplica-se AQUI,
+                   na escrita do próprio ambEscrever — na volta do
+                   primeiro corrector ele estava no bloco acima e
+                   esta linha sobrescrevia-o: atenuação morta,
+                   apanhada pelo inventário do sucessor. */
+                sun.intensity = options.mapa === 'trono' ? amostra.solInt * .62 : amostra.solInt;
                 sun.color.copy(amostra.solCor);
                 sun.position.set(amostra.solPos[0], amostra.solPos[1], amostra.solPos[2]);
                 scene.fog.color.copy(horFinal).lerp(ambCor(0xd7dee8), .55 * pulsoE);
@@ -753,6 +783,11 @@
                 const deNeve = ambActual.precip === 'neve';
                 let gotas = deNeve ? 0 : Math.round(ambNivel(tabela, cf));
                 if (ambCapChuva != null) gotas = Math.min(gotas, ambCapChuva);
+                /* CORRECÇÃO t-mapa-trono (bancada, item 8): dentro da Sala
+                   do Trono não chove nem neva — gotas, flocos e respingos
+                   forçados a 0 neste mapa. O caminho do campo fica ao bit
+                   (a âncora continua diff zero). */
+                if (options.mapa === 'trono') gotas = 0;
                 chuvaGeo.setDrawRange(0, gotas);
                 chuvaPts.visible = gotas > 0;
                 chuvaMat.uniforms.uOpacidade.value = ambNivel(AMB_CHUVA.opacidade, cf);
@@ -762,6 +797,7 @@
                 const tabelaNeve = quality === 'baixa' ? NEVE_CONT_BAIXA : quality === 'media' ? NEVE_CONT_MEDIA : NEVE_CONT;
                 let flocos = deNeve ? Math.round(ambNivel(tabelaNeve, cf)) : 0;
                 if (ambCapChuva != null) flocos = Math.min(flocos, ambCapChuva);
+                if (options.mapa === 'trono') flocos = 0;
                 neveGeo.setDrawRange(0, flocos);
                 nevePts.visible = flocos > 0;
                 neveMat.uniforms.uOpacidade.value = ambNivel(NEVE_OPACIDADE, cf);
@@ -780,6 +816,7 @@
                 const cfTeste052 = testeChuva052.nivel;
                 let resp = (testeChuva052.ligada && !deNeve) ? Math.round(ambNivel(quality === 'baixa' ? RESP_CONT_BAIXA : RESP_CONT, cfTeste052)) : 0;
                 if (ambCapChuva != null) resp = Math.min(resp, ambCapChuva);
+                if (options.mapa === 'trono') resp = 0;
                 respGeo.setDrawRange(0, resp);
                 respPts.visible = resp > 0;
                 respMat.uniforms.uOpacidade.value = ambNivel(AMB_CHUVA.opacidade, cfTeste052);
@@ -791,6 +828,10 @@
             function ambAplicarPulso(e) {
                 if (!ambUltimaAmostra) return;
                 hemi.intensity = ambUltimaAmostra.hemiInt + .38 * e;
+                /* Item 5 (sucessor): o pulso reescreve a hemi — sem
+                   o factor, a atenuação do trono perdia-se após o
+                   primeiro raio. Só neste mapa. */
+                if (options.mapa === 'trono') hemi.intensity *= .55;
                 if (ambUltimoHor) scene.fog.color.copy(ambUltimoHor).lerp(ambCor(0xd7dee8), .55 * e);
                 ceuPublicar(ambUltimaAmostra, ambActual.chuva, e);
             }
@@ -2432,7 +2473,15 @@
                 return Math.max(area.cols * CELL * 1.25, area.rows * CELL * Math.sin(1.12) * 1.25 * width / Math.max(150, height - 110));
             }
             function zoomRange() {
-                return { min: .45, max: baseWidth() / 4.5 };
+                /* CORRECÇÃO t-mapa-trono (bancada, item 6): neste mapa o
+                   zoom-out pára em 0,52× — é o enquadramento da composição
+                   (item 3); mais aberto, a caixa da sala flutua no céu.
+                   DESVIO NOMEADO face ao «≥ ~0,75×» da lista: medido, a
+                   0,75× o trono (22,5 m a norte, topo aparente a ~26 m)
+                   e as figuras a sul NÃO cabem no mesmo fotograma
+                   1280×800 — a prova está no ESTADO da frente. No campo,
+                   o limite de sempre (0,45). */
+                return { min: options.mapa === 'trono' ? .52 : .45, max: baseWidth() / 4.5 };
             }
             function setZoom(v) {
                 if (!Number.isFinite(v))
@@ -2462,10 +2511,23 @@
                 renderer.shadowMap.needsUpdate = true;
                 emit('quality', { qualidade: q });
             }
+            let enquadramentoTronoFeito = false;
             function resize() {
                 const r = container.getBoundingClientRect();
                 width = Math.max(1, r.width);
                 height = Math.max(1, r.height);
+                /* CORRECÇÃO t-mapa-trono (bancada, itens 3/7): enquadramento
+                   por omissão DESTE mapa, aplicado uma vez à primeira
+                   medida — computador 0,52× (a composição inteira: trono,
+                   anel, medalhão, figuras); telemóvel em retrato 1,35×
+                   (a arena nasce dentro da sala: sem o exterior da parede
+                   sul e sem o rectângulo preto da porta, b09). Daí em
+                   diante manda o jogador, como no campo. */
+                if (!enquadramentoTronoFeito && options.mapa === 'trono' && width > 1 && height > 1) {
+                    enquadramentoTronoFeito = true;
+                    zoom['360'] = width < height ? 1.35 : .52;
+                    zoom.fixa = .52;
+                }
                 renderer.setSize(width, height, false);
                 ceuCam.aspect = width / height;
                 ceuCam.updateProjectionMatrix();
@@ -2638,6 +2700,24 @@
                     aplicarCamaraLivre();
                 } else {
                 const followed = units.get(selected), want = (mode === 'fixa' || !followed) ? new T.Vector3(0, .35, 0) : followed.root.position.clone().add(new T.Vector3(0, .8, 0));
+                /* CORRECÇÃO t-mapa-trono (bancada, itens 3/7): neste mapa o
+                   alvo da câmera desloca-se 10,8 m para norte — sem o desvio,
+                   a vista por omissão nunca mostra o estrado e o trono
+                   (22,5 m a norte da arena; medido nas fotos b01/b09 da
+                   bancada). Com ele, a composição por omissão é: trono no
+                   topo, anel do óculo ao centro, medalhão e figuras na
+                   arena. Só neste mapa; no campo o alvo é o de sempre. */
+                if (options.mapa === 'trono') {
+                    /* O desvio DESVANECE com o zoom (sucessor): ele é a
+                       composição por omissão (zoom 0,52); ao aproximar
+                       (zoom → 1,0) o alvo volta à figura seguida, para
+                       o zoom do jogador cair nas figuras — sem isto, o
+                       par de renders tipo b02/b12 enquadra o anel vazio
+                       (medido em d02). */
+                    const zoomAlvo = zoom[mode] != null ? zoom[mode] : .52;
+                    const fatorDesvio = Math.max(0, Math.min(1, (1 - zoomAlvo) / .48));
+                    want.z -= 10.8 * fatorDesvio;
+                }
                 target.lerp(want, 1 - Math.exp(-dt * 7));
                 const p = mode === '360' ? pitch : width < height ? .72 : 1.12, a = (mode === '360' ? yaw : mode === 'fixa' && width < height ? Math.PI / 2 : 0) + olharYaw, distance = Math.max(45, extent * 2);
                 camera.position.set(target.x + Math.sin(a) * Math.cos(p) * distance, target.y + Math.sin(p) * distance, target.z + Math.cos(a) * Math.cos(p) * distance);
@@ -3103,7 +3183,16 @@
                         dinArrSoma += Math.abs(dx * .008); dinArrPerc += Math.hypot(dx, dy);
                         if (dinArrSoma >= 3 * Math.PI / 180 || dinArrPerc >= 8) { dinArrT0 = tCena; gestoIntencional = true; }
                         yaw -= dx * .008;   // (2)
-                        pitch = clamp(pitch + dy * .005, .06, 1.4);   // (2) + pitch livre (§15: mínimo 0,06)
+                        /* CORRECÇÃO t-mapa-trono (bancada, item 2): na Sala do
+                           Trono o pitch mínimo sobe para 1,18 rad — abaixo
+                           disso a câmera sai do edifício e a parede de 18 m
+                           tapa a arena (b04–b07 da bancada). Medição do
+                           sucessor, com renders: a 0,92 o yaw 270 escondia
+                           as figuras atrás da faixa da parede (d07); a 1,05
+                           melhorou sem fechar (e07); a 1,18 as figuras e o
+                           medalhão vêem-se nos 4 yaw (f04–f07). No campo,
+                           o mínimo de sempre (0,06). */
+                        pitch = clamp(pitch + dy * .005, options.mapa === 'trono' ? 1.18 : .06, 1.4);   // (2) + pitch livre (§15: mínimo 0,06)
                         // (3) E4: a frente visual segue o yaw — só com o gesto armado, deliberado e ela livre.
                         if (acoplId && gestoArmado && !gestoSuspenso && gestoIntencional) {
                             const u = units.get(acoplId);

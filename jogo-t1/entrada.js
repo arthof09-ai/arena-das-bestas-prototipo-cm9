@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_97';
+  var VERSAO_JOGO = 'REF_98';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -444,10 +444,17 @@
    * arrancarJogo(true); o caminho da Jogadora nunca a toca.
    * Os registos MAPAS_PARTIDA / MONSTROS_PARTIDA são a lista viva da
    * tela: um mapa ou um tipo novo entra AQUI, sem reescrever a vista.
-   * Hoje o jogo tem um mapa e três tipos de monstro; NPCs ainda não
+   * Hoje o jogo tem dois mapas e três tipos de monstro; NPCs ainda não
    * há tipos nenhuns no jogo (a secção nasce presente e honesta). */
   var MAPAS_PARTIDA = [
-    { id: 'campo', nome: 'Campo de batalha', nota: 'A fogueira, as ruínas e os braseiros — o campo de sempre.' }
+    { id: 'campo', nome: 'Campo de batalha', nota: 'A fogueira, as ruínas e os braseiros — o campo de sempre.' },
+    /* MAPA-TRONO (palavra do Mestre 15/11/2026 06:25: «A sala do
+       trono é um mapa do jogo, acrescenta ele no jogo»): a sala
+       ajustada aprovada entra como segundo mapa — a batalha nasce
+       dentro da nave, sobre a mesma grelha (as mecânicas não
+       dependem do mapa). O modelo só se descarrega quando este
+       mapa é o escolhido (ver TronoWorld em mundo.js). */
+    { id: 'trono', nome: 'Sala do Trono', nota: 'A nave, o feixe do óculo e o trono ao fundo.' }
   ];
   /* A índole é a natureza do tipo (palavra do Mestre, 14/11/2026
    * 20:46): NÃO se escolhe aqui — mostra-se, para ele saber o que

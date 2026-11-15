@@ -1,3 +1,93 @@
+/* ---------- SALA DO TRONO (t-mapa-trono, palavra do Mestre
+ * 15/11/2026 06:25: «A sala do trono é um mapa do jogo») ----------
+ * O segundo mundo: a batalha nasce DENTRO da sala ajustada que o
+ * Mestre aprovou (luz/materiais fechados no Godot — aqui a luz
+ * refaz-se em Three.js a aproximar esse aspecto: ambiente baixo e
+ * quente, o feixe dourado do óculo sobre a arena, os toques
+ * turquesa da água e o recorte frio dos guardiões).
+ * O modelo é o GLB reduzido do Codex (28.784.156 B) e SÓ se pede
+ * quando uma batalha nasce neste mapa (carregamento preguiçoso —
+ * o caminho «campo» nunca o pede). Medições do ficheiro: caixa
+ * 32 × 18,4 × 51,5 m; chão da nave com o topo a y=0; a nave corre
+ * ao longo de −Z (entrada z=0, plataforma do trono z −36…−50,
+ * óculo centrado em z=−22). O grupo desloca-se +22 em Z: o óculo
+ * fica sobre o centro da arena e a grelha 10×7 assenta no chão
+ * da nave, plana — height devolve 0 em todo o lado e nenhuma
+ * peça do cenário do campo nasce aqui. A interface devolvida é
+ * a mesma que a cena consome do CampoWorld. */
+window.TronoWorld = function (T, scene, area) {
+    const C = h => new T.Color(h).convertSRGBToLinear();
+    const grupo = new T.Group();
+    grupo.position.set(0, 0, 22);
+    scene.add(grupo);
+    scene.fog = new T.Fog(C(0x100d0a), 55, 190);
+    window.__tronoModeloPronto = false;
+    new T.GLTFLoader().load('modelos/cenario/sala-trono.glb', gltf => {
+        const modelo = gltf.scene;
+        modelo.traverse(o => {
+            if (o.isMesh) {
+                o.castShadow = false; o.receiveShadow = true;
+                // CORTE DO TECTO (mapa de batalha): a câmera do
+                // jogo vê a sala de cima — painéis, vigas e
+                // rosetas do tecto escondidos, a nave lê-se como
+                // diorama aberto. O anel de bronze do óculo fica:
+                // é a boca do feixe.
+                if (/^(Teto_|Viga_|Roseta_)/.test(o.name || '')) o.visible = false;
+            }
+        });
+        grupo.add(modelo);
+        window.__tronoModeloPronto = true;
+    }, undefined, () => { window.__tronoModeloPronto = 'erro'; });
+    /* O feixe do óculo (valores da sala ajustada: spot à rotação do
+       sol, energia baixa, cone de 16°): em Three.js o cone de luz
+       desenha-se com um fuste translúcido aditivo do óculo ao chão
+       e a poça quente com o SpotLight a sério. */
+    const oculo = new T.Vector3(0, 17.2, 2.5), poco = new T.Vector3(0, 0, -1.2);
+    /* CORRECÇÃO t-mapa-trono (bancada, item 5): o feixe baixa de
+       7,0 para 4,6 — a 7,0 a poça clipava a branco puro no mármore
+       claro a norte do medalhão. A poça continua a ser o foco da
+       sala; o medalhão mantém a cor cheia. */
+    const feixe = new T.SpotLight(0xffd9a0, 4.6, 60, 0.30, 0.9, 2);
+    feixe.position.copy(oculo);
+    feixe.target.position.copy(poco);
+    scene.add(feixe); scene.add(feixe.target);
+    const eixo = new T.Vector3().subVectors(oculo, poco);
+    const fuste = new T.Mesh(
+        new T.CylinderGeometry(1.05, 2.6, eixo.length(), 24, 1, true),
+        new T.MeshBasicMaterial({ color: C(0xffca7a), transparent: true, opacity: .035, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide, fog: false }));
+    fuste.position.copy(oculo).add(poco).multiplyScalar(.5);
+    fuste.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), eixo.normalize());
+    scene.add(fuste);
+    /* A água turquesa: um ponto de luz sobre cada jacto (posições
+       medidas do modelo: x=±12,4, z da nave −12/−30 → mundo +10/−8). */
+    for (const [x, z] of [[-12.4, 10], [12.4, 10], [-12.4, -8], [12.4, -8]]) {
+        const p = new T.PointLight(0x35c4b5, 9, 12, 2);
+        p.position.set(x, 1.0, z);
+        scene.add(p);
+    }
+    /* O recorte frio dos guardiões (nichos a x=±13,95, z da nave
+       −15/−27 → mundo +7/−5): pontos #90B4E8 baixos, como na sala. */
+    for (const [x, z] of [[-13.9, 7], [13.9, 7], [-13.9, -5], [13.9, -5]]) {
+        const p = new T.PointLight(0x90b4e8, 6.5, 10, 2);
+        p.position.set(x, 4.6, z);
+        scene.add(p);
+    }
+    /* A «fogueira» deste mundo para o ambiente da partida: um
+       calor quente e baixo sobre a arena — é ela que o
+       view.aplicarAmbiente modula (fontes D-AMB-01), como a
+       fogueira modula no campo. */
+    const calor = new T.PointLight(0xff9a3c, 9.0, 22, 2);
+    calor.position.set(0, 2.6, 0);
+    scene.add(calor);
+    return { ground: grupo, height: () => 0, radius: 30, obstaculos: Object.freeze([]),
+        fontes: { fogueira: calor, tochas: [], chamas: [] },
+        ambienteBases: { fogueira: 9.0, tochas: 7.5 },
+        brasasFogueira: [], pecasFogueira: [], braseiros: [],
+        recomputarPedras() {}, definirFantasmaPedras() {},
+        pedrasDiagnostico() { return { total: 0, casas: [], mortas: [], retrato: [], vivas: [], fantasmas: [], nv: 0, nf: 0 }; },
+        setTremulacao() {}, update() {}, quality() {} };
+};
+
 /* Cenário próprio CC0 de terceiros não é necessário; escala em metros. */
 window.CampoWorld = function (T, scene, area) {
     const C = h => new T.Color(h).convertSRGBToLinear();

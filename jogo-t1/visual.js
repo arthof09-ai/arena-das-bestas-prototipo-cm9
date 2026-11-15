@@ -33,6 +33,121 @@
     let seed = 7411;
     const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
 
+    /* ---------- PINTURA DOS MATERIAIS — INVÓLUCRO COMUM
+       (correcção t-mapa-trono, bancada item 4) ----------
+       A pintura (polling + onBeforeCompile + mate + mapas
+       repintados) vivia SÓ dentro do invólucro do CampoWorld:
+       as figuras da Sala do Trono ficavam sem ela e trocavam
+       de pele entre mapas. Extraída para aqui, aplica-se à
+       cena de QUALQUER mundo — campo (com as texturas dele:
+       pedra/madeira/contacto) e trono (sem elas). O caminho do
+       campo chama-a no mesmo ponto e com os mesmos argumentos
+       de sempre: comportamento ao bit. */
+    const instalarPintura = (T, scene, mundoTex) => {
+        /* ---------- PINTURA DOS MATERIAIS (Visual 3, PESQUISA-A §2) ----------
+         * Sem trocar materiais nem tocar nos sagrados: injecta-se no fim do
+         * fragmento (antes de tonemapping_fragment, onde gl_FragColor já
+         * existe) uma posterização SUAVE da luminância (4 patamares com
+         * transição smoothstep, misturada a 0,62 — achata o «gradiente de
+         * computador» sem virar cel-shading), split toning (sombra fria
+         * petróleo / luz quente âmbar) e, só no Standard das figuras, RIM
+         * quente por fresnel mascarado pela luminância (o «contorno
+         * pintado» viável — inverted-hull foi NÃO fundamentado na pesquisa).
+         * MeshBasicMaterial fica FORA (runas, chamas, halos: emissivos
+         * puros). As figuras GLTF entram depois da carga → polling com
+         * marca userData.__pintado (nunca injectar duas vezes). */
+        const fabricaPintura = (comRim, mistura, dessat) => shader => {
+            const inj = '{ vec3 corP = gl_FragColor.rgb;'
+                + ' float lumP = dot(corP, vec3(0.299, 0.587, 0.114));'
+                + ' float fP = lumP * 4.0; float baseP = floor(fP);'
+                + ' float yqP = (baseP + smoothstep(0.32, 0.68, fP - baseP)) / 4.0;'
+                + ' float razP = lumP > 0.003 ? yqP / lumP : 1.0;'
+                + ' corP *= razP;'
+                + ' corP *= mix(vec3(0.90, 1.01, 1.10), vec3(1.07, 1.00, 0.90), smoothstep(0.12, 0.85, yqP));'
+                + (dessat ? ' corP = mix(corP, vec3(dot(corP, vec3(0.299, 0.587, 0.114))), ' + dessat + ');' : '')
+                + ' corP = mix(gl_FragColor.rgb, corP, ' + mistura + ');'
+                + (comRim ? ' float frP = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 3.0);'
+                          + ' corP += vec3(1.0, 0.72, 0.42) * frP * 0.62 * smoothstep(0.04, 0.42, yqP);' : '')
+                + ' gl_FragColor.rgb = corP; }'
+                + '\n#include <tonemapping_fragment>';
+            shader.fragmentShader = shader.fragmentShader.replace('#include <tonemapping_fragment>', inj);
+        };
+        /* VOLTA 3: as figuras dessaturam 0,22 (o cabelo laranja da Ong era
+         * um terceiro acento limpo a competir — Disfarce item 11) e a
+         * mistura da pintura sobe: a língua tem de ser a mesma em tudo. */
+        const pintarStd = fabricaPintura(true, 0.78, '0.22'), pintarLam = fabricaPintura(false, 0.6, null);
+        /* VOLTA 2: dente de pintura nos mapas das figuras (Standard com map):
+         * a textura original é redesenhada em canvas com blocos de valor e
+         * traços curtos em overlay de alpha baixo — quebra o «liso de
+         * fábrica» sem sujar a figura. Uma vez por material; o polling
+         * repete a tentativa até a imagem do mapa existir. */
+        const tentarMapaPintado = m => {
+            if (m.userData.__mapaPintado || !m.map || !m.map.image || !m.map.image.width) return;
+            try {
+                const img0 = m.map.image, esc = Math.min(1, 512 / Math.max(img0.width, img0.height));
+                const mc = document.createElement('canvas');
+                mc.width = Math.max(2, (img0.width * esc) | 0); mc.height = Math.max(2, (img0.height * esc) | 0);
+                const mp = mc.getContext('2d'); mp.drawImage(img0, 0, 0, mc.width, mc.height);
+                /* VOLTA 3: o grão fino da volta 2 foi condenado como
+                 * «textura de ruído/estática» (Disfarce (f) e N1) — sai o
+                 * pontilhado; ficam só manchas TONAIS grandes e macias
+                 * (variação de valor em escala larga, sem textura fina). */
+                for (let i = 0; i < 34; i++) {
+                    const x = rnd() * mc.width, y = rnd() * mc.height, r = 26 + rnd() * 95;
+                    const gr = mp.createRadialGradient(x, y, 0, x, y, r), escuro = rnd() < 0.58;
+                    gr.addColorStop(0, escuro ? 'rgba(24,18,10,' + (0.05 + rnd() * 0.06) + ')' : 'rgba(238,220,180,' + (0.04 + rnd() * 0.05) + ')');
+                    gr.addColorStop(1, 'rgba(0,0,0,0)');
+                    mp.fillStyle = gr; mp.fillRect(x - r, y - r, r * 2, r * 2);
+                }
+                const nt = new T.CanvasTexture(mc);
+                nt.encoding = m.map.encoding; nt.wrapS = m.map.wrapS; nt.wrapT = m.map.wrapT;
+                nt.repeat.copy(m.map.repeat); nt.offset.copy(m.map.offset);
+                m.map = nt; m.needsUpdate = true; m.userData.__mapaPintado = true;
+            } catch (e) { m.userData.__mapaPintado = true; }
+        };
+        const pintarMaterial = m => {
+            if (m && m.isMeshStandardMaterial) tentarMapaPintado(m);
+            if (!m || m.userData.__pintado) return;
+            if (m.isMeshBasicMaterial || m.isSpriteMaterial || m.isPointsMaterial || m.isLineBasicMaterial || m.isShaderMaterial) return;
+            m.userData.__pintado = true;
+            // VOLTA 3: acabamento MATE nas figuras (Standard) — roughness
+            // alto e metal zero matam o brilho pontual de plástico (Disfarce
+            // item 1); um toque de tinta quente unifica com o fundo.
+            if (m.isMeshStandardMaterial) {
+                if (typeof m.roughness === 'number') m.roughness = Math.max(m.roughness, 0.9);
+                if (typeof m.metalness === 'number') m.metalness = 0;
+                if (m.color) m.color.multiply(new T.Color(1.0, 0.97, 0.92));
+            }
+            // VOLTA 2: pedra/madeira do MUNDO ganham a textura pintada da camada
+            if (mundoTex.texPedra && m.isMeshLambertMaterial && !m.map && !m.vertexColors && m.color) {
+                const cc = m.color, mx = Math.max(cc.r, cc.g, cc.b), mn = Math.min(cc.r, cc.g, cc.b);
+                if (mx - mn < 0.09 && mx > 0.28 && mx < 0.72) m.map = mundoTex.texPedra;
+                else if (cc.r > cc.g && cc.g > cc.b && (cc.r - cc.b) > 0.08 && mx < 0.6) m.map = mundoTex.texMadeira;
+            }
+            m.onBeforeCompile = m.isMeshStandardMaterial ? pintarStd : pintarLam;
+            m.needsUpdate = true;
+        };
+        const pintarCena = () => scene.traverse(o => {
+            if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(pintarMaterial);
+        });
+        pintarCena();
+        /* VOLTA 3 (Disfarce item 3): os discos de contacto da cena são
+         * ovais perfeitos carimbados sob cada figura (CircleGeometry,
+         * 0x080c12) — troca-se o material pela mancha IRREGULAR da camada
+         * (mesma tinta, feitio de pincel) e alarga-se um pouco o apoio. */
+        const arrumarContactos = () => { if (!mundoTex.texContacto) return; scene.traverse(o => {
+            if (o.isMesh && o.geometry && o.geometry.type === 'CircleGeometry' && o.material && o.material.isMeshBasicMaterial
+                && o.material.color && o.material.color.getHex() === 0x080c12 && !o.userData.__contactoPintado) {
+                o.userData.__contactoPintado = true;
+                o.material = new T.MeshBasicMaterial({ map: mundoTex.texContacto, transparent: true, opacity: 0.95, depthWrite: false, side: T.DoubleSide, fog: true });
+                o.scale.set(1.45, 1.45, 1);
+            }
+        }); };
+        arrumarContactos();
+        let rondasPintura = 0;
+        const relogioPintura = setInterval(() => { pintarCena(); arrumarContactos(); if (++rondasPintura > 160) clearInterval(relogioPintura); }, 750);
+    };
+
     window.CampoWorld = function (T, scene, area) {
         const world = baseWorld(T, scene, area);
         const C = h => new T.Color(h).convertSRGBToLinear();
@@ -1441,108 +1556,7 @@
         anel(10, 9.9, 13.5, (x, z, i) => porPeca('modelos/cenario/rochas.glb', 'Rock_' + (1 + (i % 5)), x, z, 0.9 + rnd() * 1.3, 0.8, 0.12));
         anel(12, 9.6, 13.5, (x, z, i) => porPeca('modelos/cenario/arbustos.glb', i % 2 ? 'Bush' : 'Plant_1', x, z, 0.55 + rnd() * 0.4, 0.42, 0.38));
 
-        /* ---------- PINTURA DOS MATERIAIS (Visual 3, PESQUISA-A §2) ----------
-         * Sem trocar materiais nem tocar nos sagrados: injecta-se no fim do
-         * fragmento (antes de tonemapping_fragment, onde gl_FragColor já
-         * existe) uma posterização SUAVE da luminância (4 patamares com
-         * transição smoothstep, misturada a 0,62 — achata o «gradiente de
-         * computador» sem virar cel-shading), split toning (sombra fria
-         * petróleo / luz quente âmbar) e, só no Standard das figuras, RIM
-         * quente por fresnel mascarado pela luminância (o «contorno
-         * pintado» viável — inverted-hull foi NÃO fundamentado na pesquisa).
-         * MeshBasicMaterial fica FORA (runas, chamas, halos: emissivos
-         * puros). As figuras GLTF entram depois da carga → polling com
-         * marca userData.__pintado (nunca injectar duas vezes). */
-        const fabricaPintura = (comRim, mistura, dessat) => shader => {
-            const inj = '{ vec3 corP = gl_FragColor.rgb;'
-                + ' float lumP = dot(corP, vec3(0.299, 0.587, 0.114));'
-                + ' float fP = lumP * 4.0; float baseP = floor(fP);'
-                + ' float yqP = (baseP + smoothstep(0.32, 0.68, fP - baseP)) / 4.0;'
-                + ' float razP = lumP > 0.003 ? yqP / lumP : 1.0;'
-                + ' corP *= razP;'
-                + ' corP *= mix(vec3(0.90, 1.01, 1.10), vec3(1.07, 1.00, 0.90), smoothstep(0.12, 0.85, yqP));'
-                + (dessat ? ' corP = mix(corP, vec3(dot(corP, vec3(0.299, 0.587, 0.114))), ' + dessat + ');' : '')
-                + ' corP = mix(gl_FragColor.rgb, corP, ' + mistura + ');'
-                + (comRim ? ' float frP = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 3.0);'
-                          + ' corP += vec3(1.0, 0.72, 0.42) * frP * 0.62 * smoothstep(0.04, 0.42, yqP);' : '')
-                + ' gl_FragColor.rgb = corP; }'
-                + '\n#include <tonemapping_fragment>';
-            shader.fragmentShader = shader.fragmentShader.replace('#include <tonemapping_fragment>', inj);
-        };
-        /* VOLTA 3: as figuras dessaturam 0,22 (o cabelo laranja da Ong era
-         * um terceiro acento limpo a competir — Disfarce item 11) e a
-         * mistura da pintura sobe: a língua tem de ser a mesma em tudo. */
-        const pintarStd = fabricaPintura(true, 0.78, '0.22'), pintarLam = fabricaPintura(false, 0.6, null);
-        /* VOLTA 2: dente de pintura nos mapas das figuras (Standard com map):
-         * a textura original é redesenhada em canvas com blocos de valor e
-         * traços curtos em overlay de alpha baixo — quebra o «liso de
-         * fábrica» sem sujar a figura. Uma vez por material; o polling
-         * repete a tentativa até a imagem do mapa existir. */
-        const tentarMapaPintado = m => {
-            if (m.userData.__mapaPintado || !m.map || !m.map.image || !m.map.image.width) return;
-            try {
-                const img0 = m.map.image, esc = Math.min(1, 512 / Math.max(img0.width, img0.height));
-                const mc = document.createElement('canvas');
-                mc.width = Math.max(2, (img0.width * esc) | 0); mc.height = Math.max(2, (img0.height * esc) | 0);
-                const mp = mc.getContext('2d'); mp.drawImage(img0, 0, 0, mc.width, mc.height);
-                /* VOLTA 3: o grão fino da volta 2 foi condenado como
-                 * «textura de ruído/estática» (Disfarce (f) e N1) — sai o
-                 * pontilhado; ficam só manchas TONAIS grandes e macias
-                 * (variação de valor em escala larga, sem textura fina). */
-                for (let i = 0; i < 34; i++) {
-                    const x = rnd() * mc.width, y = rnd() * mc.height, r = 26 + rnd() * 95;
-                    const gr = mp.createRadialGradient(x, y, 0, x, y, r), escuro = rnd() < 0.58;
-                    gr.addColorStop(0, escuro ? 'rgba(24,18,10,' + (0.05 + rnd() * 0.06) + ')' : 'rgba(238,220,180,' + (0.04 + rnd() * 0.05) + ')');
-                    gr.addColorStop(1, 'rgba(0,0,0,0)');
-                    mp.fillStyle = gr; mp.fillRect(x - r, y - r, r * 2, r * 2);
-                }
-                const nt = new T.CanvasTexture(mc);
-                nt.encoding = m.map.encoding; nt.wrapS = m.map.wrapS; nt.wrapT = m.map.wrapT;
-                nt.repeat.copy(m.map.repeat); nt.offset.copy(m.map.offset);
-                m.map = nt; m.needsUpdate = true; m.userData.__mapaPintado = true;
-            } catch (e) { m.userData.__mapaPintado = true; }
-        };
-        const pintarMaterial = m => {
-            if (m && m.isMeshStandardMaterial) tentarMapaPintado(m);
-            if (!m || m.userData.__pintado) return;
-            if (m.isMeshBasicMaterial || m.isSpriteMaterial || m.isPointsMaterial || m.isLineBasicMaterial || m.isShaderMaterial) return;
-            m.userData.__pintado = true;
-            // VOLTA 3: acabamento MATE nas figuras (Standard) — roughness
-            // alto e metal zero matam o brilho pontual de plástico (Disfarce
-            // item 1); um toque de tinta quente unifica com o fundo.
-            if (m.isMeshStandardMaterial) {
-                if (typeof m.roughness === 'number') m.roughness = Math.max(m.roughness, 0.9);
-                if (typeof m.metalness === 'number') m.metalness = 0;
-                if (m.color) m.color.multiply(new T.Color(1.0, 0.97, 0.92));
-            }
-            // VOLTA 2: pedra/madeira do MUNDO ganham a textura pintada da camada
-            if (m.isMeshLambertMaterial && !m.map && !m.vertexColors && m.color) {
-                const cc = m.color, mx = Math.max(cc.r, cc.g, cc.b), mn = Math.min(cc.r, cc.g, cc.b);
-                if (mx - mn < 0.09 && mx > 0.28 && mx < 0.72) m.map = texPedra;
-                else if (cc.r > cc.g && cc.g > cc.b && (cc.r - cc.b) > 0.08 && mx < 0.6) m.map = texMadeira;
-            }
-            m.onBeforeCompile = m.isMeshStandardMaterial ? pintarStd : pintarLam;
-            m.needsUpdate = true;
-        };
-        const pintarCena = () => scene.traverse(o => {
-            if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(pintarMaterial);
-        });
-        pintarCena();
-        /* VOLTA 3 (Disfarce item 3): os discos de contacto da cena são
-         * ovais perfeitos carimbados sob cada figura (CircleGeometry,
-         * 0x080c12) — troca-se o material pela mancha IRREGULAR da camada
-         * (mesma tinta, feitio de pincel) e alarga-se um pouco o apoio. */
-        const arrumarContactos = () => scene.traverse(o => {
-            if (o.isMesh && o.geometry && o.geometry.type === 'CircleGeometry' && o.material && o.material.isMeshBasicMaterial
-                && o.material.color && o.material.color.getHex() === 0x080c12 && !o.userData.__contactoPintado) {
-                o.userData.__contactoPintado = true;
-                o.material = new T.MeshBasicMaterial({ map: texContacto, transparent: true, opacity: 0.95, depthWrite: false, side: T.DoubleSide, fog: true });
-                o.scale.set(1.45, 1.45, 1);
-            }
-        });
-        arrumarContactos();
-        let rondasPintura = 0;
-        const relogioPintura = setInterval(() => { pintarCena(); arrumarContactos(); if (++rondasPintura > 160) clearInterval(relogioPintura); }, 750);
+        instalarPintura(T, scene, { texPedra, texMadeira, texContacto });
 
         /* ---------- recibo para medição externa (só leitura) ----------
          * Adenda do crítico R2: a leitura só é válida com a carga completa —
@@ -1563,6 +1577,39 @@
         world.alturaVisivel = alturaNova;
         return world;
     };
+
+    /* A Sala do Trono recebe a MESMA pintura (item 4): o mundo é
+       o de mundo.js ao bit; só se lhe junta o invólucro comum.
+       COMPLETADO pelo sucessor: o invólucro ia receber {} e o
+       arrumarContactos (que troca o carimbo oval dos discos de
+       contacto pela mancha irregular) nunca corria neste mapa —
+       as figuras ficavam com o apoio liso do campo SEM pintura.
+       A textura de contacto gera-se aqui, com a mesma receita
+       da do campo e semente privada (a semente partilhada do
+       campo não se toca: a sequência dela é comportamento do
+       campo ao bit). Pedra/madeira do campo NÃO viajam: o mundo
+       da sala não tem peças Lambert do campo. */
+    const baseTronoWorld = window.TronoWorld;
+    if (typeof baseTronoWorld === 'function') {
+        window.TronoWorld = function (T, scene, area) {
+            const world = baseTronoWorld(T, scene, area);
+            let sementeContacto = 7411;
+            const rndContacto = () => ((sementeContacto = (Math.imul(sementeContacto, 1664525) + 1013904223) >>> 0) / 4294967296);
+            const bc = document.createElement('canvas'); bc.width = bc.height = 128;
+            const b = bc.getContext('2d');
+            for (let i = 0; i < 26; i++) {
+                const a = (i / 26) * Math.PI * 2, rr = 30 + rndContacto() * 24, x = 64 + Math.cos(a) * rr * 0.85, y = 64 + Math.sin(a) * rr * 0.85;
+                const gr = b.createRadialGradient(x, y, 0, x, y, 18 + rndContacto() * 16);
+                gr.addColorStop(0, 'rgba(10,8,5,0.20)'); gr.addColorStop(1, 'rgba(10,8,5,0)');
+                b.fillStyle = gr; b.fillRect(0, 0, 128, 128);
+            }
+            const gr2 = b.createRadialGradient(64, 64, 4, 64, 64, 60);
+            gr2.addColorStop(0, 'rgba(8,6,4,0.5)'); gr2.addColorStop(1, 'rgba(8,6,4,0)');
+            b.fillStyle = gr2; b.fillRect(0, 0, 128, 128);
+            instalarPintura(T, scene, { texContacto: new T.CanvasTexture(bc) });
+            return world;
+        };
+    }
 
     /* ---------- FILME DOM (Visual 3, PESQUISA-A §3b) ----------
      * O renderer e a câmara são privados no fecho do cena.js e o three
