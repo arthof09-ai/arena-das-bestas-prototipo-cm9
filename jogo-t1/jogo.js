@@ -146,7 +146,7 @@
      * declarar, sem invenção. Troca-se cada um pelo modelo certo
      * quando ele existir. ---------- */
   const ELENCO_BASE = [
-    { id: 'orc',     nome: 'Orc',             modelo: 'modelos/orc-mutante.glb', x: 3, y: 3, alturaMetros: 3.6,  vivo: true, animacoes: { andar: 'andar', ataque: 'ataque', reacao: 'reacao' } },
+    { id: 'orc',     nome: 'Orc',             modelo: 'modelos/orc-mutante.glb', x: 3, y: 3, alturaMetros: 3.6,  vivo: true, animacoes: { idle: 'parado', andar: 'andar', ataque: 'ataque', reacao: 'reacao' } },
     { id: 'ong',     nome: 'Ong',             modelo: 'modelos/manequim-f-roxa.glb', x: 6, y: 2, alturaMetros: 2.625, vivo: true, animacoes: { idle: 'parado_v3_fase2', andar: 'andar_v3_fase2', ataque: 'ataque_v3_f_fase2' } },
     { id: 'capanga', nome: 'Capanga 1',       modelo: 'modelos/manequim-m.glb', x: 7, y: 4, alturaMetros: 2.7,  vivo: true, animacoes: { idle: 'parado_v3_m_fase2', andar: 'andar_v3_m_fase2', ataque: 'ataque_v3_m_fase2' } },
     { id: 'lobo',    nome: 'Lobo da Caverna', modelo: 'modelos/lobo-cinzento-051.glb', x: 2, y: 5, alturaMetros: 1.35,  vivo: true, animacoes: { idle: 'Idle', andar: 'Walk', ataque: 'Bite', reacao: 'Hit' } }
