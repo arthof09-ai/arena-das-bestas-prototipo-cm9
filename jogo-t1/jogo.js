@@ -131,15 +131,22 @@
      * PROVISÓRIO registado (sede t-modelos-provisorios/PROVISORIOS.md):
      * a figura-jogadora usa «a roxa» (Mannequin_F UAL da A2, com os
      * clipes parado/andar/ataque dela); o Capanga usa o Mannequin_M;
-     * o Orc usa a escultura do Orc da Oficina com rig UAL1 e clipes
-     * (sem clipe de ataque no ficheiro — o slot fica por declarar);
+     * o Orc usa o Mutante do Mixamo que o Mestre mandou
+     * (t-orc-mutante, palavra dele 15/11/2026 15:05; substituição
+     * TEMPORÁRIA confirmada por ele às 15:28 — troca-se pelo Orc de
+     * verdade quando ele existir), com clipes colados do lote Mixamo
+     * da casa: andar (Standing_Run_Forward), ataque (Mutant_Punch —
+     * fecha a dívida 6) e reacção (Standing_React_Large_From_Left);
+     * o slot idle fica por declarar — não há idle Mixamo na casa
+     * (falta o «Breathing Idle»); sem idle, a figura parada fica na
+     * pose de repouso do GLB (T-pose) com a respiração do motor;
      * o Lobo deixa de ser marcador e usa o lobo cinzento da fera
      * T1/051 (clipes próprios: Idle/Walk/Bite/Hit). As heroínas e o
      * Capanga não têm clipe de reacção nestes ficheiros — slot por
      * declarar, sem invenção. Troca-se cada um pelo modelo certo
      * quando ele existir. ---------- */
   const ELENCO_BASE = [
-    { id: 'orc',     nome: 'Orc',             modelo: 'modelos/orc-rig-ual.glb', x: 3, y: 3, alturaMetros: 3.6,  vivo: true, animacoes: { idle: 'Idle_Loop_Orc', andar: 'Walk_Loop_Orc', reacao: 'Hit_Chest_Orc' } },
+    { id: 'orc',     nome: 'Orc',             modelo: 'modelos/orc-mutante.glb', x: 3, y: 3, alturaMetros: 3.6,  vivo: true, animacoes: { andar: 'andar', ataque: 'ataque', reacao: 'reacao' } },
     { id: 'ong',     nome: 'Ong',             modelo: 'modelos/manequim-f-roxa.glb', x: 6, y: 2, alturaMetros: 2.625, vivo: true, animacoes: { idle: 'parado_v3_fase2', andar: 'andar_v3_fase2', ataque: 'ataque_v3_f_fase2' } },
     { id: 'capanga', nome: 'Capanga 1',       modelo: 'modelos/manequim-m.glb', x: 7, y: 4, alturaMetros: 2.7,  vivo: true, animacoes: { idle: 'parado_v3_m_fase2', andar: 'andar_v3_m_fase2', ataque: 'ataque_v3_m_fase2' } },
     { id: 'lobo',    nome: 'Lobo da Caverna', modelo: 'modelos/lobo-cinzento-051.glb', x: 2, y: 5, alturaMetros: 1.35,  vivo: true, animacoes: { idle: 'Idle', andar: 'Walk', ataque: 'Bite', reacao: 'Hit' } }
