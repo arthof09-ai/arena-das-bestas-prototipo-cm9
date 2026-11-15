@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_96';
+  var VERSAO_JOGO = 'REF_97';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -230,6 +230,15 @@
   /* ---------- boot do jogo (só depois de uma entrada) ---------- */
   var arrancou = false;
   function arrancarJogo(comoMestre) {
+    /* PREPARAÇÃO (t-escolha-mapa, palavra do Mestre 14/11/2026
+     * 20:31): a entrada do Mestre passa PRIMEIRO pela tela de
+     * preparação — ele escolhe o mapa, os monstros e os NPCs e os
+     * lados deles, e só o «Começar batalha» de lá volta a chamar
+     * isto com a preparação feita. Todas as portas dele (Google,
+     * perfil lembrado, senha) desaguam aqui, por isso a intercepção
+     * é uma só. A Jogadora nunca passa por aqui: comoMestre falso
+     * segue o caminho de sempre, sem tela nenhuma. */
+    if (comoMestre && !preparacaoFeita) { mostrar('preparacao'); return; }
     if (arrancou) return;
     arrancou = true;
     /* A média da entrada (filme/loop/trilha) é da tela do título:
@@ -426,6 +435,183 @@
   btnVoltarMestre.style.width = '100%';
   vistaMestre.appendChild(btnVoltarMestre);
   raiz.appendChild(vistaMestre);
+
+  /* Vista 5 — a PREPARAÇÃO DA BATALHA (t-escolha-mapa, palavra do
+   * Mestre 14/11/2026 20:31): depois de entrar como Mestre, em vez de
+   * cair directo na batalha, ele escolhe o mapa, os monstros e os
+   * NPCs da partida — e só ao apertar «Começar batalha» é que o jogo
+   * arranca. A vista é só dele por construção: só se chega aqui por
+   * arrancarJogo(true); o caminho da Jogadora nunca a toca.
+   * Os registos MAPAS_PARTIDA / MONSTROS_PARTIDA são a lista viva da
+   * tela: um mapa ou um tipo novo entra AQUI, sem reescrever a vista.
+   * Hoje o jogo tem um mapa e três tipos de monstro; NPCs ainda não
+   * há tipos nenhuns no jogo (a secção nasce presente e honesta). */
+  var MAPAS_PARTIDA = [
+    { id: 'campo', nome: 'Campo de batalha', nota: 'A fogueira, as ruínas e os braseiros — o campo de sempre.' }
+  ];
+  /* A índole é a natureza do tipo (palavra do Mestre, 14/11/2026
+   * 20:46): NÃO se escolhe aqui — mostra-se, para ele saber o que
+   * está a pôr no mapa. Os textos batem com o campo INDOLE de
+   * jogo.js; os valores actuais são provisórios (a índole que o
+   * jogo sempre mostrou: os três atacam ao ver). */
+  var MONSTROS_PARTIDA = [
+    { id: 'orc', nome: 'Orc', indoleTxt: 'Ataca ao ver' },
+    { id: 'capanga', nome: 'Capanga', indoleTxt: 'Ataca ao ver' },
+    { id: 'lobo', nome: 'Lobo da Caverna', indoleTxt: 'Ataca ao ver' }
+  ];
+  /* O tecto é do TOTAL do tipo (a soma dos três lados = 9 no
+   * máximo — correcção F3 da bancada): a tela trava o «+» de
+   * todos os lados do tipo quando a soma chega a 9, e o motor
+   * (jogo.js) pinça a mesma soma na ordem de criação. */
+  var PREP_MAX_POR_TIPO = 9;
+  /* Os TRÊS lados de cada tipo (palavra do Mestre, 14/11/2026
+   * 20:40–20:43): contra as jogadoras, neutro e no time das
+   * jogadoras. Os três contadores começam em ZERO — ele levanta
+   * os que quer, sem defaults escondidos. (Na tela diz-se
+   * «jogadoras», a palavra do jogo — correcção M1 da bancada;
+   * os aria-label nascem destes nomes.) */
+  var PREP_LADOS = [
+    { id: 'contra', nome: 'Contra as jogadoras' },
+    { id: 'neutro', nome: 'Neutro' },
+    { id: 'time', nome: 'No time das jogadoras' }
+  ];
+  var preparacaoFeita = false;
+  var prepEscolhas = { mapa: MAPAS_PARTIDA[0].id, monstros: {}, npcs: {} };
+  MONSTROS_PARTIDA.forEach(function (m) {
+    prepEscolhas.monstros[m.id] = { contra: 0, neutro: 0, time: 0 };
+  });
+
+  var vistaPreparacao = el('section', 'ent-painel');
+  vistaPreparacao.hidden = true;
+  vistaPreparacao.setAttribute('aria-label', 'Preparar a batalha');
+  vistaPreparacao.appendChild(el('h2', null, 'Preparar a batalha'));
+  vistaPreparacao.appendChild(el('p', 'ent-nota',
+    'Escolha o mapa e quem entra na batalha. A batalha só começa quando você apertar «Começar batalha».'));
+
+  vistaPreparacao.appendChild(el('h3', 'prep-titulo', 'Mapa'));
+  var prepMapaBotoes = {};
+  MAPAS_PARTIDA.forEach(function (mp) {
+    var b = el('button', 'prep-mapa');
+    b.type = 'button';
+    b.appendChild(el('span', null, mp.nome));
+    if (mp.nota) b.appendChild(el('span', 'sub', mp.nota));
+    b.addEventListener('click', function () {
+      prepEscolhas.mapa = mp.id;
+      pintarPreparacao();
+    });
+    prepMapaBotoes[mp.id] = b;
+    vistaPreparacao.appendChild(b);
+  });
+
+  vistaPreparacao.appendChild(el('h3', 'prep-titulo', 'Monstros'));
+  var prepQtdEls = {};
+  MONSTROS_PARTIDA.forEach(function (m) {
+    var bloco = el('div', 'prep-tipo');
+    bloco.appendChild(el('div', 'prep-nome', m.nome));
+    if (m.indoleTxt) bloco.appendChild(el('div', 'prep-indole', 'Índole: ' + m.indoleTxt));
+    prepQtdEls[m.id] = {};
+    PREP_LADOS.forEach(function (lado) {
+      var linha = el('div', 'prep-linha');
+      linha.appendChild(el('span', 'prep-lado', lado.nome));
+      var passoGrupo = el('div', 'prep-passo-grupo');
+      var menos = el('button', 'prep-passo', '−');
+      menos.type = 'button';
+      menos.setAttribute('aria-label', 'Tirar um ' + m.nome + ' — ' + lado.nome);
+      var qtd = el('span', 'prep-qtd', '0');
+      qtd.setAttribute('aria-live', 'polite');
+      var mais = el('button', 'prep-passo', '+');
+      mais.type = 'button';
+      mais.setAttribute('aria-label', 'Pôr mais um ' + m.nome + ' — ' + lado.nome);
+      menos.addEventListener('click', function () {
+        var c = prepEscolhas.monstros[m.id];
+        c[lado.id] = Math.max(0, (c[lado.id] | 0) - 1);
+        pintarPreparacao();
+      });
+      mais.addEventListener('click', function () {
+        var c = prepEscolhas.monstros[m.id];
+        /* F3: o tecto é da SOMA dos três lados do tipo — com a
+           soma a 9, nenhum «+» deste tipo soma mais. */
+        var soma = (c.contra | 0) + (c.neutro | 0) + (c.time | 0);
+        if (soma >= PREP_MAX_POR_TIPO) return;
+        c[lado.id] = (c[lado.id] | 0) + 1;
+        pintarPreparacao();
+      });
+      passoGrupo.appendChild(menos);
+      passoGrupo.appendChild(qtd);
+      passoGrupo.appendChild(mais);
+      linha.appendChild(passoGrupo);
+      bloco.appendChild(linha);
+      prepQtdEls[m.id][lado.id] = { qtd: qtd, menos: menos, mais: mais };
+    });
+    /* M2 (bancada): o total do tipo, vivo, no fim do bloco —
+       ele confere o que montou sem somar contadores de cabeça. */
+    var totTipo = el('div', 'prep-total-tipo', 'Total: 0');
+    bloco.appendChild(totTipo);
+    prepQtdEls[m.id].totalTipo = totTipo;
+    vistaPreparacao.appendChild(bloco);
+  });
+
+  vistaPreparacao.appendChild(el('h3', 'prep-titulo', 'NPCs'));
+  vistaPreparacao.appendChild(el('p', 'ent-nota', 'Ainda não há NPCs no jogo.'));
+
+  /* G1 (bancada): a barra de acções é o ÚLTIMO filho do painel
+   * e fica PRESA ao fundo dele (position: sticky, no CSS) —
+   * «Começar batalha» e «Voltar» estão sempre visíveis, sem
+   * rolar, em desktop e telemóvel. O total da batalha (M2)
+   * vive na barra: confere-se o que se montou antes de apertar. */
+  var prepAccoes = el('div', 'prep-accoes');
+  var prepTotalEl = el('div', 'prep-total', 'Total: 0 figuras');
+  prepAccoes.appendChild(prepTotalEl);
+  var btnComecarBatalha = el('button', 'ent-accao prep-accao', 'Começar batalha');
+  btnComecarBatalha.id = 'ent-comecar-batalha'; btnComecarBatalha.type = 'button';
+  btnComecarBatalha.style.width = '100%';
+  btnComecarBatalha.addEventListener('click', function () {
+    var monstros = {};
+    MONSTROS_PARTIDA.forEach(function (m) {
+      var c = prepEscolhas.monstros[m.id];
+      monstros[m.id] = { contra: c.contra | 0, neutro: c.neutro | 0, time: c.time | 0 };
+    });
+    window.PREPARACAO_MESTRE = { mapa: prepEscolhas.mapa, monstros: monstros, npcs: {} };
+    preparacaoFeita = true;
+    arrancarJogo(true);
+  });
+  prepAccoes.appendChild(btnComecarBatalha);
+  var btnVoltarPreparacao = el('button', 'ent-accao sec prep-accao', 'Voltar');
+  btnVoltarPreparacao.id = 'ent-voltar-preparacao'; btnVoltarPreparacao.type = 'button';
+  btnVoltarPreparacao.style.width = '100%';
+  btnVoltarPreparacao.style.marginTop = '8px';
+  btnVoltarPreparacao.addEventListener('click', function () { mostrar('botoes'); });
+  prepAccoes.appendChild(btnVoltarPreparacao);
+  vistaPreparacao.appendChild(prepAccoes);
+  raiz.appendChild(vistaPreparacao);
+
+  function pintarPreparacao() {
+    MAPAS_PARTIDA.forEach(function (mp) {
+      var b = prepMapaBotoes[mp.id];
+      if (b) b.classList.toggle('on', prepEscolhas.mapa === mp.id);
+    });
+    var totalGeral = 0;
+    MONSTROS_PARTIDA.forEach(function (m) {
+      var esc = prepEscolhas.monstros[m.id];
+      /* F3: a soma dos três lados do tipo manda no «+» de TODOS
+         os lados — soma a 9, nenhum soma mais. */
+      var somaTipo = (esc.contra | 0) + (esc.neutro | 0) + (esc.time | 0);
+      totalGeral += somaTipo;
+      PREP_LADOS.forEach(function (lado) {
+        var c = prepQtdEls[m.id] && prepQtdEls[m.id][lado.id];
+        if (!c) return;
+        var n = esc[lado.id] | 0;
+        c.qtd.textContent = String(n);
+        c.menos.disabled = n <= 0;
+        c.mais.disabled = somaTipo >= PREP_MAX_POR_TIPO;
+      });
+      var tt = prepQtdEls[m.id] && prepQtdEls[m.id].totalTipo;
+      if (tt) tt.textContent = 'Total: ' + somaTipo;
+    });
+    /* M2: o total da batalha, vivo na barra de acções. */
+    if (prepTotalEl) prepTotalEl.textContent =
+      'Total: ' + totalGeral + (totalGeral === 1 ? ' figura' : ' figuras');
+  }
 
   /* Vista 3 — a senha nova (SENHA): construída na secção «SENHA». */
   var vistaNovaSenha = null;
@@ -785,6 +971,9 @@
     vistaMestre.hidden = vista !== 'mestre';
     if (vistaNovaSenha) vistaNovaSenha.hidden = vista !== 'novasenha';
     vistaConfig.hidden = vista !== 'config';
+    if (typeof vistaPreparacao !== 'undefined' && vistaPreparacao)
+      vistaPreparacao.hidden = vista !== 'preparacao';
+    if (vista === 'preparacao' && typeof pintarPreparacao === 'function') pintarPreparacao();
     if (vista === 'mestre') {
       erroMestre.textContent = '';
       if (typeof fecharZonaSenha === 'function') fecharZonaSenha();

@@ -123,12 +123,191 @@
   /* ---------- elenco oficial do jogo (a figura de teste UAL1 fica
      SÓ na demo do Codex — não é personagem do jogo) ---------- */
   const AREA = { cols: 10, rows: 7, origin: { x: 0, y: 0 } };
-  const ELENCO = [
+  const ELENCO_BASE = [
     { id: 'orc',     nome: 'Orc',             modelo: 'modelos/orc-quaternius.glb', x: 3, y: 3, alturaMetros: 3.6,  vivo: true },
     { id: 'ong',     nome: 'Ong',             modelo: 'modelos/ong-rogue.glb',     x: 6, y: 2, alturaMetros: 2.625, vivo: true, animacoes: { idle: 'Idle_B', andar: 'Walking_B', ataque: 'Melee_Unarmed_Attack_Punch_A', reacao: 'Hit_B' } },
     { id: 'capanga', nome: 'Capanga 1',       modelo: 'modelos/capanga-knight.glb', x: 7, y: 4, alturaMetros: 2.7,  vivo: true, animacoes: { idle: 'Idle_B', andar: 'Walking_B', ataque: 'Melee_Unarmed_Attack_Punch_A', reacao: 'Hit_B' } },
     { id: 'lobo',    nome: 'Lobo da Caverna', modelo: 'marcador-lobo',     x: 2, y: 5, alturaMetros: 1.35,  vivo: true }
   ];
+  /* ---------- PREPARAÇÃO DA BATALHA (t-escolha-mapa, palavra do
+   * Mestre 14/11/2026 20:31 + acrescentos 20:40 e 20:43) ----------
+   * A tela de preparação da entrada (entrada.js) deixa as escolhas
+   * dele em window.PREPARACAO_MESTRE ANTES de este ficheiro correr:
+   * { mapa, monstros: { tipo: { contra, neutro, time } } }. O elenco
+   * efectivo nasce daí: cada tipo de monstro expande-se em cópias
+   * por lado — contra as players (inimigos), neutras e do time das
+   * players (aliadas). SEM preparação (a Jogadora, os restauros, a
+   * página de sempre) o elenco é o ELENCO_BASE, objecto a objecto:
+   * o comportamento de hoje fica intacto.
+   * DOIS EIXOS (correcção do Mestre, 14/11/2026 20:46): a PARTY
+   * (ladoDe — 'players', 'inimigos', 'neutro') governa a LEALDADE;
+   * a ÍNDOLE (INDOLE, junto às tabelas de combate) governa o
+   * COMPORTAMENTO e viaja com a criatura: uma neutra de índole
+   * «ataca ao ver» ataca ao ver mesmo na party neutra; no lado
+   * inimigo ataca-se a todo custo qualquer que seja a índole; no
+   * time das players nunca se ataca as players. Uma neutra
+   * atacada fica EM GUERRA com o lado de quem a atacou por
+   * último (NEUTRO_GUERRA, registado no ponto de aplicação
+   * dos golpes — ver registarGolpeAplicado).
+   * Cópias: a primeira do tipo fica com o id e a casa do base; as
+   * seguintes ganham id derivado (contra: id2… · neutro: idn… ·
+   * time: ida…) e a primeira casa livre da grelha, em varredura —
+   * determinístico. PREP_BASE_DE liga cada cópia ao tipo base, e a
+   * herança dos dados de combate corre junto às tabelas (abaixo).
+   * (O id da jogadora escreve-se 'ong' nestas linhas porque a
+   * constante PROPRIA nasce mais abaixo neste ficheiro.) */
+  const PREP_TIPOS_MONSTRO = ['orc', 'capanga', 'lobo'];
+  const PREP_BASE_DE = {};
+  const ALIADOS = new Set();
+  const NEUTROS = new Set();
+  const NEUTRO_GUERRA = {};          // neutra -> conjunto com o lado do ÚLTIMO atacante (ver registarGolpeAplicado)
+  const NEUTRO_HOSTIL_ID = {};       // neutra -> id da neutra que a atacou (só por comando manual)
+  const PROVOCADA = {};              // aliada -> true depois de um golpe APLICADO a atingir (índole «reage» no Time)
+  /* O registo das reacções ao golpe (t-escolha-mapa, correcção
+     F5+F1 da bancada): nasce SÓ de golpes efectivamente
+     APLICADOS — chama-se junto a vlabAplicarAlvoDepois, nos
+     chamadores, no ramo do acerto. Golpe que ERRA o alvo não é
+     ataque para este registo (regra escrita: «atacada» = o golpe
+     chegou a aplicar-se); desgraça ANULADA no parque («nada»)
+     também não — nesse caminho o lado do alvo nunca se consome;
+     e golpe abortado pelas guardas de época nunca chega ao ponto
+     de aplicação. Os golpes sobre a Ong (oportunidade e
+     atacarIA) não chamam: ela não é neutra nem aliada, o registo
+     seria sempre vazio.
+     SEMÂNTICA DA GUERRA (F2, escrita): vale o ÚLTIMO atacante.
+     Um golpe aplicado novo SUBSTITUI a guerra anterior da
+     neutra — ela defende-se de quem a atacou por último, e só
+     dele: atacada pelas players e depois por um inimigo, passa
+     a lutar contra os inimigos. Atacante neutro (só comando
+     manual) regista o id dele em NEUTRO_HOSTIL_ID e apaga a
+     guerra de lado; atacante de um lado apaga o id hostil. */
+  function registarGolpeAplicado(atacanteId, alvoId) {
+    if (!atacanteId || atacanteId === alvoId) return;
+    if (NEUTROS.has(alvoId)) {
+      const ladoAtacante = ladoDe(atacanteId);
+      if (ladoAtacante === 'neutro') {
+        NEUTRO_HOSTIL_ID[alvoId] = atacanteId;
+        delete NEUTRO_GUERRA[alvoId];
+      } else {
+        NEUTRO_GUERRA[alvoId] = new Set([ladoAtacante]);
+        delete NEUTRO_HOSTIL_ID[alvoId];
+      }
+    }
+    if (ALIADOS.has(alvoId)) PROVOCADA[alvoId] = true;
+  }
+  /* LADOS nos saves e nos snapshots (correcção F4): a guerra das
+     neutras, o atacante neutro e a provocação das aliadas são
+     estado da BATALHA — capturam-se e repõem-se com o resto, ou
+     guardar/carregar a meio apagava a guerra de uma neutra já
+     com a Vida gasta na luta. A captura é um valor (o conjunto
+     viaja como lista); o restauro só aceita ids que são neutras/
+     aliadas DESTE elenco e lados do domínio — o resto ignora-se. */
+  function ladosCaptura() {
+    const guerra = {};
+    for (const id of Object.keys(NEUTRO_GUERRA)) guerra[id] = [...NEUTRO_GUERRA[id]];
+    return { guerra, hostilId: { ...NEUTRO_HOSTIL_ID },
+      provocadas: Object.keys(PROVOCADA).filter(id => PROVOCADA[id]) };
+  }
+  function ladosRepor(b) {
+    for (const id of Object.keys(NEUTRO_GUERRA)) delete NEUTRO_GUERRA[id];
+    for (const id of Object.keys(NEUTRO_HOSTIL_ID)) delete NEUTRO_HOSTIL_ID[id];
+    for (const id of Object.keys(PROVOCADA)) delete PROVOCADA[id];
+    if (!b || typeof b !== 'object') return;
+    if (b.guerra && typeof b.guerra === 'object')
+      for (const id of Object.keys(b.guerra))
+        if (NEUTROS.has(id) && Array.isArray(b.guerra[id])) {
+          const lados = b.guerra[id].filter(l => l === 'players' || l === 'inimigos');
+          if (lados.length) NEUTRO_GUERRA[id] = new Set(lados);
+        }
+    if (b.hostilId && typeof b.hostilId === 'object')
+      for (const id of Object.keys(b.hostilId))
+        if (NEUTROS.has(id) && typeof b.hostilId[id] === 'string')
+          NEUTRO_HOSTIL_ID[id] = b.hostilId[id];
+    if (Array.isArray(b.provocadas))
+      for (const id of b.provocadas) if (ALIADOS.has(id)) PROVOCADA[id] = true;
+  }
+  function ladoDe(id) {
+    if (id === 'ong' || ALIADOS.has(id)) return 'players';
+    if (NEUTROS.has(id)) return 'neutro';
+    return 'inimigos';
+  }
+  function prepContagem(valor) {
+    const n = Math.floor(Number(valor));
+    return Number.isFinite(n) ? Math.max(0, Math.min(9, n)) : 0;
+  }
+  function elencoEfectivo() {
+    const prep = (typeof window !== 'undefined') ? window.PREPARACAO_MESTRE : null;
+    if (!MODO_MESTRE || !prep || typeof prep !== 'object' || !prep.monstros)
+      return ELENCO_BASE;
+    /* O mapa escolhido (prep.mapa) fica registado e não tem efeito
+       mecânico aqui: esta casca tem um mundo só («campo») — a
+       costura para um segundo mapa entra com o mapa, não antes. */
+    const ocupadas = new Set();
+    const saida = [];
+    const casaLivre = () => {
+      for (let y = AREA.origin.y; y < AREA.origin.y + AREA.rows; y++)
+        for (let x = AREA.origin.x; x < AREA.origin.x + AREA.cols; x++)
+          if (!ocupadas.has(x + ',' + y)) return { x, y };
+      return { x: AREA.origin.x, y: AREA.origin.y };
+    };
+    for (const base of ELENCO_BASE) {
+      if (!PREP_TIPOS_MONSTRO.includes(base.id)) {
+        saida.push(base);
+        ocupadas.add(base.x + ',' + base.y);
+        continue;
+      }
+      const bruto = prep.monstros[base.id];
+      const cont = (typeof bruto === 'number')
+        ? { contra: prepContagem(bruto), neutro: 0, time: 0 }
+        : { contra: prepContagem(bruto && bruto.contra),
+            neutro: prepContagem(bruto && bruto.neutro),
+            time: prepContagem(bruto && bruto.time) };
+      /* F3 (bancada): o tecto de 9 é do TOTAL do tipo — a soma
+         dos três lados —, não de cada lado. A pinça corta na
+         ordem de criação (contra → neutro → time): o que passa
+         do tecto NÃO nasce (nada de figuras empilhadas em
+         silêncio). Com 3 tipos × 9 + a Ong = 28 figuras no
+         máximo, as 70 casas da grelha nunca estouram e o ramo
+         de recurso de casaLivre() fica inalcançável. A tela
+         aplica o mesmo tecto ao toque (entrada.js). */
+      let tetoTipo = 9;
+      for (const chave of ['contra', 'neutro', 'time']) {
+        cont[chave] = Math.min(cont[chave], tetoTipo);
+        tetoTipo -= cont[chave];
+      }
+      const total = cont.contra + cont.neutro + cont.time;
+      if (!total) continue;
+      const tipo = base.nome.replace(/\s+\d+$/, '');
+      const grupos = [
+        { lado: 'inimigos', qtd: cont.contra, sufixo: '', marca: '' },
+        { lado: 'neutro', qtd: cont.neutro, sufixo: 'n', marca: ' (neutro)' },
+        { lado: 'players', qtd: cont.time, sufixo: 'a', marca: ' (aliado)' }
+      ];
+      let numero = 0, primeira = true;
+      for (const g of grupos) {
+        for (let k = 1; k <= g.qtd; k++) {
+          numero++;
+          let entrada;
+          if (primeira) {
+            entrada = { ...base };
+            primeira = false;
+          } else {
+            const idNovo = base.id + g.sufixo + (k === 1 ? '' : String(k));
+            const casa = casaLivre();
+            entrada = { ...base, id: idNovo, x: casa.x, y: casa.y };
+            PREP_BASE_DE[idNovo] = base.id;
+          }
+          ocupadas.add(entrada.x + ',' + entrada.y);
+          if (total > 1 || g.marca) entrada.nome = tipo + (total > 1 ? ' ' + numero : '') + g.marca;
+          if (g.lado === 'players') ALIADOS.add(entrada.id);
+          if (g.lado === 'neutro') NEUTROS.add(entrada.id);
+          saida.push(entrada);
+        }
+      }
+    }
+    return saida;
+  }
+  const ELENCO = elencoEfectivo();
   /* Tranche T-D (contrato apresentarAtaque): Ong e Capanga declaram
      também ataque/reacao com os clipes que os GLB viajantes JÁ trazem
      (parse registado no DIFF-API §5: Punch 1,167 s e Hit_A 0,667 s
@@ -548,7 +727,15 @@
   /* Conjunto a ocultar: as figuras adversárias do elenco actual — o
      mesmo trio da página de referência. A figura da jogadora deste
      aparelho (PROPRIA) nunca se oculta a si própria. */
-  const VISAO_INIMIGOS = ['orc', 'capanga', 'lobo'];
+  /* Os «inimigos» da visão (t-escolha-mapa): as figuras que NÃO são
+     do lado das players no elenco efectivo — inimigos E neutros:
+     não emprestam os olhos às jogadoras e ficam escondidos até
+     serem vistos. As aliadas saem da lista (os olhos delas são
+     olhos das jogadoras, como os da Ong). Sem preparação, a lista
+     é exactamente a de sempre: ['orc', 'capanga', 'lobo'], na
+     ordem do ELENCO. O lado de combate vive em ladoDe(); esta
+     lista é só do sistema de visão/furtividade. */
+  const VISAO_INIMIGOS = ELENCO.filter(e => ladoDe(e.id) !== 'players').map(e => e.id);
   /* SENSOR (percepção base — §5.1 do estudo v2): corre com os
      valores REAIS lavrados em t-furtividade-base/VALORES-BASE.md
      (fórmula do Mestre, 11/11/2026: atributo + perícia + bónus
@@ -1630,6 +1817,12 @@
      nenhum caminho da interface a alcança nem a parametriza; a
      jogadora observa, com os toques interceptados (§ das guardas). */
   const ALVO_NOME = { orc: 'o Orc', capanga: 'o Capanga 1', lobo: 'o Lobo da Caverna' };
+  /* F8 (bancada): o nome de alvo das cópias herda o do TIPO
+     (a mesma herança de indoleDe e do cartão de vista); sem
+     nome de tipo, cai no nome de cena, como até aqui. */
+  function alvoNomeDe(id) {
+    return ALVO_NOME[id] || ALVO_NOME[PREP_BASE_DE[id] || ''] || nomeCena(id);
+  }
 
   /* ---------- combate (resolução no motor oficial) ----------
    * A resolução é TODA do motor pinado (vlab-completo.js —
@@ -1963,6 +2156,22 @@
     vidaMonstro: id => (VIDA_MONSTROS[id] != null ? vlabVidaMonstro(id) : null)
   });
 
+  /* ÍNDOLE dos tipos (t-escolha-mapa; palavra do Mestre, 14/11/2026
+   * 20:46): a natureza de cada criatura — governa o COMPORTAMENTO
+   * dela em qualquer party: 'avistar' ataca ao ver · 'reage' só
+   * ataca depois de atacada · 'nao-ataca' não ataca nunca. A party
+   * (escolha da tela) governa a lealdade; a índole viaja com a
+   * criatura. VALORES PROVISÓRIOS (decisão do coordenador, nomeada
+   * no ESTADO da tranche, a corrigir pelo cânone ou pela palavra
+   * dele): os três ficam 'avistar' — é o comportamento que o jogo
+   * sempre mostrou (D-13.8); nenhum dado de índole existia no jogo
+   * nem no cânone registado. Mudar um tipo = mudar uma linha aqui
+   * e a frase na tela (entrada.js). */
+  const INDOLE = { orc: 'avistar', capanga: 'avistar', lobo: 'avistar' };
+  function indoleDe(id) {
+    return INDOLE[id] || INDOLE[PREP_BASE_DE[id] || ''] || 'avistar';
+  }
+
   const DADOS_COMBATE = {
     ong:     { ca: 30, atkQtd: 1, atkFaces: 6, atkBonus: 19, arma: 'Chicote de Água', dano: { qtd: 8, faces: 6, bonus: 28 }, alcance: 9,
                transformacao: { custo: 40, dmgBonusNovo: 34, caNova: 36 } },
@@ -2013,6 +2222,13 @@
    * mostra só nomes e de quem é a vez — nunca números de
    * iniciativa de ninguém. */
   const INICIATIVA = { ong: 4, lobo: 3, capanga: 2, orc: 1 };
+  /* PREPARAÇÃO (t-escolha-mapa): as cópias da tela de preparação
+     herdam a iniciativa do tipo base (PREP_BASE_DE nasce com o
+     elenco efectivo). Sem cópias, o loop não toca em nada. */
+  for (const u of ELENCO) {
+    const baseId = PREP_BASE_DE[u.id];
+    if (baseId && INICIATIVA[u.id] === undefined) INICIATIVA[u.id] = INICIATIVA[baseId];
+  }
   const ORDEM = [...ELENCO].sort((a, b) =>
     (INICIATIVA[b.id] - INICIATIVA[a.id])
     || (ELENCO.indexOf(a) - ELENCO.indexOf(b))).map(u => u.id);
@@ -2031,6 +2247,19 @@
     capanga: { acerto: 'golpeou',           falha: 'tentou golpear' },
     orc:     { acerto: 'desferiu o machado', falha: 'tentou desferir o machado' }
   };
+  /* PREPARAÇÃO (t-escolha-mapa): as cópias herdam os dados de
+     combate do tipo base — a mesma herança que a admissão de
+     figuras de teste faz (vooAdmitirFiguraTeste), aqui ao nascer
+     da batalha. Sem cópias, o loop não toca em nada. */
+  for (const u of ELENCO) {
+    const baseId = PREP_BASE_DE[u.id];
+    if (!baseId) continue;
+    if (!DADOS_COMBATE[u.id]) DADOS_COMBATE[u.id] = JSON.parse(JSON.stringify(DADOS_COMBATE[baseId]));
+    if (VIDA_MONSTROS[u.id] === undefined) VIDA_MONSTROS[u.id] = VIDA_MONSTROS[baseId];
+    if (!FRASES_IA[u.id]) FRASES_IA[u.id] = { ...FRASES_IA[baseId] };
+    if (ORCAMENTOS[u.id] === undefined) ORCAMENTOS[u.id] = ORCAMENTOS[baseId];
+    if (INDOLE[u.id] === undefined) INDOLE[u.id] = INDOLE[baseId];
+  }
   /* Tempos da vez da IA (D-13.6): a vez do monstro tem de se ver. */
   const ESPERA_ANUNCIO_MS = 800, ESPERA_ATAQUE_MS = 500, ESPERA_FIM_MS = 1000;
   const GUARDA_IA_MS = 5000;   // relógio de guarda do movimento da IA (G-13.3)
@@ -2727,6 +2956,15 @@
       if (!recibo.soDoMestre) recibo.soDoMestre = {};
       recibo.soDoMestre.fotoAlvoAntes = fotoAlvoAntes;
     }
+    /* NEUTRO (t-escolha-mapa; correcção F5 da bancada): a guerra
+       das neutras e a provocação das aliadas NÃO se registam
+       aqui. Resolver não é aplicar: este funil também corre
+       para golpes que erram, para desgraças que ficam no parque
+       (e podem ser anuladas com «nada») e para resoluções cuja
+       aplicação as guardas de época depois abortam. O registo
+       vive no ponto de APLICAÇÃO — registarGolpeAplicado, junto
+       a vlabAplicarAlvoDepois nos chamadores (ver a declaração
+       dele junto aos registos de lados). */
     return recibo;
   }
   /* Consome o lado do ATACANTE de uma saída (desgraças e bandeiras).
@@ -2920,15 +3158,28 @@
     }
     return null;
   }
-  /* Terminal de VITÓRIA (A01): os três monstros fora de combate
+  /* Terminal de VITÓRIA (A01): os monstros fora de combate
      na cena (a vista é a verdade da queda, como na rotação de vez
      e nos alvos vivos FID-R2). */
   function vlabTodosMonstrosForaDeCombate() {
     /* VOO (F-36): contam o elenco E as figuras de teste
        PRESENTES — uma figura de teste que nunca foi admitida
-       não pode tornar a vitória impossível. */
-    return [...ELENCO.map(u => u.id), ...testesPresentes].every(id => id === PROPRIA
-      || (unidade(id) || {}).vivo === false);
+       não pode tornar a vitória impossível.
+       LADOS (t-escolha-mapa): contam só os do LADO INIMIGO — uma
+       aliada viva não bloqueia a vitória nem a morte dela conta
+       como monstro abatido, e as neutras não contam para nenhum
+       lado. Sem preparação não há aliadas nem neutras: o conjunto
+       é o de sempre e o resultado é o de sempre.
+       F6 (bancada): a lista de inimigos VAZIA devolve FALSE —
+       vitória exige inimigos terem existido e estarem todos
+       fora de combate. Sem esta guarda, o .every sobre a lista
+       vazia dava true por vacuidade e a morte de qualquer
+       figura por ambiente/queda (raio/fogo) fechava em
+       «vitória» uma batalha que nunca teve inimigos. */
+    const inimigos = [...ELENCO.map(u => u.id), ...testesPresentes]
+      .filter(id => ladoDe(id) === 'inimigos');
+    if (!inimigos.length) return false;
+    return inimigos.every(id => (unidade(id) || {}).vivo === false);
   }
   /* Frase de ficção de uma desgraça (sem números de ninguém). */
   function vlabFraseDesgraca(id, fc) {
@@ -3056,6 +3307,7 @@
        ELENCO de hoje e as duas listas saem byte-iguais. */
     const universoPartida = [...ELENCO.map(e => e.id), ...testesPresentes];
     const adjacentes = universoPartida.filter(id => id !== PROPRIA
+      && ladoDe(id) === 'inimigos'   // LADOS (t-escolha-mapa): aliadas e neutras nunca golpeiam de oportunidade — só os inimigos, como sempre foi sem preparação
       && (unidade(id) || {}).vivo !== false   // A01: um monstro caído não golpeia de oportunidade
       && distanciaEntre(id, PROPRIA) === 1);
     /* Meio do caminho (contrato Parte C; achado 3 do Crítico 1):
@@ -3068,7 +3320,7 @@
     let meioCaminho = [];
     if (Array.isArray(caminho) && caminho.length) {
       const casas = [partida, ...caminho];
-      meioCaminho = universoPartida.filter(id => id !== PROPRIA && !adjacentes.includes(id))
+      meioCaminho = universoPartida.filter(id => id !== PROPRIA && ladoDe(id) === 'inimigos' && !adjacentes.includes(id))
         .filter(id => {
           const m = unidade(id); if (!m || m.vivo === false) return false;   // A01: idem — morto não provoca
           /* A zona é a adjacência à casa do caminho (que vive
@@ -4624,6 +4876,7 @@
     await apresentarConfronto(id, alvoId, true);
     if (seqTurnoMorto(epocaAcertoM, id)) { continuarAposApresentacao = false; return; }
     mostrarImpacto(alvoId);
+    registarGolpeAplicado(id, alvoId);   // LADOS (F5): o golpe aplicou-se — a guerra/provocação nasce aqui
     const desfecho = vlabAplicarAlvoDepois(alvoId, s);
     if (alvoId === PROPRIA) {
       if (desfecho === 'morreu') { fimDeBatalha('morte'); return; }
@@ -4718,9 +4971,95 @@
     say('Isso é o chão. Aperte <b>Mover</b>, toque numa casa acesa. Alvo: toque na figura.');
   }
 
+  /* Uma neutra está EM GUERRA com um lado quando esse lado a
+     atacou (NEUTRO_GUERRA) — ou, sendo de índole «ataca ao ver»,
+     com o lado das players desde que nasce: é a natureza dela. A
+     de índole «não ataca» nunca está em guerra para efeitos de
+     alvo automático: ninguém a escolhe, nunca. */
+  function neutroEmGuerraCom(id, lado) {
+    if (ladoDe(id) !== 'neutro') return false;
+    const ind = indoleDe(id);
+    if (ind === 'nao-ataca') return false;
+    if (ind === 'avistar' && lado === 'players') return true;
+    const guerra = NEUTRO_GUERRA[id];
+    return !!(guerra && guerra.has(lado));
+  }
+  /* O alvo automático de uma figura da IA (t-escolha-mapa): a
+     figura viva MAIS PRÓXIMA entre os candidatos — o desempate é
+     a ordem do universo (ELENCO, depois as figuras de teste
+     presentes), pela iteração com < estrito. Os candidatos saem
+     dos DOIS EIXOS (party × índole) — a índole governa TODOS os
+     lados menos o Contra, que é a única excepção nomeada da
+     palavra do Mestre («no lado inimigo ataca-se a todo custo,
+     qualquer que seja a índole»):
+       · lado Contra: o lado das players + neutras em guerra com
+         o lado inimigo (ataca a todo custo, qualquer índole);
+       · lado Time das players: o lado inimigo + neutras em guerra
+         com o lado das players (nunca as players nem as aliadas)
+         — MAS a índole manda na porta (correcção F1 da bancada:
+         a índole viaja com a criatura também para o Time):
+         «não ataca» → ninguém, nunca; «só reage» → ninguém até
+         ser provocada (PROVOCADA: um golpe aplicado a atingiu);
+         «ataca ao ver» → os candidatos de cima, como sempre foi;
+       · neutra «ataca ao ver»: o lado das players — e, se um
+         lado a atacou (guerra registada), riposta também contra
+         esse lado (correcção F2: a guerra é simétrica — quem a
+         caça pode ser caçado por ela);
+       · neutra «só reage»: ninguém até ser atacada; depois, as
+         figuras do lado em guerra com ela — ou a própria
+         figura atacante, se era outra neutra (comando manual);
+       · neutra «não ataca»: ninguém, nunca.
+     Sem preparação não há aliadas nem neutras: para qualquer
+     figura da IA o único candidato é a Ong — o alvo de hoje. */
+  function alvoDaIA(id) {
+    const meuLado = ladoDe(id);
+    let candidatoOk;
+    if (meuLado === 'inimigos') {
+      candidatoOk = cand => ladoDe(cand) === 'players' || neutroEmGuerraCom(cand, 'inimigos');
+    } else if (meuLado === 'players') {
+      const ind = indoleDe(id);
+      if (ind === 'nao-ataca') return null;
+      if (ind === 'reage' && !PROVOCADA[id]) return null;
+      candidatoOk = cand => ladoDe(cand) === 'inimigos' || neutroEmGuerraCom(cand, 'players');
+    } else {
+      const ind = indoleDe(id);
+      if (ind === 'nao-ataca') return null;
+      if (ind === 'avistar') {
+        const guerra = NEUTRO_GUERRA[id];
+        const idHostil = NEUTRO_HOSTIL_ID[id];
+        candidatoOk = cand => ladoDe(cand) === 'players' || cand === idHostil
+          || !!(guerra && guerra.has(ladoDe(cand)));
+      } else {
+        const guerra = NEUTRO_GUERRA[id];
+        const idHostil = NEUTRO_HOSTIL_ID[id];
+        candidatoOk = cand => cand === idHostil || !!(guerra && guerra.has(ladoDe(cand)));
+      }
+    }
+    let melhor = null, menor = Infinity;
+    for (const cand of [...ELENCO.map(u => u.id), ...testesPresentes]) {
+      if (cand === id || !candidatoOk(cand)) continue;
+      const u = unidade(cand);
+      if (!u || u.vivo === false) continue;
+      const d = distanciaEntre(id, cand);
+      if (d < menor) { menor = d; melhor = cand; }
+    }
+    return melhor;
+  }
   function vezDaIA(id, seq) {
-    if (distanciaEntre(id, PROPRIA) <= alcanceEmCasas(DADOS_COMBATE[id].alcance)) {
-      agendarAtaqueIA(id, seq);              // já ao alcance: não anda, ataca
+    const alvoId = alvoDaIA(id);
+    if (!alvoId) {
+      /* Sem alvo: a neutra fora da luta (índole pacífica, ou
+         «reage» ainda não provocada, ou já sem quem a provocou
+         vivo) não se mete na luta; qualquer outra figura sem
+         adversários vivos fecha a vez sem atacar, como fecharia
+         sem caminho. */
+      if (ladoDe(id) === 'neutro')
+        say(`<b>${nomeCena(id)}</b> não se mete na luta.`);
+      fimDaVezIA(seq);
+      return;
+    }
+    if (distanciaEntre(id, alvoId) <= alcanceEmCasas(DADOS_COMBATE[id].alcance)) {
+      agendarAtaqueIA(id, seq, alvoId);      // já ao alcance: não anda, ataca
       return;
     }
     if (vezIASemMovimento) {
@@ -4730,7 +5069,7 @@
       fimDaVezIA(seq);
       return;
     }
-    const destino = escolherDestinoIA(id);
+    const destino = escolherDestinoIA(id, alvoId);
     if (!destino) {
       say(`<b>${nomeCena(id)}</b> não consegue aproximar-se.`);
       fimDaVezIA(seq);
@@ -4747,7 +5086,7 @@
     /* VOO (F-36): o destino e a reserva vivem por PONTO (x, y, z);
        o evento e o caminho ganham z só quando a camada é > 0 —
        a z=0 o registo fica byte-igual ao de hoje. */
-    contextoIA = { id, seq, destino: { x: destino.x, y: destino.y, z: destino.z || 0 }, rearmes: 0, relogio: setTimeout(() => relogioIA(id, seq), GUARDA_IA_MS) };
+    contextoIA = { id, seq, alvo: alvoId, destino: { x: destino.x, y: destino.y, z: destino.z || 0 }, rearmes: 0, relogio: setTimeout(() => relogioIA(id, seq), GUARDA_IA_MS) };
     /* Reserva de destino em voo: nasce com o despacho e NÃO morre
        com o contexto — sobrevive à guarda de 5 s, até esta figura
        de facto pousar neste destino (ver o tratador de moveend). */
@@ -4780,7 +5119,7 @@
   /* O ataque depois da espera de separação (chegou → ataque). Vive
      sob um contexto de ataque próprio: atacarIA só corre com o par
      (seq corrente + contexto vivo) — consumo único, G-13.3(d). */
-  function agendarAtaqueIA(id, seq) {
+  function agendarAtaqueIA(id, seq, alvoId) {
     contextoIA = { id, seq, relogio: null };
     aguardar(ESPERA_ATAQUE_MS).then(() => {
       if (seqTurno !== seq || batalhaFim) { if (contextoIA && contextoIA.seq === seq) contextoIA = null; return; }
@@ -4788,8 +5127,15 @@
       contextoIA = null;
       /* T-D: atacarIA passou a assíncrono (espera a apresentação do
          confronto); a vez só fecha quando a resolução acabar — se
-         ela caiu, não há vez seguinte. */
-      atacarIA(id, seq).then(() => { if (!batalhaFim) fimDaVezIA(seq); });
+         ela caiu, não há vez seguinte.
+         LADOS (t-escolha-mapa): contra a Ong resolve o atacarIA
+         de sempre, sem uma linha mudada; contra um monstro (um
+         aliado ou uma neutra provocada a atacar, um inimigo a
+         atacar um aliado) resolve a gémea contra-monstro. */
+      const resolucao = alvoId === PROPRIA
+        ? atacarIA(id, seq)
+        : atacarIAContraMonstro(id, alvoId, seq);
+      resolucao.then(() => { if (!batalhaFim) fimDaVezIA(seq); });
     });
   }
   /* Consumo único da conclusão do movimento (G-13.3(d)): quem chega
@@ -4877,22 +5223,26 @@
     if (ESTADO_VLAB[id].deslocMetade) o = Math.floor(o / 2);
     return o;
   }
-  function escolherDestinoIA(id) {
+  function escolherDestinoIA(id, alvoId) {
     const eu = unidade(id);
     if (!eu) return null;
-    const distOng = mapaDistancias(PROPRIA);
+    const distAlvo = mapaDistancias(alvoId);
     /* VOO (F-36): a pontuação de uma voadora é a régua do
        jogador aplicada ao mapa de pontuação — a distância 3D
        ao ponto candidato é H (do mapa) + |dz| até à camada
-       dela (a Ong está no chão: |dz| = a camada do candidato).
+       do ALVO. Com o alvo no chão (a Ong: camada 0) |dz| é a
+       camada do candidato, como sempre foi; LADOS
+       (t-escolha-mapa): o alvo deixou de ser sempre a Ong —
+       a fórmula mede a camada relativa ao alvo dado e, com
+       ele no chão, é a de hoje, ao dígito.
        Para figuras terrestres os dois termos de camada são 0
        e a pontuação é a de hoje, ao dígito. */
-    const dActCasa = distOng.get(chave(eu.posicao.x, eu.posicao.y));
-    const distActual = dActCasa === undefined ? undefined : dActCasa + camadaDe(id);
+    const dActCasa = distAlvo.get(chave(eu.posicao.x, eu.posicao.y));
+    const distActual = dActCasa === undefined ? undefined : dActCasa + Math.abs(camadaDe(id) - camadaDe(alvoId));
     let melhor = null;
     for (const c of calcularAlcancePara(id, orcamentoIA(id)).values()) {
-      const dCasa = distOng.get(chave(c.x, c.y));
-      const d = dCasa === undefined ? undefined : dCasa + (c.z || 0);
+      const dCasa = distAlvo.get(chave(c.x, c.y));
+      const d = dCasa === undefined ? undefined : dCasa + Math.abs((c.z || 0) - camadaDe(alvoId));
       if (d === undefined) continue;
       if (!melhor || d < melhor.d || (d === melhor.d && c.passos < melhor.destino.passos))
         melhor = { d, destino: c };
@@ -5081,6 +5431,113 @@
       return;
     }
     say(`<b>${nomeCena(id)}</b> ${verbos.acerto} a <b>Ong</b> — ela perdeu <b>${total}</b> de vida.`);
+  }
+  /* O ataque da IA contra um MONSTRO (t-escolha-mapa): a gémea de
+     atacarIA para alvos que não são a Ong — um inimigo a atacar
+     uma aliada, uma aliada a atacar um inimigo, uma neutra em
+     guerra a defender-se. A estrutura é a de atacarIA (a mesma
+     captura de semente/verificação, o mesmo parque das desgraças,
+     as mesmas guardas de época) com o lado do alvo tratado como
+     em atacarManualMestre: sem esquiva (só a Ong se esquiva), sem
+     testes de morte (só ela os tem) — a queda do alvo é 'caiu' e
+     pode fechar a batalha em vitória. Quem chama (agendarAtaqueIA)
+     fecha a vez no fim da promessa. Sem preparação esta função
+     nunca é chamada: sem aliadas nem neutras, o alvo da IA é
+     sempre a Ong. */
+  async function atacarIAContraMonstro(id, alvoId, seq) {
+    if (distanciaEntre(id, alvoId) > alcanceEmCasas(DADOS_COMBATE[id].alcance)) {
+      supRegistar('bloqueada', { acao: 'ataque', actor: id, alvo: alvoId, razao: 'Figura fora de alcance do alvo' });
+      return;
+    }
+    const verbos = FRASES_IA[id] || { acerto: 'atacou', falha: 'tentou atacar' };
+    let sementeDG = null, verificacaoDG = null;
+    if (MODO_MESTRE) { sementeDG = vlabSemente(); verificacaoDG = vlabVerificacao(); }
+    const s = MODO_MESTRE
+      ? vlabResolverAtaqueCompleto(id, alvoId, {
+          modoDesgraca: 'proposta', semente: sementeDG, verificacao: verificacaoDG })
+      : vlabResolverAtaqueCompleto(id, alvoId, { modoDesgraca: 'sorte' });
+    if (s.erro) {
+      supRegistar('bloqueada', { acao: 'ataque', actor: id, alvo: alvoId, razao: s.erro.codigo });
+      if (s.erro.codigo === 'ARMA_QUEBRADA')
+        say(`<b>${nomeCena(id)}</b> não consegue atacar — a arma dele está quebrada.`);
+      return;
+    }
+    if (s.resultado === 'falhaCritica') {
+      const fcProp = s.soDoMestre && s.soDoMestre.falhaCritica;
+      if (MODO_MESTRE && fcProp && fcProp.requerConfirmacao) {
+        /* O PARQUE, como em atacarIA: estaciona sem registar
+           nada; o registo nasce depois da decisão dele. */
+        const pendente = {
+          origem: 'monstro', atacanteId: id, alvoId, seq, supEpoca,
+          semente: sementeDG, verificacao: verificacaoDG,
+          recibo: s, proposta: fcProp.desgraca.id,
+          escolhaMarcada: undefined, assentador: null
+        };
+        desgracaMonstroPendente = pendente;
+        estado = 'desgraca-lista'; renderAcoes();
+        const desfecho = await new Promise(res => { pendente.assentador = res; });
+        if (!desfecho || desfecho.morta || seqTurno !== seq || batalhaFim
+            || supCongelado || supEpoca !== pendente.supEpoca) return;
+        const escolha = desfecho.escolha;
+        estado = 'vez-ia';
+        if (escolha === 'nada') {
+          supRegistar('accao', { acao: 'ataque', actor: id, alvo: alvoId, acerto: false, falhaCritica: null });
+          supRegistar('accao', { acao: 'desgraca-escolha', actor: id, proposta: pendente.proposta, escolha: 'nada' });
+          say(`<b>${nomeCena(id)}</b> ${verbos.falha} <b>${nomeCena(alvoId)}</b> e falhou. ` + vlabFraseDesgraca(id, null));
+          renderAcoes();
+          return;
+        }
+        const s2 = vlabResolverAtaqueCompleto(id, alvoId, {
+          modoDesgraca: 'escolha', semente: pendente.semente, verificacao: pendente.verificacao,
+          desgracaEscolhida: escolha,
+          confirmacaoDeProposta: { proposta: pendente.proposta } });
+        if (s2.erro) {
+          supRegistar('bloqueada', { acao: 'ataque', actor: id, alvo: alvoId, razao: s2.erro.codigo });
+          say(`<b>${nomeCena(id)}</b> ${verbos.falha} <b>${nomeCena(alvoId)}</b> e falhou.`);
+          renderAcoes();
+          return;
+        }
+        const fc = vlabAplicarAtacanteDepois(id, s2);
+        supRegistar('accao', { acao: 'ataque', actor: id, alvo: alvoId, acerto: false, falhaCritica: fc ? fc.desgraca.id : null });
+        supRegistar('accao', { acao: 'desgraca-escolha', actor: id, proposta: pendente.proposta, escolha });
+        if (s2.desgracaPendente)
+          supRegistar('accao', { acao: 'desgraca-pendente', actor: id, tipo: s2.desgracaPendente.tipo, aplicada: false, motivo: 'desgraça pendente não aplicada nesta casca' });
+        say(`<b>${nomeCena(id)}</b> ${verbos.falha} <b>${nomeCena(alvoId)}</b> e falhou. ` + vlabFraseDesgraca(id, fc));
+        renderAcoes();
+        return;
+      }
+      const fc = vlabAplicarAtacanteDepois(id, s);
+      supRegistar('accao', { acao: 'ataque', actor: id, alvo: alvoId, acerto: false, falhaCritica: fc ? fc.desgraca.id : null });
+      if (s.desgracaPendente)
+        supRegistar('accao', { acao: 'desgraca-pendente', actor: id, tipo: s.desgracaPendente.tipo, aplicada: false, motivo: 'desgraça pendente não aplicada nesta casca' });
+      say(`<b>${nomeCena(id)}</b> ${verbos.falha} <b>${nomeCena(alvoId)}</b> e falhou. ` + vlabFraseDesgraca(id, fc));
+      return;
+    }
+    if (s.resultado === 'erra') {
+      supRegistar('accao', { acao: 'ataque', actor: id, alvo: alvoId, acerto: false });
+      /* Sem tentarEsquiva: só a Ong se esquiva dos golpes. */
+      const epocaFalhaIA = supEpoca;
+      await apresentarConfronto(id, alvoId, true);
+      if (seqTurno !== seq || batalhaFim || supCongelado || supEpoca !== epocaFalhaIA) { continuarAposApresentacao = false; return; }
+      say(`<b>${nomeCena(id)}</b> ${verbos.falha} <b>${nomeCena(alvoId)}</b> e falhou.`);
+      return;
+    }
+    if (!supConferirSoma(s.danoAplicado.parcelas.map(p => ({ valor: p.subtotal })), s.danoAplicado.total, id)) return;
+    const total = s.totalEfectivo;
+    supRegistar('accao', { acao: 'ataque', actor: id, alvo: alvoId, acerto: true, dano: total });
+    const epocaAcertoIA = supEpoca;
+    await apresentarConfronto(id, alvoId, true);
+    if (seqTurno !== seq || batalhaFim || supCongelado || supEpoca !== epocaAcertoIA) { continuarAposApresentacao = false; return; }
+    mostrarImpacto(alvoId);
+    registarGolpeAplicado(id, alvoId);   // LADOS (F5): o golpe aplicou-se — a guerra/provocação nasce aqui
+    const desfecho = vlabAplicarAlvoDepois(alvoId, s);
+    if (desfecho === 'caiu') {
+      if (alvo === alvoId) alvo = null;
+      if (vlabTodosMonstrosForaDeCombate()) { fimDeBatalha('vitoria'); return; }
+      say(`<b>${nomeCena(id)}</b> ${verbos.acerto} <b>${nomeCena(alvoId)}</b> — caiu e não se levantou.`);
+      return;
+    }
+    say(`<b>${nomeCena(id)}</b> ${verbos.acerto} <b>${nomeCena(alvoId)}</b> — perdeu <b>${total}</b> de vida.`);
   }
   /* M-015: o chip reflecte SEMPRE a figura dela, nas duas barras e no
      rótulo da Alma — os valores compõem-se das mesmas fórmulas da
@@ -5616,7 +6073,7 @@
         const epocaFalha = supEpoca;
         await apresentarConfronto(PROPRIA, alvoDoGolpe, false);   // R1: a falha da Ong NÃO é ataque contado (sem evento «ataque»)
         if (supEpoca !== epocaFalha || supCongelado) { continuarAposApresentacao = false; return; }   // R1-Priv: idem
-        say(`<b>Falha</b> · ${pend.nome} não atinge ${ALVO_NOME[alvoDoGolpe] || nomeCena(alvoDoGolpe)} · o dano <b>${formulaDanoOng()}</b> não se rola.`);   // M-004 do vivo: a fórmula DELA vê-se também na falha
+        say(`<b>Falha</b> · ${pend.nome} não atinge ${alvoNomeDe(alvoDoGolpe)} · o dano <b>${formulaDanoOng()}</b> não se rola.`);   // M-004 do vivo: a fórmula DELA vê-se também na falha
         if (continuarAposApresentacao) { continuarAposApresentacao = false; tratarAcao('continuar'); }
         return;
       }
@@ -5630,7 +6087,7 @@
         supRegistar('accao', { acao: 'ataque', actor: PROPRIA, alvo: alvoDoGolpe, acerto: false, falhaCritica: fc ? fc.desgraca.id : null });
         if (s.desgracaPendente)
           supRegistar('accao', { acao: 'desgraca-pendente', actor: PROPRIA, tipo: s.desgracaPendente.tipo, aplicada: false, motivo: 'sem aliado ao alcance nesta batalha a solo' });
-        say(`<b>Falha crítica</b> · ${pend.nome} não atinge ${ALVO_NOME[alvoDoGolpe] || nomeCena(alvoDoGolpe)}. ` + vlabFraseDesgraca(PROPRIA, fc));
+        say(`<b>Falha crítica</b> · ${pend.nome} não atinge ${alvoNomeDe(alvoDoGolpe)}. ` + vlabFraseDesgraca(PROPRIA, fc));
         return;
       }
       /* Supervisor: parcelas = total — se não bater, a batalha
@@ -5652,6 +6109,7 @@
          estados e, se o golpe o deitou, a queda na cena. A frase
          narra a queda (ficção visível: a figura tomba no mundo);
          nenhum número de Vida do monstro aparece, como sempre. */
+      registarGolpeAplicado(PROPRIA, alvoDoGolpe);   // LADOS (F5): o golpe aplicou-se — a guerra/provocação nasce aqui
       const desfechoAlvo = vlabAplicarAlvoDepois(alvoDoGolpe, s);
       /* Os flutuantes passam a ser as parcelas do DMG, uma por TIPO
          de dano (especificação do Mestre), com o total por cima —
@@ -5659,7 +6117,7 @@
       const parcelasTipo = s.danoAplicado.parcelas.map(p => ({
         classe: p.tipo || 'tecnica', rotulo: p.tipo || 'dano', valor: p.subtotal }));
       const total = numerosDano ? mostrarDano(alvoDoGolpe, parcelasTipo) : null;
-      say(`<b>${s.resultado === 'critico' ? 'Acerto crítico' : 'Acerto'}</b> · ${pend.nome} atinge ${ALVO_NOME[alvoDoGolpe] || nomeCena(alvoDoGolpe)}.` +
+      say(`<b>${s.resultado === 'critico' ? 'Acerto crítico' : 'Acerto'}</b> · ${pend.nome} atinge ${alvoNomeDe(alvoDoGolpe)}.` +
         (total != null ? ' As parcelas do dano saem da figura em números.' : '') +
         (desfechoAlvo === 'caiu' ? ` <b>${nomeCena(alvoDoGolpe)}</b> caiu.` : ''));
       /* A01: com os três fora de combate, o terminal de VITÓRIA
@@ -5710,7 +6168,10 @@
   /* ---------- ficha: chip (a própria) e coluna lateral ---------- */
   function abrirFicha(id) {
     const f = FICHAS[id] || null;          // ficha completa: só a própria
-    const v = f ? null : VISTA[id];        // outras figuras: cartão de vista
+    /* F8 (bancada): as cópias da preparação herdam o cartão do
+       TIPO (a mesma herança de indoleDe) — tocar em orc2/orca/
+       orcn… abre o cartão do Orc, não o silêncio. */
+    const v = f ? null : (VISTA[id] || VISTA[PREP_BASE_DE[id] || '']);
     if (!f && !v) return;
     fichaAberta = id;
     const fechar = '<button type="button" class="fx" data-fechar aria-label="Fechar ficha">✕</button>';
@@ -6120,8 +6581,9 @@
       if (guardaExpiradaIA && guardaExpiradaIA.id === u.id) guardaExpiradaIA = null;   // M-009: chegada normal consome a marca velha
       if (u.id !== vezAtual || ctx.seq !== seqTurno) return;   // sequência morta
       const seq = ctx.seq;
-      if (distanciaEntre(u.id, PROPRIA) <= alcanceEmCasas(DADOS_COMBATE[u.id].alcance)) {
-        agendarAtaqueIA(u.id, seq);          // chegou ao alcance: separa e ataca
+      const alvoChegada = ctx.alvo || alvoDaIA(u.id);   // LADOS (t-escolha-mapa): o alcance mede-se ao alvo escolhido à partida (no contexto); sem contexto de alvo, escolhe-se agora — sem preparação é a Ong, como sempre
+      if (alvoChegada && distanciaEntre(u.id, alvoChegada) <= alcanceEmCasas(DADOS_COMBATE[u.id].alcance)) {
+        agendarAtaqueIA(u.id, seq, alvoChegada);          // chegou ao alcance: separa e ataca
       } else {
         say(`<b>${nomeCena(u.id)}</b> aproximou-se.`);
         fimDaVezIA(seq);
@@ -7199,7 +7661,7 @@
      * desempate é a ordem de `ordem` (a iteração segue essa ordem
      * e só um < estrito troca). Sem alvos vivos, pára estável —
      * sem ciclo e sem ecrã novo. */
-    const vivos = ordem.filter(id => id !== PROPRIA && unidade(id) && unidade(id).vivo !== false);   // FID-R2: alvo VIVO, não só existente
+    const vivos = ordem.filter(id => id !== PROPRIA && (ladoDe(id) === 'inimigos' || neutroEmGuerraCom(id, 'players')) && unidade(id) && unidade(id).vivo !== false);   // FID-R2: alvo VIVO, não só existente · LADOS (t-escolha-mapa): o piloto dela usa a régua do lado das players — inimigos e neutras em guerra com elas; aliadas e neutras em paz nunca são alvo dela
     if (!vivos.length) return;
     let alvoId = null, menor = Infinity;
     for (const id of vivos) {
@@ -7926,6 +8388,11 @@
          memória) — snapshot sem o campo (anterior à tranche)
          repõe a matriz VAZIA, como o fogo. */
       furtividade: furtMatrizCapturaTotal(),
+      /* LADOS (t-escolha-mapa, correcção F4): a guerra das
+         neutras, o atacante neutro e a provocação das aliadas
+         entram no snapshot — «voltar atrás» um turno repõe a
+         guerra daquele turno, não a apaga. */
+      lados: ladosCaptura(),
       /* RAIO E FOGO (desenho 05/11): casas a arder e figuras
          A Arder são estado da BATALHA — entram no snapshot do
          Supervisor como o ambiente. NÃO entram nos ficheiros de
@@ -8077,6 +8544,15 @@
     else {
       furtMatrizRepor(null);
       supRegistar('furtividade', { origem: 'supRestaurar', razao: 'Snapshot sem matriz — matriz vazia declarada' });
+    }
+    /* LADOS (correcção F4): a guerra das neutras e a provocação
+       das aliadas do snapshot voltam com o resto. Snapshot sem
+       o campo (anterior à correcção): guerra nenhuma, declarada
+       — nunca «mantém a actual». */
+    if (snap.lados) ladosRepor(snap.lados);
+    else {
+      ladosRepor(null);
+      supRegistar('lados', { origem: 'supRestaurar', razao: 'Snapshot sem lados — guerra das neutras vazia declarada' });
     }
     /* RAIO E FOGO: o fogo da batalha volta com o resto do snapshot
        (snapshot sem o campo — anterior à tranche — apaga tudo). */
@@ -8308,6 +8784,28 @@
     }
     return null;
   }
+  /* LADOS (t-escolha-mapa, correcção F4): o domínio do bloco
+     'lados' do save — { guerra: { neutra: [lados…] }, hostilId:
+     { neutra: id }, provocadas: [ids…] }, sem chaves estranhas
+     e com os lados dentro do domínio {'players','inimigos'}. */
+  function ladosBlocoValido(b) {
+    if (!b || typeof b !== 'object' || Array.isArray(b)) return false;
+    if (Object.keys(b).some(k => !['guerra', 'hostilId', 'provocadas'].includes(k))) return false;
+    const ladoOk = l => l === 'players' || l === 'inimigos';
+    if ('guerra' in b) {
+      if (!b.guerra || typeof b.guerra !== 'object' || Array.isArray(b.guerra)) return false;
+      for (const id of Object.keys(b.guerra))
+        if (!Array.isArray(b.guerra[id]) || b.guerra[id].some(l => !ladoOk(l))) return false;
+    }
+    if ('hostilId' in b) {
+      if (!b.hostilId || typeof b.hostilId !== 'object' || Array.isArray(b.hostilId)) return false;
+      for (const id of Object.keys(b.hostilId))
+        if (typeof b.hostilId[id] !== 'string') return false;
+    }
+    if ('provocadas' in b
+      && (!Array.isArray(b.provocadas) || b.provocadas.some(id => typeof id !== 'string'))) return false;
+    return true;
+  }
   function validarEstadoParaAplicar(e) {
     const INV = 'SAVE_ESTADO_INVALIDO', FALTA = 'SAVE_CAMPOS_EM_FALTA';
     if (!e || typeof e !== 'object') return FALTA;
@@ -8335,7 +8833,7 @@
     /* Tranche VOO (F-36): 'voo' é campo OPCIONAL do estado, na
        mesma régua (save antigo sem ele é válido — ninguém traz
        asa torada); o 'z' das unidades confere-se junto delas. */
-    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala' && k !== 'visao' && k !== 'furtividade' && k !== 'previaPublica' && k !== 'voo' && k !== 'frentesAssentadas')) return INV;
+    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala' && k !== 'visao' && k !== 'furtividade' && k !== 'previaPublica' && k !== 'voo' && k !== 'frentesAssentadas' && k !== 'lados')) return INV;
     /* Os ids válidos são os do elenco MAIS as figuras de teste
        que o próprio save declara nas unidades (aplicar um save
        admite as que ele traz; um save não pode inventar figuras
@@ -8474,6 +8972,12 @@
     /* FURTIVIDADE: presente, tem de trazer a matriz na forma dos
        dois domínios (ou só os pares, vinda de captura redigida). */
     if ('furtividade' in e && !furtMatrizValida(e.furtividade)) return INV;
+    /* LADOS (t-escolha-mapa, correcção F4): 'lados' é campo
+       OPCIONAL do estado, na mesma régua (save antigo sem ele é
+       válido — carrega com a guerra vazia declarada no aplicar);
+       presente, tem de trazer o bloco no seu domínio
+       (ladosBlocoValido). */
+    if ('lados' in e && !ladosBlocoValido(e.lados)) return INV;
     /* EMENDA Q-02: 'previaPublica', presente, confere-se no seu
        domínio (validarPreviaPublica) — ausente, save válido. */
     if ('previaPublica' in e) { const erroPP = validarPreviaPublica(e.previaPublica); if (erroPP) return erroPP; }
@@ -8605,7 +9109,13 @@
            resultados de ataque, que o evento 'virar' chega aos
            outros aparelhos; quem aplica escreve os pivots via
            cena antes do primeiro visaoAplicar. */
-        frentesAssentadas: frentesAssentadasCaptura()
+        frentesAssentadas: frentesAssentadasCaptura(),
+        /* LADOS (t-escolha-mapa, correcção F4): a guerra das
+           neutras, o atacante neutro e a provocação das aliadas
+           entram na captura (cópia — o save é um valor) —
+           guardar e carregar a meio da batalha não apaga a
+           guerra de uma neutra já com a Vida gasta na luta. */
+        lados: ladosCaptura()
       };
     },
     aplicar(e) {
@@ -8658,6 +9168,7 @@
           escala: CASA_M,   // ESCALA: idem — o pré-estado cobre também a escala
           visao: { ...visaoPartida },   // VISÃO: idem — o pré-estado cobre também a visão
           furtividade: furtMatrizCapturaTotal(),   // FURTIVIDADE: idem — o pré-estado cobre também a matriz (dois domínios)
+          lados: ladosCaptura(),   // LADOS (F4): idem — o pré-estado cobre também a guerra das neutras e a provocação das aliadas
           /* Q-02: a frente actual entra no pré-estado — uma
              aplicação falhada também não muda a frente. */
           previaFrente: (() => { try { return typeof view.getFrente === 'function' ? view.getFrente(PROPRIA) : null; } catch (_) { return null; } })(),
@@ -8823,6 +9334,16 @@
           furtMatrizRepor(null);
           supRegistar('furtividade', { origem: 'save', razao: 'Save sem furtividade — matriz vazia declarada' });
         }
+        /* LADOS (t-escolha-mapa, correcção F4): a guerra das
+           neutras, o atacante neutro e a provocação das aliadas
+           do save voltam com o resto. Save antigo SEM o campo:
+           guerra nenhuma declarada no registo, como a
+           furtividade — nunca «mantém a actual». */
+        if ('lados' in e) ladosRepor(e.lados);
+        else {
+          ladosRepor(null);
+          supRegistar('lados', { origem: 'save', razao: 'Save sem lados — guerra das neutras vazia declarada' });
+        }
         /* EMENDA Q-02 (R-Q02-3): o facto público da prévia
            assenta com o resto, depois da reentrada na vez — a
            frente repõe-se em qualquer papel; o desenho só se
@@ -8898,6 +9419,9 @@
             /* FURTIVIDADE: aplicação que não aconteceu também não
                mexe na matriz — repõe-se a do pré-estado. */
             if (preSave.furtividade) try { furtMatrizRepor(preSave.furtividade); } catch (__) {}
+            /* LADOS (F4): aplicação que não aconteceu também não
+               mexe na guerra — repõe-se a do pré-estado. */
+            if (preSave.lados) try { ladosRepor(preSave.lados); } catch (__) {}
             /* EM-AV2-07: aplicação que não aconteceu também não
                apaga fogos — repõe-se o fogo do pré-estado. */
             if (preSave.raioFogo) try { ambRestaurarFogo(preSave.raioFogo); } catch (__) {}
