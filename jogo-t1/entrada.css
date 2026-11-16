@@ -566,3 +566,72 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
    52 px — a promessa de alvos ≥ 48 px cumpre-se também neles,
    sem tocar na .ent-accao das outras vistas. */
 .prep-accao { height: 52px; }
+
+/* ---------- a ÁREA DO MESTRE (t-area-mestre): a sala onde o
+   Mestre monta a batalha, no lugar do cartão de preparação. Vista
+   própria .ent-sala: ocupa a camada inteira (em paisagem, o palco
+   1672:941 centrado — a sala mede o palco, não o ecrã) numa coluna
+   de três faixas que NUNCA se sobrepõem: cabeçalho (faixa própria
+   no fluxo — nunca sticky, que é o mecanismo banido) · corpo
+   (overflow hidden; quem rola é um só, o conteúdo da aba activa
+   .entab-conteudo) · rodapé (faixa própria, sempre visível).
+   Véu escuro quase opaco sobre a arte (~94%, a cor de chão dos
+   painéis) — sem cartões a flutuar: as faixas são de largura
+   inteira, separadas pela linha dourada fina, e a COLUNA de
+   conteúdo é que tem largura máxima (min(600px, 94%) centrada, a
+   referência das Configurações no Largo), para os controlos não
+   ficarem a ~1 200 px dos rótulos em ecrã grande.
+   Empilhamento: z-index 2 declarado — acima do loop de vídeo
+   (z 1), como o resto da interface; a marca da versão (z 5) fica
+   por cima, no canto, e o padding-bottom do rodapé (≥26 px +
+   safe-area) põe-na sobre o véu do rodapé, FORA do botão
+   «Começar batalha». A altura é a da camada (inset:0), nunca vh
+   solto. A visibilidade da vista é pelo atributo hidden via
+   mostrar() — a guarda «#entrada [hidden]» dá-lhe a última
+   palavra contra o display:flex daqui; a visibilidade das ABAS
+   internas é por classe (.entab-aba.activa), governada pelo par
+   estado/activador próprio da sala no entrada.js. As classes
+   internas da preparação (.prep-*) reusam-se tal como estão; a
+   célula de aba herda os 36 px das Configurações (REF_88) — a
+   fileira é navegação entre secções, não acção. ---------- */
+.ent-sala {
+  position: absolute; inset: 0; z-index: 2;
+  display: flex; flex-direction: column;
+  background: rgba(16, 12, 7, .94);
+  color: var(--pergaminho, #efe6cf);
+}
+.ent-sala-cabecalho {
+  flex: none; display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; box-sizing: border-box;
+  padding: 10px max(3%, calc(50% - 300px)) 8px;
+  border-bottom: 1px solid rgba(201, 162, 39, .45);
+}
+.ent-sala-titulo {
+  font-family: Georgia, 'DejaVu Serif', serif; font-size: 15px;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--ouro);
+  margin: 0;
+}
+/* «Voltar»: controlo secundário no cabeçalho — ≥48 px (descida
+   lavrada dos 52 px que tinha no painel; o gesto principal,
+   «Começar batalha», mantém os ≥52 px da .prep-accao). */
+.ent-sala-voltar {
+  flex: none; min-width: 96px; height: 48px; padding: 0 18px; cursor: pointer;
+  border-radius: 8px; border: 1px solid rgba(201, 162, 39, .8);
+  background: rgba(28, 21, 12, .85); color: var(--pergaminho-fraco, #cbbd97);
+  font-size: 15px; font-weight: 700;
+}
+.ent-sala-corpo {
+  width: min(600px, 94%); margin: 8px auto 0; box-sizing: border-box;
+}
+.ent-sala-conteudo {
+  padding: 2px 4px 12px 2px;
+  scrollbar-width: thin; scrollbar-color: rgba(201, 162, 39, .7) rgba(10, 8, 5, .6);
+}
+.ent-sala-conteudo::-webkit-scrollbar { width: 6px; }
+.ent-sala-conteudo::-webkit-scrollbar-thumb { background: rgba(201, 162, 39, .55); border-radius: 3px; }
+.ent-sala-conteudo::-webkit-scrollbar-track { background: rgba(10, 8, 5, .5); }
+.ent-sala-rodape {
+  flex: none; box-sizing: border-box;
+  padding: 10px max(3%, calc(50% - 300px)) calc(26px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid rgba(201, 162, 39, .45);
+}

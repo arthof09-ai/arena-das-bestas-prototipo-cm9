@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_106';
+  var VERSAO_JOGO = 'REF_107';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -238,7 +238,7 @@
      * perfil lembrado, senha) desaguam aqui, por isso a intercepção
      * é uma só. A Jogadora nunca passa por aqui: comoMestre falso
      * segue o caminho de sempre, sem tela nenhuma. */
-    if (comoMestre && !preparacaoFeita) { mostrar('preparacao'); return; }
+    if (comoMestre && !preparacaoFeita) { mostrar('area-mestre'); return; }
     if (arrancou) return;
     arrancou = true;
     /* A média da entrada (filme/loop/trilha) é da tela do título:
@@ -501,14 +501,76 @@
     prepEscolhas.monstros[m.id] = { contra: 0, neutro: 0, time: 0 };
   });
 
-  var vistaPreparacao = el('section', 'ent-painel');
+  /* A SALA (t-area-mestre, palavra do Mestre 16/11/2026 00:17:
+   * «quero que quando eu aperte em entrar com mestre eu vá direto
+   * para uma sala especial para o mestre, a área do mestre que eu
+   * vou decidir tudo, uma sala organizada antes do mapa»): a
+   * preparação deixa de ser o cartão .ent-painel e passa a ser a
+   * ÁREA DO MESTRE — vista própria .ent-sala, a camada inteira, em
+   * três faixas que nunca se sobrepõem (cabeçalho · corpo ·
+   * rodapé), com o conteúdo em abas nomeadas como as Configurações
+   * (REF_88). As decisões, os registos e as contas são exactamente
+   * os da preparação da REF_97 — muda a casa, não as regras. A
+   * classe .ent-painel e as outras vistas não são tocadas. */
+  var vistaPreparacao = el('section', 'ent-sala');
   vistaPreparacao.hidden = true;
-  vistaPreparacao.setAttribute('aria-label', 'Preparar a batalha');
-  vistaPreparacao.appendChild(el('h2', null, 'Preparar a batalha'));
-  vistaPreparacao.appendChild(el('p', 'ent-nota',
-    'Escolha o mapa e quem entra na batalha. A batalha só começa quando você apertar «Começar batalha».'));
+  vistaPreparacao.setAttribute('aria-label', 'Área do Mestre');
 
-  vistaPreparacao.appendChild(el('h3', 'prep-titulo', 'Mapa'));
+  /* Cabeçalho (faixa própria no fluxo da coluna — nunca sticky):
+   * o nome da sala e o «Voltar» (o id de sempre,
+   * ent-voltar-preparacao — as sondas dependem dele; o destino é
+   * o de sempre, mostrar('botoes'), sem arrancar nada). */
+  var salaCabecalho = el('div', 'ent-sala-cabecalho');
+  salaCabecalho.appendChild(el('h2', 'ent-sala-titulo', 'Área do Mestre'));
+  var btnVoltarPreparacao = el('button', 'ent-sala-voltar', 'Voltar');
+  btnVoltarPreparacao.id = 'ent-voltar-preparacao'; btnVoltarPreparacao.type = 'button';
+  btnVoltarPreparacao.addEventListener('click', function () { mostrar('botoes'); });
+  salaCabecalho.appendChild(btnVoltarPreparacao);
+  vistaPreparacao.appendChild(salaCabecalho);
+
+  /* Corpo: abas nomeadas no padrão .entab-* das Configurações,
+   * com par estado/activador PRÓPRIO da sala (as classes sozinhas
+   * não trocam abas: a visibilidade interna é por classe .activa).
+   * A aba inicial é «Mapa»; ao re-entrar na mesma sessão a sala
+   * volta à aba onde ele estava (aba lembrada em salaAbaActual).
+   * Quem rola é um só: o conteúdo da aba activa (.entab-conteudo);
+   * o corpo não rola. */
+  var salaAbaActual = 'mapa';
+  var salaCorpo = el('div', 'entab-corpo ent-sala-corpo');
+  var salaIndice = el('nav', 'entab-indice');
+  salaIndice.setAttribute('aria-label', 'Abas da Área do Mestre');
+  var salaConteudo = el('div', 'entab-conteudo ent-sala-conteudo');
+  salaCorpo.appendChild(salaIndice);
+  salaCorpo.appendChild(salaConteudo);
+  vistaPreparacao.appendChild(salaCorpo);
+  var salaPaineis = {}, salaCelulas = {};
+  function activarAbaSala(id) {
+    if (!salaPaineis[id]) id = 'mapa';
+    salaAbaActual = id;
+    for (var k in salaPaineis) salaPaineis[k].classList.toggle('activa', k === id);
+    for (var k2 in salaCelulas) salaCelulas[k2].classList.toggle('on', k2 === id);
+    salaConteudo.scrollTop = 0;
+  }
+  [['mapa', 'Mapa'], ['quem-entra', 'Quem entra']].forEach(function (def) {
+    var sec = el('section', 'entab-aba');
+    sec.dataset.aba = def[0];
+    sec.setAttribute('aria-label', def[1]);
+    salaConteudo.appendChild(sec);
+    salaPaineis[def[0]] = sec;
+    var cel = el('button', 'entab-celula');
+    cel.type = 'button';
+    cel.dataset.aba = def[0];
+    cel.appendChild(el('b', null, def[1]));
+    cel.addEventListener('click', function () { activarAbaSala(def[0]); });
+    salaIndice.appendChild(cel);
+    salaCelulas[def[0]] = cel;
+  });
+
+  /* Aba «Mapa»: a nota introdutória de sempre abre a aba (a frase
+   * do gesto único — a casa nomeada dela no desenho) e os botões
+   * de mapa do registo vêm a seguir, em largura inteira. */
+  salaPaineis['mapa'].appendChild(el('p', 'ent-nota',
+    'Escolha o mapa e quem entra na batalha. A batalha só começa quando você apertar «Começar batalha».'));
   var prepMapaBotoes = {};
   MAPAS_PARTIDA.forEach(function (mp) {
     var b = el('button', 'prep-mapa');
@@ -532,10 +594,11 @@
       if (mp.id === 'trono') preCarregarTrono();
     });
     prepMapaBotoes[mp.id] = b;
-    vistaPreparacao.appendChild(b);
+    salaPaineis['mapa'].appendChild(b);
   });
 
-  vistaPreparacao.appendChild(el('h3', 'prep-titulo', 'Monstros'));
+  /* Aba «Quem entra»: os blocos por tipo e a secção dos NPCs. */
+  salaPaineis['quem-entra'].appendChild(el('h3', 'prep-titulo', 'Monstros'));
   var prepQtdEls = {};
   MONSTROS_PARTIDA.forEach(function (m) {
     var bloco = el('div', 'prep-tipo');
@@ -580,20 +643,23 @@
     var totTipo = el('div', 'prep-total-tipo', 'Total: 0');
     bloco.appendChild(totTipo);
     prepQtdEls[m.id].totalTipo = totTipo;
-    vistaPreparacao.appendChild(bloco);
+    salaPaineis['quem-entra'].appendChild(bloco);
   });
 
-  vistaPreparacao.appendChild(el('h3', 'prep-titulo', 'NPCs'));
-  vistaPreparacao.appendChild(el('p', 'ent-nota', 'Ainda não há NPCs no jogo.'));
+  salaPaineis['quem-entra'].appendChild(el('h3', 'prep-titulo', 'NPCs'));
+  salaPaineis['quem-entra'].appendChild(el('p', 'ent-nota', 'Ainda não há NPCs no jogo.'));
 
-  /* G1 (bancada): a barra de acções é o ÚLTIMO filho do painel
-   * e fica PRESA ao fundo dele (position: sticky, no CSS) —
-   * «Começar batalha» e «Voltar» estão sempre visíveis, sem
-   * rolar, em desktop e telemóvel. O total da batalha (M2)
-   * vive na barra: confere-se o que se montou antes de apertar. */
-  var prepAccoes = el('div', 'prep-accoes');
+  /* Rodapé da sala (faixa própria no fluxo da coluna, sempre
+   * visível em qualquer aba — substitui a barra sticky G1 do
+   * painel, que colava por cima do conteúdo): o resumo vivo (M2 —
+   * confere-se o que se montou antes de apertar, agora com o nome
+   * do mapa) e o «Começar batalha», o gesto único que faz nascer
+   * a batalha. O handler é o de sempre: grava PREPARACAO_MESTRE,
+   * marca preparacaoFeita e volta a arrancarJogo(true) pelo
+   * caminho histórico. O «Voltar» vive no cabeçalho (acima). */
+  var salaRodape = el('div', 'ent-sala-rodape');
   var prepTotalEl = el('div', 'prep-total', 'Total: 0 figuras');
-  prepAccoes.appendChild(prepTotalEl);
+  salaRodape.appendChild(prepTotalEl);
   var btnComecarBatalha = el('button', 'ent-accao prep-accao', 'Começar batalha');
   btnComecarBatalha.id = 'ent-comecar-batalha'; btnComecarBatalha.type = 'button';
   btnComecarBatalha.style.width = '100%';
@@ -607,14 +673,9 @@
     preparacaoFeita = true;
     arrancarJogo(true);
   });
-  prepAccoes.appendChild(btnComecarBatalha);
-  var btnVoltarPreparacao = el('button', 'ent-accao sec prep-accao', 'Voltar');
-  btnVoltarPreparacao.id = 'ent-voltar-preparacao'; btnVoltarPreparacao.type = 'button';
-  btnVoltarPreparacao.style.width = '100%';
-  btnVoltarPreparacao.style.marginTop = '8px';
-  btnVoltarPreparacao.addEventListener('click', function () { mostrar('botoes'); });
-  prepAccoes.appendChild(btnVoltarPreparacao);
-  vistaPreparacao.appendChild(prepAccoes);
+  salaRodape.appendChild(btnComecarBatalha);
+  vistaPreparacao.appendChild(salaRodape);
+  activarAbaSala(salaAbaActual);
   raiz.appendChild(vistaPreparacao);
 
   function pintarPreparacao() {
@@ -640,9 +701,17 @@
       var tt = prepQtdEls[m.id] && prepQtdEls[m.id].totalTipo;
       if (tt) tt.textContent = 'Total: ' + somaTipo;
     });
-    /* M2: o total da batalha, vivo na barra de acções. */
-    if (prepTotalEl) prepTotalEl.textContent =
-      'Total: ' + totalGeral + (totalGeral === 1 ? ' figura' : ' figuras');
+    /* M2: o resumo da batalha, vivo no rodapé da sala — o nome do
+       mapa escolhido e o total de figuras escolhidas (a Ong não
+       se conta: a semântica lavrada na REF_97). */
+    if (prepTotalEl) {
+      var nomeMapaActual = prepEscolhas.mapa;
+      MAPAS_PARTIDA.forEach(function (mp) {
+        if (mp.id === prepEscolhas.mapa) nomeMapaActual = mp.nome;
+      });
+      prepTotalEl.textContent = nomeMapaActual + ' · Total: ' + totalGeral +
+        (totalGeral === 1 ? ' figura' : ' figuras');
+    }
   }
 
   /* Vista 3 — a senha nova (SENHA): construída na secção «SENHA». */
@@ -1004,8 +1073,8 @@
     if (vistaNovaSenha) vistaNovaSenha.hidden = vista !== 'novasenha';
     vistaConfig.hidden = vista !== 'config';
     if (typeof vistaPreparacao !== 'undefined' && vistaPreparacao)
-      vistaPreparacao.hidden = vista !== 'preparacao';
-    if (vista === 'preparacao' && typeof pintarPreparacao === 'function') pintarPreparacao();
+      vistaPreparacao.hidden = vista !== 'area-mestre';
+    if (vista === 'area-mestre' && typeof pintarPreparacao === 'function') pintarPreparacao();
     if (vista === 'mestre') {
       erroMestre.textContent = '';
       if (typeof fecharZonaSenha === 'function') fecharZonaSenha();
