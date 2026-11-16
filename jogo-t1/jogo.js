@@ -6826,6 +6826,13 @@
     } else {
       multi = true;
       view.showHover(null);
+      /* C-360-2 (DIAG-360, Z2): a pinça nasce calibrada — a
+         distância entre os dois ponteiros fica registada já no
+         segundo pointerdown, para o primeiro pointermove zoomar em
+         vez de só calibrar (cada pinça perdia ~16% do curso:
+         ×4,0 de dedos entregava ×3,368). */
+      const [pa, pb] = [...ponteiros.values()];
+      pinca = Math.hypot(pa.x - pb.x, pa.y - pb.y);
     }
   });
   mapaEl.addEventListener('pointermove', e => {
@@ -6847,7 +6854,13 @@
     }
     if (!gesto || multi) return;
     const dx = e.clientX - gesto.lastX, dy = e.clientY - gesto.lastY;
-    if (Math.hypot(e.clientX - gesto.x, e.clientY - gesto.y) > 7) gesto.drag = true;
+    if (Math.hypot(e.clientX - gesto.x, e.clientY - gesto.y) > 7) {
+      /* C-360-4 (DIAG-360): fora do 360, o aviso de modo aparece
+         quando o arrasto nasce (ao passar os 7 px), não só ao
+         largar — fraseArrasto já se cala no 360. */
+      if (!gesto.drag) fraseArrasto();
+      gesto.drag = true;
+    }
     if (gesto.drag) {
       view.orbit(dx, dy);
       view.showHover(null);
@@ -6871,7 +6884,8 @@
     if (!ponteiros.size) {
       gesto = null;
       if (eraPinca) fraseZoom();
-      else if (eraArrasto) fraseArrasto();
+      /* C-360-4: o aviso do arrasto já apareceu ao passar os 7 px
+         (pointermove); ao largar não se repete. */
       multi = false;
     }
   });

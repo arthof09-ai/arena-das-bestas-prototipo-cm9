@@ -1661,7 +1661,19 @@
                     fogoTremular(f, Math.min(1, (now - f.t0) / 150), now);
             }
             function ambReaplicar() { if (ambDerivados) ambEscrever(ambAmostra(ambActual.hora), ambActual.chuva, 0); }
-            let width = 1, height = 1, selected = null, mode = '360', quality = 'alta', qualidadeModo = 'manual', benchEstado = 'off', benchFrames = 0, benchTempo = 0, benchUltimo = 0, benchInicio = 0, unidadesCarregadas = false, dprSessao = null, disposed = false, raf, last = performance.now(), fps = 0, fpsAt = last, frames = 0, shadowAt = 0, yaw = 0, pitch = 1.05, viewWidth = 20, primeiraVista = true;
+            let width = 1, height = 1, selected = null, mode = '360', quality = 'alta', qualidadeModo = 'manual', benchEstado = 'off', benchFrames = 0, benchTempo = 0, benchUltimo = 0, benchInicio = 0, unidadesCarregadas = false, dprSessao = null, disposed = false, raf, last = performance.now(), fps = 0, fpsAt = last, frames = 0, shadowAt = 0, yaw = 0, pitch = options.mapa === 'trono' ? 1.18 : 1.05, viewWidth = 20, primeiraVista = true, pisoOrbita = options.mapa === 'trono' ? 1.18 : .06, snapNascimento = true;
+            /* Pitch EFECTIVO do último fotograma desenhado (t-camera-
+               enquadramento): a guarda de enquadramento pode levantar o
+               pitch por um fotograma sem tocar no pitch guardado do
+               jogador; quem precisa do ângulo REAL da vista (a Dinâmica,
+               que segue o campo de visão da personagem) lê este. Nasce
+               igual ao pitch de nascimento. */
+            let pitchVista = pitch;
+            /* C5 (correcção t-camera-enquadramento): a largura
+               EFECTIVA do último fotograma (a que a guarda devolve),
+               gémea de pitchVista — a Dinâmica passa a julgar os
+               candidatos contra o quadro realmente desenhado. */
+            let larguraVistaGuardada = 0;
             /* Offset de OLHAR deste aparelho (t-config-abas, SPEC §6.2):
                azimute somado ao ângulo base da câmera de batalha quando
                as teclas Q/E rodam a vista. Vive SÓ nesta closure: não
@@ -1715,7 +1727,12 @@
              * figuras por id ordenado com < simples. O movedor já está
              * no destino; ninguém lê root.position. */
             function dinContexto(tipo, princ, outro, destCasa) {
-                const vw = baseWidth() / zoom['360'], H = vw * height / width, s = vw * 36 / width;
+                /* C5: largura efectiva guardada (gémea de pitchVista),
+                   NÃO a nominal baseWidth()/zoom['360'] — a nominal
+                   ignora o encolhimento da guarda e a Dinâmica julgava
+                   candidatos contra um quadro maior que o desenhado.
+                   Antes do primeiro fotograma, cai na nominal. */
+                const vw = larguraVistaGuardada > 0 ? larguraVistaGuardada : baseWidth() / zoom['360'], H = vw * height / width, s = vw * 36 / width;
                 const posFinal = u => (tipo === 'mover' && u === princ) ? { x: wx(destCasa.x), z: wz(destCasa.z), alt: destCasa.altitude ?? u.altitude } : { x: wx(u.x), z: wz(u.z), alt: u.altitude };
                 const cil = u => { const q = posFinal(u); return { id: u.id, x: q.x, z: q.z, base: world.height(q.x, q.z) + q.alt, r: Math.max(.40, .28 * u.size), h: u.size }; };
                 let figuras = [...units.values()].filter(u => u.vivo && !u.oculto).map(cil);
@@ -1735,7 +1752,7 @@
              * Cada candidato devolve também escP/escO (a fracção escondida
              * de cada foco) — é deles que o resgate-alvo (§4.2) se decide. */
             function dinAvaliar(ctx, tipo, theta, angleA, desloc) {
-                const p = pitch, sinp = Math.sin(p), cosp = Math.cos(p), retrato = width / height < .8;
+                const p = pitchVista, sinp = Math.sin(p), cosp = Math.cos(p), retrato = width / height < .8;
                 const rectU = { u0: -.46 * ctx.vw, u1: .46 * ctx.vw, v0: -ctx.H / 2 - ctx.s + .05 * ctx.H, v1: ctx.H / 2 - ctx.s - .07 * ctx.H };
                 const inter = (a, b) => { const u0 = Math.max(a.u0, b.u0), u1 = Math.min(a.u1, b.u1), v0 = Math.max(a.v0, b.v0), v1 = Math.min(a.v1, b.v1); return u1 > u0 && v1 > v0 ? (u1 - u0) * (v1 - v0) : 0; };
                 let fallback = false;
@@ -2470,6 +2487,13 @@
             function baseWidth() {
                 if (mode === 'fixa' && width < height)
                     return Math.max(area.rows * CELL * 1.44, area.cols * CELL * Math.sin(.72) * 1.44 * width / Math.max(150, height - 110));
+                return baseWidthPadrao();
+            }
+            /* A largura padrão (a do nascimento: 360° e fixa em
+               paisagem). Extraída para a correcção C1 da
+               t-camera-enquadramento a ler directamente — a fixa em
+               retrato no trono herda o enquadramento de nascimento. */
+            function baseWidthPadrao() {
                 return Math.max(area.cols * CELL * 1.25, area.rows * CELL * Math.sin(1.12) * 1.25 * width / Math.max(150, height - 110));
             }
             function zoomRange() {
@@ -2481,7 +2505,10 @@
                    e as figuras a sul NÃO cabem no mesmo fotograma
                    1280×800 — a prova está no ESTADO da frente. No campo,
                    o limite de sempre (0,45). */
-                return { min: options.mapa === 'trono' ? .52 : .45, max: baseWidth() / 4.5 };
+                /* C-360-3 (DIAG-360, Z1): a vista mais fechada passa
+                   de 4,5 m para 3,0 m de largura (queixa ao vivo do
+                   Mestre, 2026-11-16: «quero chegar mais perto»). */
+                return { min: options.mapa === 'trono' ? .52 : .45, max: baseWidth() / 3 };
             }
             function setZoom(v) {
                 if (!Number.isFinite(v))
@@ -2549,13 +2576,17 @@
                 /* CORRECÇÃO t-mapa-trono (bancada, itens 3/7): enquadramento
                    por omissão DESTE mapa, aplicado uma vez à primeira
                    medida — computador 0,52× (a composição inteira: trono,
-                   anel, medalhão, figuras); telemóvel em retrato 1,35×
-                   (a arena nasce dentro da sala: sem o exterior da parede
-                   sul e sem o rectângulo preto da porta, b09). Daí em
-                   diante manda o jogador, como no campo. */
+                   anel, medalhão, figuras); telemóvel em retrato 1,1×
+                   (CORRECÇÃO t-camera-enquadramento, dívida L3 da 2.ª
+                   bancada: a 1,35× o quadro retrato tinha ~13,9 m e os
+                   corpos de oeste nasciam fora — Lobo ~90% fora, Orc 2
+                   sem corpo, foto g12; a 1,1× o quadro tem ~17 m e, com
+                   o alvo puxado ao centro da arena em x no nascimento,
+                   os quatro corpos nascem dentro). Daí em diante manda
+                   o jogador, como no campo. */
                 if (!enquadramentoTronoFeito && options.mapa === 'trono' && width > 1 && height > 1) {
                     enquadramentoTronoFeito = true;
-                    zoom['360'] = width < height ? 1.35 : .52;
+                    zoom['360'] = width < height ? 1.1 : .52;
                     zoom.fixa = .52;
                 }
                 renderer.setSize(width, height, false);
@@ -2634,6 +2665,346 @@
             }
             function stats() {
                 return { movementCells:movementCells.map(p=>({...p})), presentation:presentation ? {attacker:presentation.a.id,target:presentation.b.id,phase:!presentation.started?'waiting':presentation.t<.2?'turn':'gesture'} : null, hoverVisible: hover.visible, destinationVisible: destination.visible, reachableCells: (moveLayer.children[0]?.geometry.attributes.position.count ?? 0)/6, fps, triangles: renderer.info.render.triangles, totalTriangles: count(scene), drawCalls: renderer.info.render.calls, ceuCalls: ceuDelta.calls, ceuTriangles: ceuDelta.triangles, dpr: renderer.getPixelRatio(), width, height, visibleWidthMeters: viewWidth, cellPixels: CELL / viewWidth * width, shadowSize: renderer.shadowMap.enabled ? sun.shadow.mapSize.x : 0, qualidadeModo, qualidadePerfil: quality, areaMeters: { width: area.cols * CELL, height: area.rows * CELL }, models: [...units.values()].map(u => ({ id:u.id, frente:((T.MathUtils.radToDeg(u.pivot.rotation.y)%360)+360)%360, drawOffset:{x:u.root.position.x-wx(u.x),y:u.root.position.y-world.height(wx(u.x),wz(u.z))-u.altitude,z:u.root.position.z-wz(u.z)}, modelo:u.model, loadError:u.loadError ?? null, triangles:count(u.pivot), markerTint:u.markerTint ?? null, skins:(()=>{const skins=new Set();u.pivot.traverse(o=>{if(o.isSkinnedMesh)skins.add(o.skeleton.bones.map(b=>b.uuid).join(','))});return skins.size})(), action:u.actionName ?? null, actionTime:u.action?.time ?? null, clips:u.animations.map(a=>a.name), clipDurations:u.animations.map(a=>({name:a.name,duration:a.duration})) })), animations: { idle: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.idle).length, walk: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.andar).length, advancing: [...units.values()].filter(u => u.mixer && u.mixer.time > 0).length } };
+            }
+            /* ============ GUARDA DE ENQUADRAMENTO (t-camera-enquadramento) ============
+               Doutrina do Mestre (15/11/2026, 12:34): em nenhum ângulo
+               legal a câmera enquadra fora do mundo — no campo, nunca o
+               fim do chão, o avesso da folha de terreno ou o vazio; no
+               trono, nunca fora das paredes nem o exterior, e a parede
+               nunca tapa a batalha. A guarda corre por fotograma sobre
+               o alvo/pitch/largura pedidos e devolve os valores
+               EFECTIVOS do fotograma; os valores guardados do jogador
+               (pitch, zoom) nunca são reescritos — honram-se sempre
+               que couberem. Alavancas, por esta ordem: (1) no trono, a
+               largura efectiva encolhe até a projecção da vista caber
+               na sala; (2) no trono, o alvo aperta-se (translação
+               mínima) para a projecção caber; (3) nos dois mapas, o
+               pitch efectivo sobe até os raios ficarem dentro do mundo.
+               Matemática da projecção (câmera ortográfica a olhar para
+               o alvo T, de altura yT): o ponto do chão sob o canto
+               (u, v) do quadro é T + direita·u + frente·d, com
+               d = (v + yT·cos p)/sin p, direita = (cos a, −sin a) e
+               frente = (−sin a, −cos a) no plano xz. Se os 4 cantos
+               poisam dentro do mundo, nenhum píxel mostra fora dele. */
+            const SALA = { x0: -15.5, x1: 15.5, z0: -27.5, z1: 21.5 };
+            function cantosProjecao(alvo, p, a, vw) {
+                const H = vw * height / width, hs = vw / width * 36;
+                const fx = -Math.sin(a), fz = -Math.cos(a), rx = Math.cos(a), rz = -Math.sin(a);
+                const sinp = Math.sin(p), cosp = Math.cos(p), cantos = [];
+                for (const par of [[-vw / 2, H / 2 - hs], [vw / 2, H / 2 - hs], [-vw / 2, -(H / 2 + hs)], [vw / 2, -(H / 2 + hs)]]) {
+                    const d = (par[1] + alvo.y * cosp) / sinp;
+                    cantos.push({ x: alvo.x + rx * par[0] + fx * d, z: alvo.z + rz * par[0] + fz * d });
+                }
+                return cantos;
+            }
+            function cantosGuardaTrono(alvo, p, a, vw) {
+                /* Os 4 cantos da projecção MAIS os 2 cantos do lado da
+                   câmera estendidos de δ = 18,5/tan(p): um ponto de parede
+                   a δ para lá da borda próxima, com altura h, entra no
+                   volume do frustum sse δ ≤ h/tan(p) (medido na foto 03
+                   da varredura pós-fix: a parede este tapava o fundo do
+                   quadro a yaw 90 com a projecção contida). Com os cantos
+                   estendidos dentro da sala, nenhum topo de parede com
+                   ≤ 18,5 m entra no quadro pelo lado da câmera (18,5 = a altura
+                   do edifício, 18,4 m, com margem; com 12 m a faixa da
+                   galeria ainda cortava o Orc 2 a yaw 270). */
+                const cs = cantosProjecao(alvo, p, a, vw);
+                const H = vw * height / width, hs = vw / width * 36;
+                const fx = -Math.sin(a), fz = -Math.cos(a), rx = Math.cos(a), rz = -Math.sin(a);
+                const delta = 18.5 / Math.tan(p), dPerto = (-(H / 2 + hs) + alvo.y * Math.cos(p)) / Math.sin(p) - delta;
+                for (const u of [-vw / 2, vw / 2])
+                    cs.push({ x: alvo.x + rx * u + fx * dPerto, z: alvo.z + rz * u + fz * dPerto });
+                return cs;
+            }
+            function guardarTrono(alvo, p, a, vw) {
+                const fx = -Math.sin(a), fz = -Math.cos(a);
+                /* A contenção D1 (a sequência de sempre: piso da fixa,
+                   profundidade, encolher/apertar até cumprir, forma
+                   fechada) extraída para correr sobre uma cópia do
+                   alvo — o passe de legibilidade C2 volta a corrê-la
+                   a outros pitch sem tocar no alvo real até escolher. */
+                const conter = (pIni, vwIni, at) => {
+                    let pE = pIni, vwE = vwIni;
+                    /* C4(i) (correcção t-camera-enquadramento): piso de
+                       pitch EXPLÍCITO também para a fixa no trono. O
+                       pedido da fixa em paisagem nasce a 1,12 e a guarda
+                       não tinha piso — a fixa desktop saía a 1,12 (furo
+                       F2/D4 da bancada). No 360° o pedido já nasce e
+                       arrasta-se a >= 1,18; aqui o piso fica escrito na
+                       guarda para nenhum pedido da fixa o furar. */
+                    if (mode === 'fixa' && pE < 1.18) pE = 1.18;
+                    /* (3) profundidade: a projecção mede H/sin p ao longo
+                       da frente; se excede a sala nessa direcção, o pitch
+                       sobe (até ao tecto legal de 1,4). */
+                    const profSala = (SALA.x1 - SALA.x0) * Math.abs(fx) + (SALA.z1 - SALA.z0) * Math.abs(fz);
+                    const H0 = vwE * height / width;
+                    /* A profundidade a caber é H/sin(p) MAIS a extensão δ do
+                       lado da câmera; os dois termos descem com o pitch, por
+                       isso a subida é monótona e o passo de 0,02 chega. */
+                    while (pE < 1.4 && H0 / Math.sin(pE) + 18.5 / Math.tan(pE) > profSala) pE = Math.min(1.4, pE + 0.02);
+                    /* (1)+(2) encolher e apertar EM ALTERNÂNCIA até os
+                       cantos cumprirem, com verificação a cada volta
+                       (máx. 8 voltas). C4(ii) (correcção
+                       t-camera-enquadramento): as 2 voltas fixas antigas
+                       não chegavam — o termo δ da extensão NÃO encolhe
+                       com a largura, por isso cada encolhimento corrige
+                       só parte do excesso (nos yaw diagonais sobravam
+                       até 0,27 m de cantos fora da sala — furo F1 da
+                       bancada). */
+                    const extensaoCantos = v => {
+                        const cs = cantosGuardaTrono(at, pE, a, v);
+                        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+                        for (const c of cs) { if (c.x < minX) minX = c.x; if (c.x > maxX) maxX = c.x; if (c.z < minZ) minZ = c.z; if (c.z > maxZ) maxZ = c.z; }
+                        return { minX, maxX, minZ, maxZ };
+                    };
+                    const cantosForaDaSala = () => {
+                        const e = extensaoCantos(vwE);
+                        return e.minX < SALA.x0 - 1e-6 || e.maxX > SALA.x1 + 1e-6 || e.minZ < SALA.z0 - 1e-6 || e.maxZ > SALA.z1 + 1e-6;
+                    };
+                    const encolherUm = () => {
+                        const e = extensaoCantos(vwE);
+                        const escX = e.maxX - e.minX > SALA.x1 - SALA.x0 ? (SALA.x1 - SALA.x0) / (e.maxX - e.minX) : 1;
+                        const escZ = e.maxZ - e.minZ > SALA.z1 - SALA.z0 ? (SALA.z1 - SALA.z0) / (e.maxZ - e.minZ) : 1;
+                        vwE *= Math.min(escX, escZ);
+                    };
+                    const apertarUm = () => {
+                        const e = extensaoCantos(vwE);
+                        const sxLo = SALA.x0 - e.minX, sxHi = SALA.x1 - e.maxX;
+                        const szLo = SALA.z0 - e.minZ, szHi = SALA.z1 - e.maxZ;
+                        const sx = sxLo <= sxHi ? Math.max(sxLo, Math.min(0, sxHi)) : (sxLo + sxHi) / 2;
+                        const sz = szLo <= szHi ? Math.max(szLo, Math.min(0, szHi)) : (szLo + szHi) / 2;
+                        at.x += sx; at.z += sz;
+                    };
+                    for (let k = 0; k < 8; k++) {
+                        encolherUm();
+                        apertarUm();
+                        if (!cantosForaDaSala()) break;
+                    }
+                    if (cantosForaDaSala()) {
+                        /* Forma fechada por eixo: a extensão dos cantos é
+                           afim na largura (span = A*vw + B, com B = o
+                           termo δ que não escala); A e B medem-se em
+                           duas larguras e resolve-se a largura de uma
+                           vez, com margem de 1e-9. Depois aperta-se. */
+                        const s1 = extensaoCantos(vwE), s2 = extensaoCantos(vwE / 2);
+                        for (const eixo of ['x', 'z']) {
+                            const lim = eixo === 'x' ? SALA.x1 - SALA.x0 : SALA.z1 - SALA.z0;
+                            const span1 = eixo === 'x' ? s1.maxX - s1.minX : s1.maxZ - s1.minZ;
+                            const span2 = eixo === 'x' ? s2.maxX - s2.minX : s2.maxZ - s2.minZ;
+                            if (span1 > lim) {
+                                const A = (span1 - span2) / (vwE / 2), B = span1 - A * vwE;
+                                if (A > 1e-12) vwE = Math.min(vwE, (lim - B) / A * (1 - 1e-9));
+                            }
+                        }
+                        for (let k = 0; k < 8; k++) { apertarUm(); if (!cantosForaDaSala()) break; }
+                    }
+                    return { p: pE, vw: vwE };
+                };
+                /* C2 (correcção t-camera-enquadramento, bloqueante da
+                   bancada): TERMO DE LEGIBILIDADE. Medido no GLB da sala
+                   (raycast completo, bat-correcao/perfil-raios.py): as
+                   entablatures sobre as colunatas — Entablature_-1-col
+                   x∈[−10,32;−8,08] e Entablature_1-col x∈[8,08;10,32],
+                   ambas y∈[11,0;12,6], z∈[−14,5;15,5] — penduram-se sobre
+                   as colunas exteriores da arena. A contenção D1 sobe o
+                   pitch efectivo no yaw 270 para ~1,22, e é aí que os
+                   raios da câmera embatem na entablature do lado da
+                   câmera: a fracção tapada do Orc 2 (3,6 m, casa (0,0))
+                   mede 0,50 a 1,22 e 1,00 a 1,28–1,42; a 1,18 (o piso) é
+                   0,19 — só o topo da cabeça. A janela má é [~1,24;~1,44]
+                   e o tecto legal é 1,4: sair por cima é impossível;
+                   sai-se por baixo, descendo o pitch até ao piso e
+                   encolhendo a largura o que a profundidade exigir
+                   (a contenção volta a correr a cada candidato). A
+                   caixa é o invólucro exterior da peça (conservador:
+                   a 1,18 dá 0,36 contra 0,19 do raycast completo) —
+                   serve para escolher o melhor estado contido, nunca
+                   para condenar: ganha o candidato contido com menos
+                   metros de figura tapados, e a D1 manda sempre (sem
+                   estado contido melhor, fica o original). Âmbito: só estas
+                   duas peças — colunas e adereços são cenário, presentes
+                   em todas as vistas. A oclusão numa câmera ortográfica
+                   só depende de (azimute, pitch): o alvo não entra.
+                   Pontuação dos candidatos: METROS de figura tapados
+                   (soma das fracções × altura de cada figura) — medido
+                   por raycast completo, as janelas de legibilidade são
+                   disjuntas (o Orc 2 lê-se a p ≤ ~1,22 e o marcador do
+                   Lobo, 1,35 m encostado à viga, só a p ≥ ~1,30): com a
+                   pior fracção, a figura curta vetava a descida que
+                   salva a figura alta e o termo nunca disparava; em
+                   metros tapados, a descida ganha (2,85 < 3,08 a 270°). */
+                const CAIXAS_ENT = [
+                    { x0: -10.32, x1: -8.08, y0: 11.0, y1: 12.6, z0: -14.5, z1: 15.5 },
+                    { x0: 8.08, x1: 10.32, y0: 11.0, y1: 12.6, z0: -14.5, z1: 15.5 },
+                ];
+                const raioEntablature = (ox, oy, oz, dx, dy, dz, c) => {
+                    let t0 = 0.05, t1 = 100;
+                    for (const par of [[ox, dx, c.x0, c.x1], [oy, dy, c.y0, c.y1], [oz, dz, c.z0, c.z1]]) {
+                        const o = par[0], d = par[1], lo = par[2], hi = par[3];
+                        if (Math.abs(d) < 1e-12) { if (o < lo || o > hi) return false; }
+                        else {
+                            let ta = (lo - o) / d, tb = (hi - o) / d;
+                            if (ta > tb) { const t = ta; ta = tb; tb = t; }
+                            if (ta > t0) t0 = ta;
+                            if (tb < t1) t1 = tb;
+                            if (t0 > t1) return false;
+                        }
+                    }
+                    return true;
+                };
+                const avaliarLegibilidade = pE => {
+                    if (typeof units === 'undefined') return { pior: 0, metros: 0 };
+                    const dx = Math.sin(a) * Math.cos(pE), dy = Math.sin(pE), dz = Math.cos(a) * Math.cos(pE);
+                    let pior = 0, metros = 0;
+                    for (const u of units.values()) {
+                        if (!u.vivo || u.oculto || !u.root) continue;
+                        const bx = u.root.position.x, by = u.root.position.y, bz = u.root.position.z, alt = u.size > 0 ? u.size : 2;
+                        let oc = 0;
+                        for (let i = 1; i <= 12; i++)
+                            if (CAIXAS_ENT.some(c => raioEntablature(bx, by + alt * i / 12, bz, dx, dy, dz, c))) oc++;
+                        if (oc / 12 > pior) pior = oc / 12;
+                        metros += oc / 12 * alt;
+                    }
+                    return { pior, metros };
+                };
+                /* C-360-1 (DIAG-360, A1+A2): o PISO DA GUARDA neste
+                   estado — a contenção corrida com o pedido mínimo
+                   (0,06): o pitch mais baixo a que o fotograma cabe na
+                   sala com este azimute, alvo e largura. O animate
+                   guarda-o e o orbit usa-o como piso, em vez da
+                   constante 1,18: a vista larga continua a pedir pitch
+                   alto (a parede), a vista fechada sobre a figura pode
+                   descer — a guarda continua a mandar no fotograma. */
+                const pisoGuarda = conter(.06, vw, { x: alvo.x, y: alvo.y, z: alvo.z }).p;
+                const alvo0 = { x: alvo.x, y: alvo.y, z: alvo.z };
+                const trab0 = { ...alvo0 };
+                let sol = conter(p, vw, trab0);
+                alvo.x = trab0.x; alvo.z = trab0.z;
+                const LIMIAR_LEG = 0.34;
+                let aval = avaliarLegibilidade(sol.p);
+                if (aval.pior > LIMIAR_LEG) {
+                    const profSala = (SALA.x1 - SALA.x0) * Math.abs(fx) + (SALA.z1 - SALA.z0) * Math.abs(fz);
+                    let melhor = null, melhorMetros = aval.metros;
+                    for (let pC = sol.p - 0.02; pC >= 1.18 - 1e-9; pC -= 0.02) {
+                        const pT = Math.max(1.18, pC);
+                        const resto = profSala - 18.5 / Math.tan(pT);
+                        if (resto <= 0) continue;
+                        const vwCap = Math.min(sol.vw, resto * Math.sin(pT) * width / height);
+                        if (vwCap <= 0) continue;
+                        const t2 = { ...alvo0 };
+                        const s2 = conter(pT, vwCap, t2);
+                        const aval2 = avaliarLegibilidade(s2.p);
+                        if (aval2.metros < melhorMetros - 1e-9) { melhor = { s: s2, t: t2 }; melhorMetros = aval2.metros; aval = aval2; }
+                        if (aval.pior <= LIMIAR_LEG) break;
+                    }
+                    if (melhor) { sol = melhor.s; alvo.x = melhor.t.x; alvo.z = melhor.t.z; }
+                }
+                /* C2 (mínimo do Crítico B, §3.2): ENQUADRAMENTO das
+                   figuras. Medido ao vivo no yaw 270: mesmo com o pitch
+                   no piso, o Orc 2 caía fora do rectângulo efectivo
+                   (base projectada 57 px abaixo do ecrã) — a figura
+                   lê-se cortada pelo fotograma além de tapada pela
+                   viga. Se alguma figura (base e topo, com o raio da
+                   casa r = max(0,40; 0,28·altura) — o mesmo de
+                   dinContexto) ficar fora do rectângulo da vista, o
+                   alvo desloca-se na horizontal o mínimo para a fazer
+                   entrar; cada deslocação candidata é verificada
+                   contra a SALA (cantos da guarda) e recua por
+                   bissecção se partir a D1 — sem folga, fica o alvo
+                   contido. Deslocar o alvo não muda oclusão nenhuma
+                   (câmera ortográfica): muda só o que o fotograma
+                   apanha. Sem figura fora, deslocação zero. */
+                if (typeof units !== 'undefined') {
+                    const vhQ = sol.vw * height / width;
+                    const ux = Math.cos(a), uz = -Math.sin(a);
+                    const vx = -Math.sin(a) * Math.sin(sol.p), vz = -Math.cos(a) * Math.sin(sol.p);
+                    let du = 0, dv = 0;
+                    for (const u of units.values()) {
+                        if (!u.vivo || u.oculto || !u.root) continue;
+                        const rx = u.root.position.x - alvo.x, rz = u.root.position.z - alvo.z;
+                        const alt = u.size > 0 ? u.size : 2, r = Math.max(0.40, 0.28 * alt);
+                        const uu = rx * ux + rz * uz, vv = rx * vx + rz * vz + (u.root.position.y - alvo.y) * Math.cos(sol.p);
+                        const uuLo = -sol.vw / 2 + 0.3 + r, uuHi = sol.vw / 2 - 0.3 - r;
+                        const vvLo = -vhQ / 2 + 0.3, vvHi = vhQ / 2 - 0.3 - alt * Math.cos(sol.p);
+                        if (uu < uuLo) du = Math.max(du, uuLo - uu); else if (uu > uuHi) du = Math.min(du, uuHi - uu);
+                        if (vv < vvLo) dv = Math.max(dv, vvLo - vv); else if (vv > vvHi) dv = Math.min(dv, vvHi - vv);
+                    }
+                    if (du !== 0 || dv !== 0) {
+                        const cantosDentro = () => cantosGuardaTrono(alvo, sol.p, a, sol.vw)
+                            .every(c => c.x >= SALA.x0 - 1e-6 && c.x <= SALA.x1 + 1e-6 && c.z >= SALA.z0 - 1e-6 && c.z <= SALA.z1 + 1e-6);
+                        const ax0 = alvo.x, az0 = alvo.z;
+                        let esc = 1, aplicado = false;
+                        for (let k = 0; k < 7 && !aplicado; k++) {
+                            alvo.x = ax0 - (du * ux - dv * Math.sin(a)) * esc;
+                            alvo.z = az0 - (du * uz - dv * Math.cos(a)) * esc;
+                            if (cantosDentro()) aplicado = true; else esc /= 2;
+                        }
+                        if (!aplicado) { alvo.x = ax0; alvo.z = az0; }
+                    }
+                }
+                sol.piso = pisoGuarda;
+                return sol;
+            }
+            function folgaCampo(alvo, p, a, vw, dist) {
+                /* > 0: o fotograma cumpre a doutrina no campo; ≤ 0: viola.
+                   Devolve a pior de duas medidas:
+                   (A) o raio de baixo do quadro passa ACIMA do perfil do
+                       terreno em todo o corredor entre a câmera e o ponto
+                       onde poisaria — a folha de terreno não tem
+                       espessura: um raio que passa por baixo dela lê o
+                       avesso/vazio (a vista da queixa do Mestre, medida
+                       no Passo 1: a pitch 0,06 o raio de baixo passava
+                       ~6,4 m abaixo da crista do terreno);
+                   (B) o raio de cima do quadro poisa DENTRO do quadrado
+                       do mundo (360×360; meia-extensão 174 com margem)
+                       — sem isto, a pitch baixo com zoom fora, o topo do
+                       quadro enquadra para lá do fim do chão. */
+                const H = vw * height / width, hs = vw / width * 36;
+                const topOff = H / 2 - hs, botOff = H / 2 + hs;
+                const fx = -Math.sin(a), fz = -Math.cos(a), rx = Math.cos(a), rz = -Math.sin(a);
+                const sinp = Math.sin(p), cosp = Math.cos(p), tanp = sinp / cosp, yT = alvo.y;
+                let m = Infinity;
+                for (const u of [-vw / 2, vw / 2]) {
+                    const ox = alvo.x + rx * u, oz = alvo.z + rz * u;
+                    const bx = fx > 1e-9 ? (174 - ox) / fx : fx < -1e-9 ? (-174 - ox) / fx : Infinity;
+                    const bz = fz > 1e-9 ? (174 - oz) / fz : fz < -1e-9 ? (-174 - oz) / fz : Infinity;
+                    m = Math.min(m, Math.min(bx, bz) - (topOff + yT * cosp) / sinp);
+                }
+                /* (A) s = distância ao longo da frente desde o alvo
+                   (negativo = para o lado da câmera). A altura do raio
+                   de baixo sobre o ponto s é
+                   yT − botOff·cos p − (s + botOff·sin p)·tan p.
+                   Amostras em 3 linhas: centro e os dois cantos de baixo. */
+                const sIni = -botOff * sinp - dist * cosp;
+                let sFim = (yT - botOff * cosp) / tanp - botOff * sinp;
+                if (sFim < sIni) sFim = sIni;
+                if (sFim > 60) sFim = 60;
+                for (let i = 0; i <= 14; i++) {
+                    const s = sIni + (sFim - sIni) * i / 14;
+                    const yRaio = yT - botOff * cosp - (s + botOff * sinp) * tanp;
+                    for (const u of [-vw / 2, 0, vw / 2]) {
+                        const h = world.height(alvo.x + rx * u + fx * s, alvo.z + rz * u + fz * s);
+                        if (yRaio - h < m) m = yRaio - h;
+                    }
+                }
+                return m;
+            }
+            function guardarEnquadramento(alvo, p, a, vw, dist) {
+                if (options.mapa === 'trono') return guardarTrono(alvo, p, a, vw);
+                if (p >= 1.4) return { p, vw };
+                if (folgaCampo(alvo, p, a, vw, dist) >= 0) return { p, vw };
+                /* Bissecção: a folga cresce com o pitch (o raio de baixo
+                   levanta sobre o corredor e o de cima encurta o alcance);
+                   procura o menor pitch que cumpre, entre o pedido e o
+                   tecto legal. Se nem a 1,4 cumprir, devolve 1,4 (o melhor
+                   possível dentro da lei antiga). */
+                let lo = p, hi = 1.4;
+                if (folgaCampo(alvo, hi, a, vw, dist) < 0) return { p: hi, vw };
+                for (let i = 0; i < 16; i++) {
+                    const mid = (lo + hi) / 2;
+                    if (folgaCampo(alvo, mid, a, vw, dist) >= 0) hi = mid; else lo = mid;
+                }
+                return { p: hi, vw };
             }
             function animate(now) {
                 if (disposed)
@@ -2729,7 +3100,16 @@
                     passoAndarLivre(dt);
                     aplicarCamaraLivre();
                 } else {
+                let desvioTrono = 0;
                 const followed = units.get(selected), want = (mode === 'fixa' || !followed) ? new T.Vector3(0, .35, 0) : followed.root.position.clone().add(new T.Vector3(0, .8, 0));
+                /* C1 (correcção t-camera-enquadramento, bloqueante da
+                   bancada): a fixa em retrato no trono herda o
+                   enquadramento de nascimento — pitch 1,18, azimute
+                   do olhar (não o quarto de volta da fixa retrato),
+                   largura do zoom 1,1 do nascimento e alvo no centro
+                   da arena (o want da fixa já é (0, .35, 0); o desvio
+                   de composição não se aplica neste estado). */
+                const fixaRetratoTrono = mode === 'fixa' && options.mapa === 'trono' && width < height;
                 /* CORRECÇÃO t-mapa-trono (bancada, itens 3/7): neste mapa o
                    alvo da câmera desloca-se 10,8 m para norte — sem o desvio,
                    a vista por omissão nunca mostra o estrado e o trono
@@ -2746,10 +3126,67 @@
                        (medido em d02). */
                     const zoomAlvo = zoom[mode] != null ? zoom[mode] : .52;
                     const fatorDesvio = Math.max(0, Math.min(1, (1 - zoomAlvo) / .48));
-                    want.z -= 10.8 * fatorDesvio;
+                    desvioTrono = 10.8 * fatorDesvio;
+                    /* CORREÇÃO t-camera-enquadramento (dívida L3): em
+                       retrato, o alvo puxa também em x para o centro da
+                       arena (x = 0). A figura seguida nasce a x ≈ 2,25 e
+                       o quadro retrato é estreito: sem o puxão, os corpos
+                       de oeste nasciam fora do quadro (g12). O puxão
+                       desvanece ao aproximar (a 1,35× já não puxa), como
+                       o desvio em z; em paisagem/desktop não há puxão. */
+                    if (width < height) {
+                        const fatorRetrato = Math.max(0, Math.min(1, (1.35 - zoomAlvo) / .3));
+                        want.x -= want.x * fatorRetrato;
+                    }
                 }
+                if (fixaRetratoTrono) desvioTrono = 0;
                 target.lerp(want, 1 - Math.exp(-dt * 7));
-                const p = mode === '360' ? pitch : width < height ? .72 : 1.12, a = (mode === '360' ? yaw : mode === 'fixa' && width < height ? Math.PI / 2 : 0) + olharYaw, distance = Math.max(45, extent * 2);
+                const pBase = mode === '360' ? pitch : fixaRetratoTrono ? 1.18 : width < height ? .72 : 1.12, a = (mode === '360' ? yaw : fixaRetratoTrono ? 0 : mode === 'fixa' && width < height ? Math.PI / 2 : 0) + olharYaw, distance = Math.max(45, extent * 2);
+                const larguraAlvo = fixaRetratoTrono ? baseWidthPadrao() / 1.1 : baseWidth() / zoom[mode];
+                if (primeiraVista) {
+                    viewWidth = larguraAlvo;
+                    primeiraVista = false;
+                }
+                viewWidth = T.MathUtils.lerp(viewWidth, larguraAlvo, 1 - Math.exp(-dt * 10));
+                /* GUARDA DE ENQUADRAMENTO (t-camera-enquadramento): com
+                   o alvo, o pitch base, o azimute e a largura DESTE
+                   fotograma, devolve o pitch e a largura EFECTIVOS
+                   que cumprem a doutrina (nunca fora do mundo) e, no
+                   trono, aperta o alvo para a projecção caber na
+                   sala. Os valores guardados do jogador nunca são
+                   reescritos: a guarda só limita o fotograma.
+                   (A largura aproxima-se ANTES da guarda porque a
+                   guarda julga o quadro que vai ser desenhado.) */
+                /* TECTO DO DESVIO DE COMPOSIÇÃO (t-camera-enquadramento):
+                   o desvio de 10,8 m foi afinado para o quadro antigo
+                   (profundidade ~28,5 m). Com a contenção, a profundidade
+                   efectiva pode ser bem menor (21 m no nascimento desktop)
+                   e o desvio inteiro empurrava o medalhão e as figuras
+                   para fora do fundo do quadro (foto 01 da varredura
+                   pós-fix). O desvio fica limitado a metade da profundidade
+                   efectiva menos 4,5 m — medido por uma sonda da própria
+                   guarda sobre uma cópia do alvo — e aplica-se na mesma
+                   proporção da aproximação do alvo (o resultado é o da
+                   aproximação ao ponto desviado já com tecto). */
+                if (desvioTrono > 0) {
+                    const sonda = guardarEnquadramento({ x: target.x, y: target.y, z: target.z }, pBase, a, viewWidth, distance);
+                    const profEff = (sonda.vw * height / width) / Math.sin(sonda.p);
+                    const desvioCap = Math.min(desvioTrono, Math.max(0, profEff / 2 - 4.5));
+                    target.z -= desvioCap * (1 - Math.exp(-dt * 7));
+                }
+                const enquadramento = guardarEnquadramento(target, pBase, a, viewWidth, distance);
+                /* C-360-1: o piso do orbit segue a guarda (actualizado
+                   a cada fotograma no trono); no primeiro fotograma, o
+                   estado de pitch nasce NO piso — nunca abaixo — para
+                   o primeiro arrasto não saltar para cima (o salto
+                   1,05 → 1,18 medido no vivo REF_104). */
+                if (options.mapa === 'trono' && enquadramento.piso) {
+                    pisoOrbita = enquadramento.piso;
+                    if (snapNascimento) { snapNascimento = false; if (mode === '360' && pitch < pisoOrbita) pitch = pisoOrbita; }
+                }
+                const p = enquadramento.p, larguraVista = enquadramento.vw;
+                pitchVista = p;
+                larguraVistaGuardada = larguraVista;
                 camera.position.set(target.x + Math.sin(a) * Math.cos(p) * distance, target.y + Math.sin(p) * distance, target.z + Math.cos(a) * Math.cos(p) * distance);
                 /* EMENDA DO PITCH (§15.2): nunca abaixo do chão — medido na
                    construção F-14: a pitch 0,06 e distância 45 a câmera
@@ -2760,16 +3197,11 @@
                 { const soloCam = world.height(camera.position.x, camera.position.z) + .5;
                   if (camera.position.y < soloCam) camera.position.y = soloCam; }
                 camera.lookAt(target);
-                if (primeiraVista) {
-                    viewWidth = baseWidth() / zoom[mode];
-                    primeiraVista = false;
-                }
-                viewWidth = T.MathUtils.lerp(viewWidth, baseWidth() / zoom[mode], 1 - Math.exp(-dt * 10));
-                camera.left = -viewWidth / 2;
-                camera.right = viewWidth / 2;
-                camera.top = viewWidth * height / width / 2;
+                camera.left = -larguraVista / 2;
+                camera.right = larguraVista / 2;
+                camera.top = larguraVista * height / width / 2;
                 camera.bottom = -camera.top;
-                const hudShift = viewWidth / width * 36;
+                const hudShift = larguraVista / width * 36;
                 camera.top -= hudShift;
                 camera.bottom -= hudShift;
                 camera.updateProjectionMatrix();
@@ -3233,16 +3665,21 @@
                         dinArrSoma += Math.abs(dx * .008); dinArrPerc += Math.hypot(dx, dy);
                         if (dinArrSoma >= 3 * Math.PI / 180 || dinArrPerc >= 8) { dinArrT0 = tCena; gestoIntencional = true; }
                         yaw -= dx * .008;   // (2)
-                        /* CORRECÇÃO t-mapa-trono (bancada, item 2): na Sala do
-                           Trono o pitch mínimo sobe para 1,18 rad — abaixo
-                           disso a câmera sai do edifício e a parede de 18 m
-                           tapa a arena (b04–b07 da bancada). Medição do
-                           sucessor, com renders: a 0,92 o yaw 270 escondia
-                           as figuras atrás da faixa da parede (d07); a 1,05
-                           melhorou sem fechar (e07); a 1,18 as figuras e o
-                           medalhão vêem-se nos 4 yaw (f04–f07). No campo,
-                           o mínimo de sempre (0,06). */
-                        pitch = clamp(pitch + dy * .005, options.mapa === 'trono' ? 1.18 : .06, 1.4);   // (2) + pitch livre (§15: mínimo 0,06)
+                        /* C-360-1 (queixa ao vivo do Mestre, 2026-11-16
+                           00:19 + DIAG-360): o piso de pitch do trono
+                           deixou de ser a constante 1,18 da correcção
+                           t-mapa-trono (abaixo dela, a certos yaw, a
+                           parede de 18 m tapa a arena — b04–b07 daquela
+                           bancada) e passou a ser o PISO DA GUARDA para o
+                           estado actual (pisoOrbita, calculado em
+                           guardarTrono a cada fotograma): onde o
+                           fotograma largo precisa de altura, o piso
+                           acompanha; onde a vista fechada cabe na sala
+                           mais abaixo, o jogador pode descer. A guarda
+                           continua a limitar o fotograma desenhado — o
+                           piso do gesto só deixou de ser um número surdo.
+                           No campo, o mínimo de sempre (0,06). */
+                        pitch = clamp(pitch + dy * .005, options.mapa === 'trono' ? pisoOrbita : .06, 1.4);   // (2) + pitch livre (§15: mínimo 0,06)
                         // (3) E4: a frente visual segue o yaw — só com o gesto armado, deliberado e ela livre.
                         if (acoplId && gestoArmado && !gestoSuspenso && gestoIntencional) {
                             const u = units.get(acoplId);
