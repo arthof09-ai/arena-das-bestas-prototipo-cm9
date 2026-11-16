@@ -9119,6 +9119,30 @@
       }
       return false;
     },
+    /* GÉMEO × ELENCO (t-gemeo-elenco): o descritor do elenco — a
+       fonte única que o módulo de saves lê para validar a FORMA
+       do elenco sem lista congelada da sua parte. Só leitura, sem
+       token (não revela nada que este ficheiro servido já não
+       mostre). Devolve um objecto NOVO por chamada, congelado em
+       profundidade, com os valores das constantes vivas — nunca
+       literais novos, nunca derivados de ELENCO nem de
+       PREPARACAO_MESTRE (a ponte existe também na página da
+       Party: isto é fronteira, não estilo). versaoPonte NÃO é
+       sonda de capacidade: quem lê confere a presença deste
+       método e a versaoDescritor. */
+    descritorElenco() {
+      const d = {
+        versaoDescritor: 1,
+        idJogadora: PROPRIA,
+        tiposBase: ELENCO_BASE.map(b => b.id),
+        tiposPrep: [...PREP_TIPOS_MONSTRO],
+        tectoPorTipo: 9,   // a pinça do motor (elencoEfectivo/prepContagem)
+        sufixosLado: ['', 'n', 'a'],   // contra/neutro/time, na ordem de criação de elencoEfectivo
+        modelosTeste: Object.keys(FIGURAS_TESTE)
+      };
+      for (const k of Object.keys(d)) if (Array.isArray(d[k])) Object.freeze(d[k]);
+      return Object.freeze(d);
+    },
     capturar() {
       if (!ponteSavesActiva) return { ok: false, erro: 'SAVE_PONTE_INACTIVA' };
       /* Guarda de voo (correcção nomeada 3 / S-CRIT-04 e S-CRIT-09):
@@ -9218,6 +9242,29 @@
     },
     aplicar(e) {
       if (!ponteSavesActiva) return { ok: false, erro: 'SAVE_PONTE_INACTIVA' };
+      /* GÉMEO × ELENCO (t-gemeo-elenco): o CABIMENTO do elenco
+         confere-se ANTES da validação genérica, com nome próprio
+         — o conjunto de ids das unidades do save (fora as figuras
+         de teste declaradas, que o save admite por si) tem de ser
+         exactamente o elenco desta batalha aberta; desencontro é
+         SAVE_ELENCO_DIFERENTE, como SAVE_MAPA_DIFERENTE nomeia o
+         desencontro de mapa. Um save ilegível (sem a lista de
+         unidades) cai na validação genérica, que o recusa como
+         hoje. Nota lavrada no desenho (§9): o cabimento é por
+         CONJUNTO de ids — o lado da cópia de id base não viaja
+         no save. */
+      if (e && typeof e === 'object' && Array.isArray(e.unidades)) {
+        const idsElenco = new Set(ELENCO.map(u => u.id));
+        const idsSave = new Set();
+        let legivel = true;
+        for (const u of e.unidades) {
+          if (!u || typeof u !== 'object' || typeof u.id !== 'string') { legivel = false; break; }
+          if (!(vooModeloDe(u.id) && !idsElenco.has(u.id))) idsSave.add(u.id);
+        }
+        if (legivel && (idsSave.size !== idsElenco.size
+          || [...idsSave].some(id => !idsElenco.has(id))))
+          return { ok: false, erro: 'SAVE_ELENCO_DIFERENTE' };
+      }
       /* Validação total ANTES de tocar em qualquer coisa: save
          inválido não muda NADA (também fora do caminho UI). */
       const erroVal = validarEstadoParaAplicar(e);
