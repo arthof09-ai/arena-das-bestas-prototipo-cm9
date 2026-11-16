@@ -102,9 +102,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
   font-size:12px;font-weight:700;padding:0 8px;border-radius:8px;
   border:1px solid rgba(201,162,39,.8);background:rgba(28,21,12,.85);color:var(--pergaminho-fraco)}
 .tog.on{background:var(--ouro);color:#1c1508}
-#cfgpop .stats{flex:none;height:22px;line-height:22px;margin:6px 0 0;padding:0;
-  border-top:1px dashed rgba(201,162,39,.25);
-  font-size:12px;color:var(--pergaminho-mudo);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
+#stats{position:fixed;top:max(10px, env(safe-area-inset-top, 0px));right:max(10px, env(safe-area-inset-right, 0px));z-index:20;background:var(--painel-denso);border:1px solid var(--linha);border-radius:9px;padding:5px 9px;font-size:13px;line-height:1.2;color:var(--pergaminho);font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none}
 /* ---------- estrutura das abas do ⚙ ----------
    REF_88: a barra de abas é UMA fileira horizontal só com os
    nomes (a explicação de cada aba vive dentro da aba, no topo) —
@@ -470,7 +468,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
    desvantagem tá gigantescamente imensa»): a caixa inteira
    encolheu para ~55% — min-width 118→64, número 28→16, palavra
    11→8, padding apertado; a âncora (left/bottom) não muda. */
-#contadorvd{position:fixed;left:202px;bottom:68px;z-index:20;min-width:64px;
+#contadorvd{position:fixed;left:calc(max(12px, env(safe-area-inset-left, 0px)) + 182px + 8px);bottom:calc(68px + env(safe-area-inset-bottom, 0px));z-index:20;min-width:64px;
   background:var(--painel-denso);border:1px solid var(--linha);border-radius:9px;
   padding:3px 4px 4px;text-align:center;cursor:pointer}
 #contadorvd[hidden]{display:none}
@@ -491,7 +489,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
 #cvd-painel .vd-vantagem{color:#46C96A}
 #cvd-painel .vd-desvantagem{color:#FF5347}
 @media (max-width:560px){
-  #contadorvd{left:180px;bottom:66px}
+  #contadorvd{left:calc(10px + 162px + 8px);bottom:66px}
 }
 @media (prefers-reduced-motion:reduce){
   #contadorvd.cvd-pulso{animation:none}
