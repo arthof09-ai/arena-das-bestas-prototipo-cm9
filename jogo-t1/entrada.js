@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_104';
+  var VERSAO_JOGO = 'REF_105';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -322,8 +322,8 @@
       padrao: 'desligado', ligado: 'Ligado', desligado: 'Desligado',
       sub: 'Nenhum som, sem perder os volumes.' },
     { tipo: 'nota', texto: NOTA_SOM },
-    { chave: 'hudt1-qualidade', rotulo: 'Qualidade', tipo: 'seg', padrao: 'alta',
-      opcoes: [['baixa', 'Baixa'], ['media', 'Média'], ['alta', 'Alta']] },
+    { chave: 'hudt1-qualidade', rotulo: 'Qualidade', tipo: 'seg', padrao: 'auto',
+      opcoes: [['auto', 'Automática'], ['baixa', 'Leve'], ['media', 'Média'], ['alta', 'Alta']] },
     { chave: 'hudt1-numeros-dano', rotulo: 'Números de dano', tipo: 'tog',
       padrao: 'ligado', ligado: 'Ligados', desligado: 'Desligados' },
     { chave: 'hudt1-tela-vermelha', rotulo: 'Tela vermelha', tipo: 'tog',
@@ -837,7 +837,7 @@
    * do Mestre (velocidade, ambiente, visão, escala). Só entra o que
    * este painel mostra como definição pessoal persistida. */
   var RESTAURAR_ENTRADA = [
-    ['hudt1-qualidade', 'alta'],
+    ['hudt1-qualidade', 'auto'],
     ['hudt1-numeros-dano', 'ligado'],
     ['hudt1-tela-vermelha', 'ligado'],
     ['hudt1-tela-vermelha-piscar', 'ligado'],

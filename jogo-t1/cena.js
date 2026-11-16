@@ -1661,7 +1661,7 @@
                     fogoTremular(f, Math.min(1, (now - f.t0) / 150), now);
             }
             function ambReaplicar() { if (ambDerivados) ambEscrever(ambAmostra(ambActual.hora), ambActual.chuva, 0); }
-            let width = 1, height = 1, selected = null, mode = '360', quality = 'alta', disposed = false, raf, last = performance.now(), fps = 0, fpsAt = last, frames = 0, shadowAt = 0, yaw = 0, pitch = 1.05, viewWidth = 20, primeiraVista = true;
+            let width = 1, height = 1, selected = null, mode = '360', quality = 'alta', qualidadeModo = 'manual', benchEstado = 'off', benchFrames = 0, benchTempo = 0, benchUltimo = 0, benchInicio = 0, unidadesCarregadas = false, dprSessao = null, disposed = false, raf, last = performance.now(), fps = 0, fpsAt = last, frames = 0, shadowAt = 0, yaw = 0, pitch = 1.05, viewWidth = 20, primeiraVista = true;
             /* Offset de OLHAR deste aparelho (t-config-abas, SPEC §6.2):
                azimute somado ao ângulo base da câmera de batalha quando
                as teclas Q/E rodam a vista. Vive SÓ nesta closure: não
@@ -2491,25 +2491,55 @@
                 zoom[mode] = clamp(v, r.min, r.max);
                 emit('zoom', { zoom: zoom[mode], ...r });
             }
-            function setQualidade(q) {
-                if (!['alta', 'media', 'baixa'].includes(q))
-                    throw new RangeError('Qualidade inválida.');
+            /* Perfis de qualidade (t-perfis-qualidade — o método do
+               briefing híbrido com a restrição do Mestre de 15/11
+               18:53: optimização por máquina, NÃO escada visível):
+               ALTA = a qualidade de hoje ao bit (resolução até 2×,
+               sombras, cenário inteiro); MÉDIA = resolução até 1,5×,
+               sombras ligadas, cenário inteiro; LEVE = resolução 1×,
+               sombras SEMPRE ligadas com o mapa a 256, cenário
+               inteiro. O que desce é resolução e custo interno —
+               nunca o aspecto aprovado: as sombras não se desligam
+               (a spec P8 desligava-as no antigo «baixa»; aposentado)
+               e o cenário não encolhe (P8: 72%/45%; aposentado). As
+               tabelas de clima (SS3.3) continuam a chavear no perfil,
+               como sempre. A HUD é DOM: nenhum perfil a encolhe nem
+               lhe muda o contraste. */
+            function detectarPerfilInicial() {
+                const movel = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
+                if (!movel) return 'alta';
+                const nucleos = navigator.hardwareConcurrency || 0, memoria = navigator.deviceMemory || 0;
+                return (memoria >= 4 || nucleos >= 8) ? 'alta' : 'media';
+            }
+            function aplicarPerfil(q) {
                 quality = q;
-                /* Perfis de qualidade (spec P8 — BAIXO/MÉDIO/ALTO):
-                   ALTA = resolução até 2×, sombras, cenário inteiro;
-                   MÉDIA = resolução até 1,5×, sombras ligadas,
-                   cenário a 72%; BAIXA = resolução 1×, sem sombras,
-                   cenário a 45%. A HUD é DOM: nenhum perfil a
-                   encolhe nem lhe muda o contraste. */
-                renderer.setPixelRatio(Math.min(devicePixelRatio || 1, q === 'alta' ? 2 : q === 'media' ? 1.5 : 1));
-                renderer.shadowMap.enabled = q !== 'baixa';
-                sun.castShadow = q !== 'baixa';
-                world.quality(q);
+                renderer.setPixelRatio(dprSessao == null ? Math.min(devicePixelRatio || 1, q === 'alta' ? 2 : q === 'media' ? 1.5 : 1) : dprSessao);
+                renderer.shadowMap.enabled = true;
+                sun.castShadow = true;
+                const sombraMapa = q === 'baixa' ? 256 : 512;
+                if (sun.shadow.mapSize.x !== sombraMapa) {
+                    sun.shadow.mapSize.set(sombraMapa, sombraMapa);
+                    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+                }
+                world.quality('alta');
                 if (world.recomputarPedras) world.recomputarPedras(veuNunca, veuMemoria);
                 ambReaplicar();
                 resize();
                 renderer.shadowMap.needsUpdate = true;
-                emit('quality', { qualidade: q });
+                emit('quality', { qualidade: q, modo: qualidadeModo });
+            }
+            function setQualidade(q) {
+                if (q === 'auto') {
+                    qualidadeModo = 'auto';
+                    aplicarPerfil(detectarPerfilInicial());
+                    benchEstado = 'aguarda'; benchFrames = 0; benchTempo = 0; benchUltimo = 0;
+                    return;
+                }
+                if (!['alta', 'media', 'baixa'].includes(q))
+                    throw new RangeError('Qualidade inválida.');
+                qualidadeModo = 'manual';
+                benchEstado = 'off';
+                aplicarPerfil(q);
             }
             let enquadramentoTronoFeito = false;
             function resize() {
@@ -2603,7 +2633,7 @@
                 return { area: JSON.parse(JSON.stringify(area)), selected, camera: mode, zoom: mode === 'livre' ? null : zoom[mode], zoomRange: mode === 'livre' ? null : zoomRange(), livre: mode === 'livre' ? { pos: [livreRound(ctrlLivre.pos.x), livreRound(ctrlLivre.pos.y), livreRound(ctrlLivre.pos.z)], yaw: livreRound(ctrlLivre.yaw), pitch: livreRound(ctrlLivre.pitch) } : null, gridVisible: grid.visible, qualidade: quality, dinamica: { ligada: dinLigada, velocidade: dinVel, estado: dinEstado, yawRad: yaw, alvoYawRad: dinPara, deltaRad: dinDelta, duracaoS: dinDur, decorridoS: dinT, tipoUltimoEvento: dinTipoUltimo, scoreActual: dinScoreActual, scoreEscolhido: dinScoreEscolhido, ganho: dinGanho, candidatosAvaliados: dinCand, fallbackUsado: dinFallback, resgate: dinResgate, resgateFoco: dinResgateFoco, resgateEscolha: dinResgateEscolha, intervencoes60s: dinJanela.length, graus60s: dinGraus60(), arrefecimentoRestanteS: dinFimUltima === -Infinity ? 0 : Math.max(0, 2 - (tCena - dinFimUltima)), imunidadeRestanteS: dinArrT0 === -Infinity ? 0 : Math.max(0, 8 - (tCena - dinArrT0)), ultimoMotivo: dinMotivo }, acoplamento: acoplEstado(), moving: [...units.values()].some(u => u.step || u.queue.length), units: [...units.values()].map(publicUnit) };
             }
             function stats() {
-                return { movementCells:movementCells.map(p=>({...p})), presentation:presentation ? {attacker:presentation.a.id,target:presentation.b.id,phase:!presentation.started?'waiting':presentation.t<.2?'turn':'gesture'} : null, hoverVisible: hover.visible, destinationVisible: destination.visible, reachableCells: (moveLayer.children[0]?.geometry.attributes.position.count ?? 0)/6, fps, triangles: renderer.info.render.triangles, totalTriangles: count(scene), drawCalls: renderer.info.render.calls, ceuCalls: ceuDelta.calls, ceuTriangles: ceuDelta.triangles, dpr: renderer.getPixelRatio(), width, height, visibleWidthMeters: viewWidth, cellPixels: CELL / viewWidth * width, shadowSize: renderer.shadowMap.enabled ? 512 : 0, areaMeters: { width: area.cols * CELL, height: area.rows * CELL }, models: [...units.values()].map(u => ({ id:u.id, frente:((T.MathUtils.radToDeg(u.pivot.rotation.y)%360)+360)%360, drawOffset:{x:u.root.position.x-wx(u.x),y:u.root.position.y-world.height(wx(u.x),wz(u.z))-u.altitude,z:u.root.position.z-wz(u.z)}, modelo:u.model, loadError:u.loadError ?? null, triangles:count(u.pivot), markerTint:u.markerTint ?? null, skins:(()=>{const skins=new Set();u.pivot.traverse(o=>{if(o.isSkinnedMesh)skins.add(o.skeleton.bones.map(b=>b.uuid).join(','))});return skins.size})(), action:u.actionName ?? null, actionTime:u.action?.time ?? null, clips:u.animations.map(a=>a.name), clipDurations:u.animations.map(a=>({name:a.name,duration:a.duration})) })), animations: { idle: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.idle).length, walk: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.andar).length, advancing: [...units.values()].filter(u => u.mixer && u.mixer.time > 0).length } };
+                return { movementCells:movementCells.map(p=>({...p})), presentation:presentation ? {attacker:presentation.a.id,target:presentation.b.id,phase:!presentation.started?'waiting':presentation.t<.2?'turn':'gesture'} : null, hoverVisible: hover.visible, destinationVisible: destination.visible, reachableCells: (moveLayer.children[0]?.geometry.attributes.position.count ?? 0)/6, fps, triangles: renderer.info.render.triangles, totalTriangles: count(scene), drawCalls: renderer.info.render.calls, ceuCalls: ceuDelta.calls, ceuTriangles: ceuDelta.triangles, dpr: renderer.getPixelRatio(), width, height, visibleWidthMeters: viewWidth, cellPixels: CELL / viewWidth * width, shadowSize: renderer.shadowMap.enabled ? sun.shadow.mapSize.x : 0, qualidadeModo, qualidadePerfil: quality, areaMeters: { width: area.cols * CELL, height: area.rows * CELL }, models: [...units.values()].map(u => ({ id:u.id, frente:((T.MathUtils.radToDeg(u.pivot.rotation.y)%360)+360)%360, drawOffset:{x:u.root.position.x-wx(u.x),y:u.root.position.y-world.height(wx(u.x),wz(u.z))-u.altitude,z:u.root.position.z-wz(u.z)}, modelo:u.model, loadError:u.loadError ?? null, triangles:count(u.pivot), markerTint:u.markerTint ?? null, skins:(()=>{const skins=new Set();u.pivot.traverse(o=>{if(o.isSkinnedMesh)skins.add(o.skeleton.bones.map(b=>b.uuid).join(','))});return skins.size})(), action:u.actionName ?? null, actionTime:u.action?.time ?? null, clips:u.animations.map(a=>a.name), clipDurations:u.animations.map(a=>({name:a.name,duration:a.duration})) })), animations: { idle: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.idle).length, walk: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.andar).length, advancing: [...units.values()].filter(u => u.mixer && u.mixer.time > 0).length } };
             }
             function animate(now) {
                 if (disposed)
@@ -2769,6 +2799,25 @@
                     }
                 }
                 frames++;
+                if (benchEstado === 'aguarda' && unidadesCarregadas) { benchEstado = 'mede'; benchFrames = 0; benchTempo = 0; benchUltimo = now; benchInicio = now; }
+                else if (benchEstado === 'mede') {
+                    benchFrames++;
+                    benchTempo += Math.min(now - benchUltimo, 100);
+                    benchUltimo = now;
+                    // A janela fecha aos 4 s de tempo de quadro OU aos 10 s
+                    // de relógio: num aparelho catastrófico (quadros de
+                    // segundos), o tecto de 100 ms/quadro faria a decisão
+                    // demorar minutos. O FPS usa o tempo tapado quando ele
+                    // chega a 1 s; antes disso, quadros/relógio (só acontece
+                    // abaixo de ~10 FPS, sempre abaixo do limiar).
+                    const parede = now - benchInicio;
+                    if (benchTempo >= 4000 || parede >= 10000) {
+                        const fpsBench = benchTempo >= 1000 ? benchFrames * 1000 / benchTempo : benchFrames * 1000 / Math.max(parede, 1);
+                        benchEstado = 'off';
+                        if (fpsBench < 42 && quality !== 'baixa')
+                            aplicarPerfil(quality === 'alta' ? 'media' : 'baixa');
+                    }
+                }
                 times.push(now);
                 if (times.length > 3600)
                     times.shift();
@@ -2798,7 +2847,7 @@
             let veuNunca = new Set(), veuMemoria = new Set(), veuEscondidas = new Set();
             const veuChavesIgnoradas = [];
             const veuTemposCamadas = [];
-            setQualidade(options.qualidade || 'alta');
+            setQualidade(options.qualidade || 'auto');
             raf = requestAnimationFrame(animate);
             /* ---------- MODOS DE VISÃO (integração): verbos aditivos ----------
                Porta dos verbos da página de referência dos modos de
@@ -3101,8 +3150,8 @@
             function limparFantasmas() {
                 [...fantasmas.keys()].forEach(removeFantasma);
             }
-            const ready = Promise.all((options.units || []).map(addUnit));
-            return Object.freeze({ ready, addUnit, removeUnit, move, select, apresentarAtaque, setCamera, setDinamica, setFrenteAcoplada, setZoom, setQualidade, showMovement, showPrevia, setFrente, getFrente, setOculto, estaOculto: id => !!requireUnit(id).oculto, setCamadas, limparCamadas: () => setCamadas(null), addFantasma, removeFantasma, limparFantasmas, listaFantasmas: () => [...fantasmas.entries()].map(([chave, f]) => ({ chave, x: f.x, z: f.z })), livreOlhar(dx, dy) {
+            const ready = Promise.all((options.units || []).map(addUnit)).then(r => { unidadesCarregadas = true; return r; });
+            return Object.freeze({ ready, addUnit, removeUnit, move, select, apresentarAtaque, setCamera, setDinamica, setFrenteAcoplada, setZoom, setQualidade, getQualidade: () => ({ modo: qualidadeModo, perfil: quality }), showMovement, showPrevia, setFrente, getFrente, setOculto, estaOculto: id => !!requireUnit(id).oculto, setCamadas, limparCamadas: () => setCamadas(null), addFantasma, removeFantasma, limparFantasmas, listaFantasmas: () => [...fantasmas.entries()].map(([chave, f]) => ({ chave, x: f.x, z: f.z })), livreOlhar(dx, dy) {
                     /* O arrasto de olhar da sala: 0,0045 rad/px, pitch preso
                        a ±1,45. Fora do modo 'livre', é inerte. */
                     if (mode !== 'livre') return;
@@ -3156,7 +3205,8 @@
                     /* EM-AMB-B1: repassa a opção do Mestre ao mundo. */
                     if (world && typeof world.setTremulacao === 'function') world.setTremulacao(on);
                 }, setDprSessao(dpr) {
-                    renderer.setPixelRatio(dpr == null ? Math.min(window.devicePixelRatio || 1, quality === 'alta' ? 2 : quality === 'media' ? 1.5 : 1) : dpr);
+                    dprSessao = dpr == null ? null : dpr;
+                    renderer.setPixelRatio(dprSessao == null ? Math.min(window.devicePixelRatio || 1, quality === 'alta' ? 2 : quality === 'media' ? 1.5 : 1) : dprSessao);
                     resize();
                 }, setGridVisible(v) {
                     grid.visible = !!v;

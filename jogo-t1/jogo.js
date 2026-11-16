@@ -445,9 +445,12 @@
     return v;
   }
 
-  let qualidade = 'alta';
-  try { qualidade = localStorage.getItem('hudt1-qualidade') || 'alta'; } catch (_) {}
-  if (qualidade !== 'alta' && qualidade !== 'media' && qualidade !== 'baixa') qualidade = 'alta';
+  let qualidade = 'auto';
+  try { qualidade = localStorage.getItem('hudt1-qualidade') || 'auto'; } catch (_) {}
+  if (!['auto', 'alta', 'media', 'baixa'].includes(qualidade)) qualidade = 'auto';
+  /* Perfil efectivo quando a escolha é Automática: a vista decide
+     e anuncia-o pelo evento 'quality' (até lá vale o arranque). */
+  let qualidadeEfectiva = qualidade === 'auto' ? 'alta' : qualidade;
 
   /* Câmera guardada (chave hudt1-camara — DESENHO §7.2): o omisso
      novo é '360'; um 'seguir' guardado num aparelho lê-se '360' e
@@ -6753,6 +6756,11 @@
     visaoAplicar();
   });
   view.on('zoom', () => mostrarZoom());
+  /* t-perfis-qualidade: o perfil efectivo (escolhido pela vista em
+     modo Automática, ou o manual) segue-se aqui — alimenta o rótulo
+     do botão «Automática (…)» no ⚙ e o aviso da chuva reduzida. */
+  try { const q0 = view.getQualidade(); if (q0 && q0.perfil) qualidadeEfectiva = q0.perfil; } catch (_) {}
+  view.on('quality', d => { if (d && d.qualidade) { qualidadeEfectiva = d.qualidade; marcarQualidade(); } });
   /* A linha de estatísticas (FPS · triângulos · chamadas) é texto
      técnico: o D3-P0-1 (item 1.2 do inventário fechado) fê-la nem
      nascer no DOM na vista da Party, e a REF_93 (D2) repô-la sempre
@@ -7378,7 +7386,7 @@
   linhaRestaurarSom.appendChild(btnRestaurarCfg);
   cfgEl.insertBefore(linhaRestaurarSom, $('stats'));
   btnRestaurarCfg.addEventListener('click', () => {
-    somGravar('hudt1-qualidade', 'alta');
+    somGravar('hudt1-qualidade', 'auto');
     somGravar('hudt1-numeros-dano', 'ligado');
     somGravar('hudt1-tela-vermelha', 'ligado');
     somGravar('hudt1-tela-vermelha-piscar', 'ligado');
@@ -7387,9 +7395,9 @@
     somGravar('hudt1-som-musica', '8');
     somGravar('hudt1-som-efeitos', '100');
     somGravar('hudt1-som-mudo', 'desligado');
-    if (qualidade !== 'alta') {
-      qualidade = 'alta';
-      try { view.setQualidade('alta'); } catch (_) {}
+    if (qualidade !== 'auto') {
+      qualidade = 'auto';
+      try { view.setQualidade('auto'); } catch (_) {}
     }
     marcarQualidade();
     try { ambSincronizarPainel(); } catch (_) {}
@@ -9577,9 +9585,9 @@
     if (ambUI.notaNeve) ambUI.notaNeve.hidden = e.precip !== 'neve';
     for (const reg of ambUI.botoesChuva) {
       reg.b.classList.toggle('on', e.chuva === reg.chuva);
-      if (reg.chuva === 2)   // em qualidade Baixa, o Forte activo rotula a apresentação reduzida
-        reg.b.textContent = (qualidade === 'baixa' && e.chuva === 2)
-          ? 'Forte — apresentação reduzida em qualidade Baixa' : 'Forte';
+      if (reg.chuva === 2)   // em qualidade Leve, o Forte activo rotula a apresentação reduzida
+        reg.b.textContent = (qualidadeEfectiva === 'baixa' && e.chuva === 2)
+          ? 'Forte — apresentação reduzida em qualidade Leve' : 'Forte';
     }
     if (ambUI.deslizador && document.activeElement !== ambUI.deslizador)
       ambUI.deslizador.value = String(e.hora);
@@ -11329,14 +11337,16 @@
   function marcarQualidade() {
     document.querySelectorAll('[data-qualidade]').forEach(b =>
       b.classList.toggle('on', b.dataset.qualidade === qualidade));
+    const bAuto = document.querySelector('[data-qualidade="auto"]');
+    if (bAuto) bAuto.textContent = 'Automática (' + ({ alta: 'Alta', media: 'Média', baixa: 'Leve' })[qualidadeEfectiva] + ')';
   }
   document.querySelectorAll('[data-qualidade]').forEach(b => b.addEventListener('click', () => {
     qualidade = b.dataset.qualidade;
     try { localStorage.setItem('hudt1-qualidade', qualidade); } catch (_) {}
     view.setQualidade(qualidade);
     marcarQualidade();
-    ambSincronizarPainel();   // AMBIENTE: o rótulo «Forte» em qualidade Baixa segue a qualidade actual
-    say('Qualidade: <b>' + b.textContent + '</b> — aplicada já à vista (resolução, sombra e cenário).');
+    ambSincronizarPainel();   // AMBIENTE: o rótulo «Forte» em qualidade Leve segue a qualidade actual
+    say('Qualidade: <b>' + ({ auto: 'Automática', alta: 'Alta', media: 'Média', baixa: 'Leve' })[qualidade] + '</b> — aplicada já à vista (resolução e sombra).');
   }));
 
   document.addEventListener('keydown', e => {
