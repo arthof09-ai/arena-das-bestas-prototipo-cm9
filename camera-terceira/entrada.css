@@ -1,0 +1,637 @@
+/* Entrada do protótipo (tranches t-entrada-mestre, t-entrada-google e
+   t-entrada-google-nativa) + CARA V12 (reconstrução por palavra dele,
+   09/11 12:24: «quero exatamente o mesmo título, as mesmas opções, no
+   mesmo estilo, no mesmo local»).
+   PAISAGEM: o fundo é a PRÓPRIA arte do layout v12 (o título pintado É
+   o título — nenhum texto HTML por cima) e os três botões reais são
+   placas ornamentadas que cobrem por completo os botões pintados, nas
+   caixas medidas em MEDICAO-V12.md. A entrada vira um PALCO com a
+   proporção da referência (1672:941), centrado; fora do palco, a mesma
+   cena desfocada e escurecida. RETRATO: o título é também o PINTADO
+   (o do filme/loop; no fallback sem vídeo, a arte v12) — a placa de
+   texto nunca é visível (conserto t-titulo-retrato, 10/11: a foto do
+   Mestre mostrou os DOIS títulos sobrepostos em retrato) — e as placas
+   empilham centradas em baixo NA ESCADA DO VIVO (emenda de âmbito do
+   mesmo dia: âncoras e alturas naturais de antes do conserto; só a
+   frase de ajuda e a linha de erro ganham posições fixas calculadas
+   pelo pior caso, para nunca ficarem tapadas). Enquanto a entrada
+   está pendente, o DOM do jogo nasce escondido. */
+
+html.entrada-pendente body > *:not(#entrada) { display: none !important; }
+
+#entrada {
+  position: fixed; inset: 0; z-index: 200; overflow: hidden;
+  background:
+    linear-gradient(rgba(4, 3, 2, .30), rgba(4, 3, 2, 0) 26%, rgba(4, 3, 2, 0) 68%, rgba(4, 3, 2, .42)),
+    url('cena-entrada-v17.webp') center / cover no-repeat #0a0f0a;
+  color: var(--pergaminho, #efe6cf);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* ---------- placa do título em texto: NUNCA visível — em paisagem
+   o título é o pintado do fundo v12 e em retrato o pintado do
+   filme/loop; a placa fica só para leitores de ecrã nas duas
+   orientações (nas regras de cada orientação, abaixo) ---------- */
+.ent-placa {
+  position: absolute; left: 25%; width: 50%; top: 3.5%; height: 17%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; pointer-events: none;
+}
+.ent-titulo {
+  font-family: Georgia, 'DejaVu Serif', serif; font-weight: 700;
+  font-size: clamp(26px, 6.2vh, 54px); letter-spacing: .14em;
+  color: var(--ouro-claro); text-shadow: 0 2px 14px rgba(0, 0, 0, .85), 0 0 34px rgba(201, 162, 39, .35);
+}
+.ent-faixa {
+  margin-top: 4px; font-family: Georgia, 'DejaVu Serif', serif;
+  font-size: clamp(10px, 1.9vh, 15px); letter-spacing: .34em; text-transform: uppercase;
+  color: var(--ouro);
+}
+
+/* ---------- as três placas: placa escura hexagonal, moldura dourada
+   dupla com cantos ornamentados, letras douradas em caixa alta — o
+   estilo dos botões pintados do v12 (a moldura vai desenhada num SVG
+   de fundo, para seguir as pontas da placa) ---------- */
+.ent-btn {
+  position: absolute; min-height: 44px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 69' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%232b1f11'/%3E%3Cstop offset='.45' stop-color='%23130d07'/%3E%3Cstop offset='1' stop-color='%2321170c'/%3E%3C/linearGradient%3E%3CradialGradient id='r' cx='.5' cy='.5' r='.5'%3E%3Cstop offset='0' stop-color='%23ffbe5a' stop-opacity='.14'/%3E%3Cstop offset='1' stop-color='%23ffbe5a' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cpolygon points='16,2 304,2 318,34.5 304,67 16,67 2,34.5' fill='url(%23g)' stroke='%23d9b45f' stroke-width='2.5'/%3E%3Cpolygon points='21,7.5 299,7.5 311,34.5 299,61.5 21,61.5 9,34.5' fill='url(%23r)' stroke='%23a37f33' stroke-width='1'/%3E%3Cellipse cx='160' cy='3' rx='55' ry='2.6' fill='%23ffe9b0' opacity='.75'/%3E%3Cellipse cx='160' cy='66' rx='55' ry='2.6' fill='%23ffdf9a' opacity='.45'/%3E%3Cpolygon points='3,34.5 9,28.5 15,34.5 9,40.5' fill='%23e8c877'/%3E%3Cpolygon points='317,34.5 311,28.5 305,34.5 311,40.5' fill='%23e8c877'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  border: none; border-radius: 0;
+  color: #ecd28a;
+  font-family: Georgia, 'DejaVu Serif', serif; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .02em;
+  font-size: clamp(13px, 2.4vh, 19px);
+  cursor: pointer; text-align: center; padding: 6px 10px;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .55));
+  text-shadow: 0 1px 6px rgba(0, 0, 0, .9), 0 0 12px rgba(201, 162, 39, .30);
+  white-space: nowrap;
+}
+.ent-btn:active { filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .55)) brightness(1.28); }
+/* a letra pintada é condensada (tipo Trajano): condensa-se o rótulo */
+.ent-btn > span:not(.sub) { display: block; transform: scaleX(.75); }
+.ent-btn .sub {
+  width: 100%; text-align: center;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: clamp(10px, 1.7vh, 13px); font-weight: 600;
+  color: var(--pergaminho-fraco, #cbbd97); letter-spacing: .02em;
+  text-transform: none; white-space: normal;
+}
+/* geometria base (retrato trata a sua mais abaixo) */
+#ent-mestre { left: 19.3%; bottom: 4.5%; width: 21%; }
+#ent-jogadora { left: 39.7%; bottom: 4.5%; width: 21%; }
+#ent-config { left: 59%; bottom: 4.5%; width: 21%; font-size: clamp(12px, 2vh, 16px); }
+.ent-ajuda {
+  position: absolute; left: 25%; width: 50%; bottom: 1.2%;
+  text-align: center; font-size: clamp(11px, 1.8vh, 14px);
+  color: var(--pergaminho-fraco, #cbbd97);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, .9);
+}
+
+/* ---------- a versão do jogo no canto inferior esquerdo
+   (palavra do Mestre, 12/11/2026 08:20): está SEMPRE enquanto a
+   entrada estiver no ecrã — escondidinha/apagadinha (letra
+   pequena, opacidade baixa), mas lê-se com um pouco de esforço.
+   Sem fundo, sem borda, sem clique; encostada ao canto com os
+   safe-area-insets, como o PULAR; z-index 5: acima dos painéis
+   (2), do PULAR (3) e do splash da logo (4). O filme NÃO a
+   esconde: a regra «.a-tocar-filme» nomeia a interface de acção
+   e esta marca não entra nela. O texto vem da constante
+   VERSAO_JOGO do entrada.js. ---------- */
+.ent-versao {
+  position: absolute; z-index: 5;
+  left: calc(9px + env(safe-area-inset-left, 0px));
+  bottom: calc(9px + env(safe-area-inset-bottom, 0px));
+  font-size: 11px; line-height: 1.2; letter-spacing: .05em;
+  color: #efe6cf; opacity: .4;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, .65);
+  pointer-events: none; user-select: none; -webkit-user-select: none;
+}
+
+/* ---------- painéis (senha e configurações) ---------- */
+.ent-painel {
+  position: absolute; left: 31%; width: 38%; top: 34%;
+  max-height: 62%; overflow-y: auto;
+  background: rgba(16, 12, 7, .94); border: 1px solid rgba(201, 162, 39, .8);
+  border-radius: 10px; padding: 16px 18px 14px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .6);
+  scrollbar-width: thin; scrollbar-color: rgba(201, 162, 39, .7) rgba(10, 8, 5, .6);
+}
+.ent-painel::-webkit-scrollbar { width: 6px; }
+.ent-painel::-webkit-scrollbar-thumb { background: rgba(201, 162, 39, .55); border-radius: 3px; }
+.ent-painel::-webkit-scrollbar-track { background: rgba(10, 8, 5, .5); }
+.ent-painel h2 {
+  font-family: Georgia, 'DejaVu Serif', serif; font-size: 13px;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--ouro);
+  margin: 0 0 10px; text-align: center;
+}
+.ent-painel label.cl, .ent-painel .cl { font-size: 13px; }
+.ent-campo {
+  width: 100%; box-sizing: border-box; height: 46px; margin: 4px 0 8px;
+  background: rgba(10, 8, 5, .9); color: #fff8e5;
+  border: 1px solid rgba(201, 162, 39, .8); border-radius: 8px;
+  font-size: 17px; padding: 0 12px;
+}
+.ent-campo:focus-visible { outline: 2px solid var(--ouro-vivo); outline-offset: -2px; }
+.ent-erro {
+  min-height: 18px; margin: 2px 0 6px; font-size: 13px; color: #f0a596;
+}
+.ent-linha-botoes { display: flex; gap: 8px; }
+.ent-accao {
+  flex: 1; height: 46px; border-radius: 8px; cursor: pointer;
+  border: 1px solid rgba(201, 162, 39, .8);
+  background: var(--ouro); color: #1c1508; font-size: 15px; font-weight: 800;
+}
+.ent-accao.sec {
+  background: rgba(28, 21, 12, .85); color: var(--pergaminho-fraco, #cbbd97); font-weight: 700;
+}
+.ent-nota { font-size: 12px; color: var(--pergaminho-fraco, #cbbd97); margin: 8px 0 2px; }
+.ent-esquecer {
+  width: 100%; height: 42px; margin-top: 6px; border-radius: 8px; cursor: pointer;
+  border: 1px solid rgba(201, 162, 39, .55); background: rgba(28, 21, 12, .85);
+  color: var(--ouro-claro); font-size: 13px; font-weight: 700;
+}
+.ent-painel .cfgrow { margin: 7px 0; }
+
+/* ---------- cabeçalho pegajoso + ✕ do painel (t-config-entrada,
+   lei 11/11 10:36): a faixa é o primeiro filho e fica colada ao
+   topo quando a lista rola; fundo opaco da cor do painel para as
+   linhas passarem por baixo dela ---------- */
+.ent-cabecalho {
+  position: sticky; top: -16px; z-index: 3;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin: -16px -18px 10px; padding: 16px 18px 4px;
+  background: rgba(16, 12, 7, .97); border-radius: 10px 10px 0 0;
+}
+.ent-cabecalho h2 { margin: 0; text-align: left; }
+.ent-fechar {
+  flex: none; width: 32px; height: 32px; margin-left: 8px; cursor: pointer;
+  border: 1px solid rgba(201, 162, 39, .8); border-radius: 8px;
+  background: rgba(28, 21, 12, .85); color: var(--ouro-claro, #e8c877);
+  font-size: 13px; font-weight: 700; line-height: 1;
+}
+.ent-subtitulo {
+  font-family: Georgia, 'DejaVu Serif', serif; font-size: 11px;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--ouro);
+  margin: 12px 0 4px;
+}
+.ent-painel .vol-range { max-width: 170px; }
+.ent-painel .vol-valor { font-size: 12px; }
+.ent-nota.som-nota {
+  border: 1px dashed rgba(201, 162, 39, .35); border-radius: 8px;
+  padding: 7px 9px; margin: 8px 0 4px;
+}
+
+/* ---------- Configurações em ABAS na entrada (t-config-abas,
+   SPEC §1.2/§3): folha Largo 560–600 px; Estreito 366 px (94vw) ×
+   78vh. Sem faixas-régua. O conteúdo rola DENTRO da aba.
+   REF_88: a barra de abas é UMA fileira horizontal só com os
+   nomes (a explicação de cada aba vive dentro da aba, no topo) —
+   acabou a coluna de 172 px no Largo e a grelha de cartões no
+   Estreito; se as abas não couberem, a fileira desliza. ---------- */
+/* REF_83 (defeito 3 do olho do Mestre, 12/11 19:55): a regra
+   «.ent-painel.com-abas { display:flex }» abaixo vencia a regra do
+   navegador «[hidden]{display:none}» (especificidade 0,2,0 contra
+   0,1,0) — o painel das Configurações nascia escondido no atributo
+   mas VISÍVEL no ecrã, e nem o ✕ nem o toque-fora o fechavam (só
+   mudavam o atributo, sem efeito). A guarda devolve ao atributo a
+   última palavra DENTRO da entrada: quem tem «hidden» não se vê. */
+#entrada [hidden] { display: none !important; }
+
+.ent-painel.com-abas { display: flex; flex-direction: column; overflow: hidden; }
+.entab-corpo { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.entab-indice { flex: none; display: flex; flex-direction: row; gap: 4px; overflow-x: auto; overflow-y: hidden; }
+.entab-celula {
+  height: 36px; flex: none; display: flex; align-items: center; justify-content: center;
+  text-align: center; padding: 4px 12px; border: 1px solid rgba(201, 162, 39, .45); border-radius: 8px;
+  background: rgba(28, 21, 12, .6); cursor: pointer;
+}
+.entab-celula b { font-size: 13px; color: var(--pergaminho, #e9dcb8); white-space: nowrap; line-height: 1.15; }
+.entab-celula.on { background: var(--ouro); border-color: var(--ouro); }
+.entab-celula.on b { color: #1c1508; }
+.entab-conteudo { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
+.entab-aba { display: none; }
+.entab-aba.activa { display: block; }
+.ent-aba-frase { font-size: 12px; line-height: 1.45; color: var(--pergaminho, #e9dcb8); margin: 0 0 8px; }
+.ent-frase { font-size: 11.5px; line-height: 1.45; color: var(--pergaminho-fraco, #cbbd97); margin: 2px 0 4px; }
+.ent-restaurar-zona { margin-top: 10px; }
+@media (min-width: 600px) {
+  .ent-painel.com-abas { left: 50%; transform: translateX(-50%); width: min(600px, 94%); }
+}
+@media (max-width: 599px) {
+  .ent-painel.com-abas { left: 3%; width: 94%; top: 11%; height: 78vh; max-height: 78vh; }
+  .entab-corpo { gap: 6px; }
+}
+
+/* ---------- a porta do Google: o fluxo vive DENTRO dos botões de
+   entrar; não há botão do Google na vista 1 ---------- */
+.ent-google {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  background: #fff; color: #1f1f1f; border: 1px solid rgba(0, 0, 0, .25);
+  border-radius: 8px; cursor: pointer; font-weight: 700;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .5);
+}
+.ent-google:active { background: #e8e8e8; }
+.ent-google.painel { width: 100%; min-height: 46px; margin-top: 10px; padding: 0 12px; font-size: 15px; }
+.ent-google.escuro { background: #131314; color: #e3e3e3; border-color: rgba(227, 227, 227, .35); }
+.ent-google.escuro:active { background: #1f2022; }
+.ent-erro-entrada {
+  position: absolute; left: 29.5%; width: 41%; bottom: 13.5%;
+  min-height: 18px; margin: 0; text-align: center;
+  font-size: 13px; color: #f0a596;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, .95), 0 0 18px rgba(0, 0, 0, .8);
+}
+.ent-ligacao {
+  display: block; margin: 10px auto 0; background: none; border: none; cursor: pointer;
+  color: var(--ouro-claro); font-size: 14px; font-weight: 700;
+  text-decoration: underline; padding: 6px;
+}
+.ent-zona-senha { margin-top: 4px; }
+
+/* ---------- PAISAGEM: o palco v12 ---------- */
+@media (orientation: landscape) {
+  /* fora do palco: a mesma cena, desfocada e escurecida */
+  html.entrada-pendente body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0;
+    background: url('fundo-v12.webp') center / cover no-repeat #070303;
+    filter: blur(14px) brightness(.45); transform: scale(1.07);
+  }
+  #entrada {
+    inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(100vw, 177.68vh); aspect-ratio: 1672 / 941; max-height: 100vh;
+    /* REF_83 (defeito 7): no celular, «vh» conta a área debaixo da
+       barra do navegador e o palco centrava fora da área VISÍVEL —
+       a logo (e o palco) liam-se descentrados. As unidades dinâmicas
+       centram na área que se vê; sem elas, vale a linha de cima. */
+    width: min(100dvw, 177.68dvh); max-height: 100dvh;
+    background: url('fundo-v12.webp') center / 100% 100% no-repeat #0a0505;
+    box-shadow: 0 0 60px rgba(0, 0, 0, .85);
+    container-type: size;
+  }
+  /* o título é o pintado: a placa HTML fica para leitores de ecrã */
+  .ent-placa {
+    left: 0; top: 0; width: 1px; height: 1px; overflow: hidden;
+    clip-path: inset(50%); white-space: nowrap;
+  }
+  /* a linha de ajuda não existe na referência: o subtítulo pintado
+     («ASSIMILAÇÃO · VERSÃO 0.5») ocupa o seu lugar */
+  .ent-ajuda { display: none; }
+  /* as placas reais SOBRE as pintadas (caixas de MEDICAO-V12.md) */
+  .ent-btn { top: 85.23%; bottom: auto; height: 7.33%; min-height: 0; font-size: 1.45cqw; padding: 2px 1.6cqw; }
+  .ent-btn .sub { font-size: 1.15cqw; }
+  /* com perfil guardado (rótulo + sub) a placa tem altura fixa da
+     pintura: os dois textos encolhem para caberem dentro dela */
+  .ent-btn:has(.sub) { font-size: 1.18cqw; }
+  .ent-btn:has(.sub) .sub { font-size: .95cqw; line-height: 1.12; }
+  #ent-mestre { left: 19.92%; width: 19.20%; }
+  #ent-jogadora { left: 40.79%; width: 19.14%; }
+  #ent-config { left: 60.83%; width: 19.14%; font-size: 1.45cqw; }
+  .ent-erro-entrada { left: 27%; width: 46%; bottom: 16.6%; }
+  /* painéis: sobem e ganham altura — F2 (Configurações com perfil a
+     1280×720 cortava «Esquecer»/«Voltar»): cabe, ou rola com a barra
+     fina dourada visível */
+  .ent-painel { left: 30%; width: 40%; top: 25%; max-height: 73.5%; padding: 13px 16px 12px; }
+  .ent-painel .cfgrow { margin: 4px 0; }
+  .ent-cabecalho { top: -13px; margin: -13px -16px 8px; padding: 13px 16px 4px; }
+}
+
+/* ---------- RETRATO (conserto t-titulo-retrato, 10/11 + EMENDA DE
+   ÂMBITO do mesmo dia): o título é o PINTADO — o mesmo do filme/loop
+   e da arte v12 — e a placa de texto sai da composição (fica só para
+   leitores de ecrã, como em paisagem): acabaram-se os dois títulos
+   sobrepostos da foto dele. Sem vídeo (fallback), o fundo passa a ser
+   a arte v12, que também traz o título pintado.
+   A EMENDA repõe a ESCADA DO VIVO: as três placas ficam nas âncoras
+   e alturas naturais de antes do conserto (Configurações a 2.5% ·
+   Jogadora a +56 · Mestre a +112 — a ordem de cima para baixo é
+   Mestre, Jogadora, Configurações, como na foto dele das 20:23).
+   A primeira versão do conserto tinha re-ancorado a pilha inteira
+   com alturas reservadas de 90 px e os botões «mudaram de sítio» —
+   fora do pedido. O que fica do conserto, além do título: (1) a
+   linha .sub com fonte contida (≤12,5 px), que limita a placa com
+   linha a 2 linhas de texto; (2) a frase de ajuda e a linha de erro
+   em posições FIXAS acima do pior caso (placa do Mestre com a
+   linha = 80 px medidos no pior viewport da bateria), para nunca
+   ficarem tapadas — era o segundo defeito da foto: a placa do
+   Mestre crescia por cima da frase; (3) a regra da combinação: com
+   a linha na placa da Jogadora, é ela que cresce para cima e o
+   Mestre sobe o crescimento + 10 px de folga — único movimento da
+   pilha, declarado; em todos os outros casos nada se mexe quando a
+   linha aparece ou some. Folgas ≥10 px em todas as combinações. -- */
+@media (orientation: portrait) {
+  #entrada {
+    background:
+      linear-gradient(rgba(4, 3, 2, .30), rgba(4, 3, 2, 0) 26%, rgba(4, 3, 2, 0) 68%, rgba(4, 3, 2, .42)),
+      url('fundo-v12.webp') center / cover no-repeat #0a0505;
+  }
+  /* o título é o pintado: a placa HTML fica para leitores de ecrã */
+  .ent-placa {
+    left: 0; top: 0; width: 1px; height: 1px; overflow: hidden;
+    clip-path: inset(50%); white-space: nowrap;
+  }
+  .ent-btn { min-height: 46px; }
+  .ent-btn .sub { font-size: clamp(10px, 1.6vh, 12.5px); line-height: 1.15; }
+  /* left E width vêm por ID (a regra base é por ID) — repetir por ID */
+  #ent-mestre, #ent-jogadora, #ent-config { left: 15%; width: 70%; }
+  /* a escada do vivo: âncoras e alturas naturais de antes do conserto */
+  #ent-config { bottom: 2.5%; }
+  #ent-jogadora { bottom: calc(2.5% + 56px); }
+  #ent-mestre { bottom: calc(2.5% + 112px); }
+  /* combinação Jogadora-com-linha: a placa dela cresce para cima a
+     partir da sua âncora (56 + 80 do pior caso) e o Mestre sobe para
+     cima dela com 10 px de folga — as placas nunca se tocam */
+  #entrada:has(#ent-jogadora > .sub) #ent-mestre { bottom: calc(2.5% + 146px); }
+  /* frase e erro FIXOS acima do pior caso: Mestre com linha chega a
+     112 + 80 = 192; Mestre subido pela combinação chega a 146 + 46
+     (sem linha) = 192 — a frase a 204 deixa 12 px aos dois */
+  .ent-ajuda { left: 10%; width: 80%; bottom: calc(2.5% + 204px); }
+  .ent-painel { left: 8%; width: 84%; top: 24%; max-height: 70%; }
+  /* a frase reserva 44 px (2 linhas a 14 px, com margem): o erro
+     fica-lhe acima com 10 px de folga */
+  .ent-erro-entrada { left: 10%; width: 80%; bottom: calc(2.5% + 258px); }
+  /* a marca da versão em retrato: cai sobre a zona clara da arte e
+     lê-se pior que em paisagem — por palavra dele (12/11/2026
+     08:42: «em pé deixe um pouco menos opaco»), a opacidade subiu
+     de 0,4 para 0,55 SÓ em retrato (menos apagada, lê-se melhor);
+     ele viu a foto a 0,55 e disse (12/11/2026 08:45: «Acho que
+     ainda tá difícil de ler») — segundo afino: opacidade 0,75 e
+     uma sombrinha escura suave atrás das letras, SÓ em retrato,
+     para a letra clara se ler sobre a parte clara do desenho sem
+     a marca ficar gritante; letra, cor, posição e o resto ficam
+     os da regra base, e em paisagem vale a regra base intocada
+     (0,4, sem esta sombra) */
+  .ent-versao {
+    opacity: .75;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, .6), 0 0 2px rgba(0, 0, 0, .6);
+  }
+}
+
+/* ---------- FILME + LOOP (tranche t-entrada-filme): o filme de
+   entrada toca uma vez em ecrã inteiro sobre o palco; o loop é o
+   fundo animado eterno atrás das placas. Os vídeos vivem dentro de
+   #entrada, por cima do fundo pintado (que fica como poster/fallback)
+   e por baixo de toda a interface. Enquanto o filme toca
+   (.a-tocar-filme), a interface está invisível e sem toque; quando
+   ele acaba (.filme-fim), o loop faz crossfade por cima do último
+   fotograma e as placas aparecem. ---------- */
+.ent-video {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; background: #000;
+}
+/* CONSERTO t-piscada-layout (11/11): a ordem das camadas é a do
+   desenho declarado no entrada.js — o LOOP desbota por cima do
+   filme. Antes o filme (por cima) desbotava para transparente AO
+   MESMO TEMPO que o loop subia, e a meio dos dois desbotes o fundo
+   pintado (fundo-v12) pesava até 25% na imagem: a piscada do layout
+   antigo que o Mestre apanhou ao vivo. Agora o filme fica OPACO
+   até o JS o remover (950 ms, com o loop já a 1) e o loop traz o
+   seu próprio fotograma 0 como poster: em nenhum instante a
+   composta é outra coisa que fotogramas do filme ou do loop. */
+#ent-video-loop { z-index: 1; opacity: 0; transition: opacity .9s ease; }
+#ent-video-filme { z-index: 0; opacity: 1; }
+#entrada.filme-fim #ent-video-loop { opacity: 1; }
+#entrada.filme-fim #ent-video-filme { pointer-events: none; }
+.ent-placa, .ent-btn, .ent-ajuda, .ent-erro-entrada, .ent-painel {
+  z-index: 2; transition: opacity .6s ease;
+}
+
+/* ---------- o botão PULAR (tranche t-pular-filme): elemento real,
+   discreto, no canto inferior direito — letras douradas serifadas
+   sobre fundo escuro translúcido com filete dourado fino, na
+   linguagem das placas. Escondido por omissão; a ÚNICA regra que o
+   mostra exige as duas classes na raiz: a tocar o filme E a marca
+   deste aparelho («tem-marca-filme», posta pelo entrada.js quando
+   o aparelho já viu o filme inteiro numa visita anterior). Quando
+   o filme acaba ou é pulado, «a-tocar-filme» sai e o botão some
+   no mesmo instante — nunca coexiste com as placas do título. -- */
+/* REF_83 (defeito 2 + adenda do tom, 12/11 19:55/20:02): o botão
+   encolhe ~40% SÓ pelo tamanho (caixa 172×52 → 103×31 · placa
+   172×30 → 103×18 · letra 14 → 9 px, a proporção aprovada das
+   maiúsculas ≈35% da placa mantém-se) e os dourados passam aos tons
+   AMOSTRADOS das letras do título no fotograma servido do filme
+   (banda do título, 32.393 px): claro #ecb86e · dominante #c88838 ·
+   sombra #9b6429. Antes: letra #f6e3ac · molduras #b8933f/#a37f33 ·
+   losangos #e8c877 · chevrons #eee0ae · brilhos #ffe9b0/#ffdf9a.
+   A âncora NÃO muda: canto extremo superior direito (2,76%/2,69%). */
+.ent-pular {
+  position: absolute; z-index: 3; display: none;
+  /* CANTO SUPERIOR DIREITO (palavra do Mestre, 11/11 09:35 —
+     tranche t-pular-canto): como o «PULAR» pintado do layout de
+     referência v12. Medido em fundo-v12.webp (1672×941): a placa
+     pintada ocupa x 87,68–97,25% · y 2,76–5,63% → margem do topo
+     2,76% da altura, margem da direita 2,69% da largura. O botão
+     real ancora o seu canto superior direito nesse mesmo ponto e
+     cresce para baixo/esquerda — a placa pintada tem só ~28 px de
+     altura na pintura (≈11 px num ecrã de 360) e o botão mantém os
+     44 px mínimos de toque. Substitui o canto inferior da REF_58. */
+  top: calc(2.76% + env(safe-area-inset-top, 0px));
+  right: calc(2.69% + env(safe-area-inset-right, 0px));
+  /* ESTILO IDÊNTICO À REFERÊNCIA (palavra do Mestre, 11/11 09:53 —
+     tranche t-pular-estilo; ficha medida em DESENHO.md da sede): a
+     placa simples anterior (fundo translúcido + filete + radius)
+     sai; entra a MESMA língua das placas .ent-btn e do «PULAR»
+     pintado do v12 — placa de pontas em losango desenhada num SVG
+     de fundo: moldura dourada dupla (#d9b45f fora, #a37f33 dentro),
+     fundo escuro quente em gradiente, brilho dourado no topo,
+     losangos #e8c877 nas pontas e o símbolo «» (dois triângulos
+     cheios, #fdf3c4) à esquerda, como o pintado. A caixa é a área
+     de toque (172×52); a placa VISÍVEL mede 172×30 (aspecto 5,73:1
+     ≈ os 5,75:1 medidos na pintura), centrada — os 11 px acima e
+     abaixo são toque transparente. A sombra (drop-shadow) segue a
+     silhueta da placa. A letra não leva a condensação scaleX das
+     .ent-btn (exige um <span> e o botão nasce com texto simples no
+     entrada.js, fora do âmbito) — compensa o letter-spacing.
+     AJUSTE DA LETRA (11/11, tranche t-pular-estilo-ajuste; veredicto
+     do Mestre ao lado-a-lado: «tá muito grande e não tá centralizado
+     — a moldura em si tá legal»): a moldura NÃO muda; a letra foi
+     medida contra a pintura (protocolo de componentes, limiar 200 —
+     ficha em MEDIDAS da sede do ajuste) e corrigida ao píxel:
+     maiúsculas 47,8% → 34,4% da altura da placa (pintura: 35,7%);
+     bloco «PULAR» centro 64,2% → 52,9% e largura 48,1% → 31,6%
+     (pintura: 52,5% / 29,8%); símbolo » centro 19,5% → 16,9% e
+     altura 31,1% → 28,9% (pintura: 16,8% / 28,6%) — só os dois
+     polígonos dos chevrons mexeram dentro do SVG; a folga »→P fica
+     16,1% como na pintura. Resultado: font-size 14px,
+     letter-spacing 0, padding-left 23px. */
+  box-sizing: border-box; width: 103px; height: 31px;
+  padding: 0 8px 0 14px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 344 60' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='gp' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23241a0e'/%3E%3Cstop offset='.45' stop-color='%23100a04'/%3E%3Cstop offset='1' stop-color='%231a1108'/%3E%3C/linearGradient%3E%3CradialGradient id='rp' cx='.5' cy='.5' r='.5'%3E%3Cstop offset='0' stop-color='%23ecb86e' stop-opacity='.07'/%3E%3Cstop offset='1' stop-color='%23ecb86e' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cpolygon points='30,3 314,3 341,30 314,57 30,57 3,30' fill='url(%23gp)' stroke='%23c88838' stroke-width='3'/%3E%3Cpolygon points='38,10 306,10 326,30 306,50 38,50 18,30' fill='url(%23rp)' stroke='%239b6429' stroke-width='2'/%3E%3Cellipse cx='172' cy='3' rx='110' ry='3' fill='%23ecb86e' opacity='.34'/%3E%3Cellipse cx='172' cy='57' rx='110' ry='3' fill='%23c88838' opacity='.12'/%3E%3Cpolygon points='6,30 12,24 18,30 12,36' fill='%23ecb86e'/%3E%3Cpolygon points='338,30 332,24 326,30 332,36' fill='%23ecb86e'/%3E%3Cpolygon points='42.7,20.8 54.5,30 42.7,39.2' fill='%23ecb86e'/%3E%3Cpolygon points='61,20.8 72.6,30 61,39.2' fill='%23ecb86e'/%3E%3C/svg%3E") center / 100% 18px no-repeat;
+  border: none; border-radius: 0;
+  color: #ecb86e;
+  font-family: Georgia, 'DejaVu Serif', serif; font-weight: 700;
+  font-size: 9px; letter-spacing: 0; text-transform: uppercase;
+  text-align: center; line-height: 31px; white-space: nowrap;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, .9), 0 0 12px rgba(200, 136, 56, .30);
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .55));
+  cursor: pointer;
+}
+.ent-pular:active { filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .55)) brightness(1.28); }
+#entrada.a-tocar-filme.tem-marca-filme .ent-pular { display: block; }
+#entrada.a-tocar-filme .ent-placa,
+#entrada.a-tocar-filme .ent-btn,
+#entrada.a-tocar-filme .ent-ajuda,
+#entrada.a-tocar-filme .ent-erro-entrada,
+#entrada.a-tocar-filme .ent-painel {
+  opacity: 0; pointer-events: none;
+}
+
+/* ---------- a logo como tela de carregamento (tranche
+   t-logo-carregamento): a PRIMEIRA camada da abertura — o vídeo do
+   provérbio em ciclo (mudo), inteiro e centrado sobre o fundo
+   escuro dele (object-fit: contain — o emblema e o letreiro
+   lêem-se completos, sem cortes; a cor do fundo é a medida nos
+   cantos do próprio vídeo). Vive por cima de tudo (z-index 4 —
+   acima do filme, do loop, da interface e do botão PULAR, que
+   nunca aparece durante ela) e sai em desbote curto (~350 ms)
+   quando o filme está pronto: a classe «logo-fora» na raiz
+   apaga-a e tira-lhe o toque no mesmo instante, e o JS remove o
+   elemento logo a seguir. ---------- */
+#ent-video-logo {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; background: #17191d; /* REF_83: a cor medida nos cantos do próprio vídeo (mediana #17191d num fotograma; noutro, #17181d — 1 unidade de diferença, imperceptível) */
+  z-index: 4; opacity: 1; transition: opacity .35s ease;
+}
+#entrada.logo-fora #ent-video-logo { opacity: 0; pointer-events: none; }
+
+/* ---------- a PREPARAÇÃO DA BATALHA (t-escolha-mapa): a vista em que
+   o Mestre escolhe o mapa, os monstros/NPCs e os lados deles antes de
+   a batalha começar. Vive dentro de .ent-painel (a colocação e a
+   rolagem são as dos outros painéis); aqui só as linhas dela: mapa
+   escolhível, e por tipo três contadores de toque grande — Contra as
+   jogadoras · Neutro · No time das jogadoras. A barra de acções
+   (.prep-accoes) fecha a vista: fica presa ao fundo do painel
+   (sticky, como o .ent-cabecalho faz no topo) para «Começar
+   batalha»/«Voltar» nunca dependerem da rolagem — correcção G1
+   da bancada. ---------- */
+.prep-titulo {
+  font-family: Georgia, 'DejaVu Serif', serif; font-size: 12px;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--ouro);
+  margin: 16px 0 8px;
+}
+.prep-mapa {
+  display: block; width: 100%; box-sizing: border-box; text-align: left;
+  min-height: 56px; padding: 10px 12px; margin: 0 0 8px; cursor: pointer;
+  background: rgba(10, 8, 5, .9); color: var(--pergaminho, #efe6cf);
+  border: 1px solid rgba(201, 162, 39, .45); border-radius: 8px;
+  font-size: 16px;
+}
+.prep-mapa > span:not(.sub) { display: block; }
+.prep-mapa .sub {
+  display: block; margin-top: 2px; font-size: 12px;
+  color: var(--pergaminho-fraco, #cbbd97);
+}
+.prep-mapa.on {
+  border-color: var(--ouro-vivo, #e8c877);
+  background: rgba(64, 46, 14, .9);
+  box-shadow: 0 0 0 1px var(--ouro-vivo, #e8c877) inset;
+}
+.prep-tipo { margin: 0 0 12px; }
+.prep-nome { font-size: 16px; font-weight: 700; margin: 0 0 4px; }
+.prep-linha {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin: 4px 0;
+}
+.prep-lado { font-size: 14px; color: var(--pergaminho-fraco, #cbbd97); }
+.prep-passo-grupo { display: flex; align-items: center; gap: 8px; }
+.prep-passo {
+  width: 48px; height: 48px; border-radius: 10px; cursor: pointer;
+  border: 1px solid rgba(201, 162, 39, .8);
+  background: rgba(28, 21, 12, .9); color: #ecd28a;
+  font-size: 24px; line-height: 1; font-weight: 800;
+}
+.prep-passo:active { filter: brightness(1.3); }
+.prep-passo:disabled { opacity: .35; cursor: default; }
+.prep-qtd {
+  min-width: 30px; text-align: center; font-size: 18px; font-weight: 700;
+}
+.prep-indole { font-size: 13px; color: var(--pergaminho, #efe6cf); margin: -2px 0 4px; }
+.prep-total-tipo {
+  font-size: 13px; color: var(--pergaminho-fraco, #cbbd97);
+  text-align: right; margin: 6px 0 0;
+}
+/* A barra de acções da preparação (G1): presa ao fundo do painel,
+   fundo opaco da cor dele para as linhas passarem por baixo —
+   o mesmo gesto do .ent-cabecalho no topo (bottom compensa o
+   padding inferior do .ent-painel, como o topo compensa o dele). */
+.prep-accoes {
+  position: sticky; bottom: -14px; z-index: 3;
+  margin: 14px -18px -14px; padding: 10px 18px 14px;
+  background: rgba(16, 12, 7, .97); border-top: 1px solid rgba(201, 162, 39, .45);
+  border-radius: 0 0 10px 10px;
+}
+.prep-total {
+  text-align: center; font-size: 14px; font-weight: 700;
+  color: var(--pergaminho, #efe6cf); margin: 0 0 8px;
+}
+/* M3: os botões que concluem a tarefa têm altura própria de
+   52 px — a promessa de alvos ≥ 48 px cumpre-se também neles,
+   sem tocar na .ent-accao das outras vistas. */
+.prep-accao { height: 52px; }
+
+/* ---------- a ÁREA DO MESTRE (t-area-mestre): a sala onde o
+   Mestre monta a batalha, no lugar do cartão de preparação. Vista
+   própria .ent-sala: ocupa a camada inteira (em paisagem, o palco
+   1672:941 centrado — a sala mede o palco, não o ecrã) numa coluna
+   de três faixas que NUNCA se sobrepõem: cabeçalho (faixa própria
+   no fluxo — nunca sticky, que é o mecanismo banido) · corpo
+   (overflow hidden; quem rola é um só, o conteúdo da aba activa
+   .entab-conteudo) · rodapé (faixa própria, sempre visível).
+   Véu escuro quase opaco sobre a arte (~94%, a cor de chão dos
+   painéis) — sem cartões a flutuar: as faixas são de largura
+   inteira, separadas pela linha dourada fina, e a COLUNA de
+   conteúdo é que tem largura máxima (min(600px, 94%) centrada, a
+   referência das Configurações no Largo), para os controlos não
+   ficarem a ~1 200 px dos rótulos em ecrã grande.
+   Empilhamento: z-index 2 declarado — acima do loop de vídeo
+   (z 1), como o resto da interface; a marca da versão (z 5) fica
+   por cima, no canto, e o padding-bottom do rodapé (≥26 px +
+   safe-area) põe-na sobre o véu do rodapé, FORA do botão
+   «Começar batalha». A altura é a da camada (inset:0), nunca vh
+   solto. A visibilidade da vista é pelo atributo hidden via
+   mostrar() — a guarda «#entrada [hidden]» dá-lhe a última
+   palavra contra o display:flex daqui; a visibilidade das ABAS
+   internas é por classe (.entab-aba.activa), governada pelo par
+   estado/activador próprio da sala no entrada.js. As classes
+   internas da preparação (.prep-*) reusam-se tal como estão; a
+   célula de aba herda os 36 px das Configurações (REF_88) — a
+   fileira é navegação entre secções, não acção. ---------- */
+.ent-sala {
+  position: absolute; inset: 0; z-index: 2;
+  display: flex; flex-direction: column;
+  background: rgba(16, 12, 7, .94);
+  color: var(--pergaminho, #efe6cf);
+}
+.ent-sala-cabecalho {
+  flex: none; display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; box-sizing: border-box;
+  padding: 10px max(3%, calc(50% - 300px)) 8px;
+  border-bottom: 1px solid rgba(201, 162, 39, .45);
+}
+.ent-sala-titulo {
+  font-family: Georgia, 'DejaVu Serif', serif; font-size: 15px;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--ouro);
+  margin: 0;
+}
+/* «Voltar»: controlo secundário no cabeçalho — ≥48 px (descida
+   lavrada dos 52 px que tinha no painel; o gesto principal,
+   «Começar batalha», mantém os ≥52 px da .prep-accao). */
+.ent-sala-voltar {
+  flex: none; min-width: 96px; height: 48px; padding: 0 18px; cursor: pointer;
+  border-radius: 8px; border: 1px solid rgba(201, 162, 39, .8);
+  background: rgba(28, 21, 12, .85); color: var(--pergaminho-fraco, #cbbd97);
+  font-size: 15px; font-weight: 700;
+}
+.ent-sala-corpo {
+  width: min(600px, 94%); margin: 8px auto 0; box-sizing: border-box;
+}
+.ent-sala-conteudo {
+  padding: 2px 4px 12px 2px;
+  scrollbar-width: thin; scrollbar-color: rgba(201, 162, 39, .7) rgba(10, 8, 5, .6);
+}
+.ent-sala-conteudo::-webkit-scrollbar { width: 6px; }
+.ent-sala-conteudo::-webkit-scrollbar-thumb { background: rgba(201, 162, 39, .55); border-radius: 3px; }
+.ent-sala-conteudo::-webkit-scrollbar-track { background: rgba(10, 8, 5, .5); }
+.ent-sala-rodape {
+  flex: none; box-sizing: border-box;
+  padding: 10px max(3%, calc(50% - 300px)) calc(26px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid rgba(201, 162, 39, .45);
+}
