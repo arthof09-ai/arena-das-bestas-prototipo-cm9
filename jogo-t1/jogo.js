@@ -3605,22 +3605,23 @@
   let reservaMovimento = DESLOCAMENTO_ONG_M;   // metros que ela ainda pode andar NESTA vez
   let custoPendente = null;     // casas do caminho por toque, a descontar no moveend dela
   let caminhoPendente = null;   // o path (motor) desse caminho — custo do Parar pelas casas andadas (D-13.15)
-  /* D1 (defeitos do Mestre, 13/11): COMANDO DAS FIGURAS — o
-     interruptor da aba Testes («Comandar as figuras»). Nasce
-     DESLIGADO em cada abertura da página, como os outros testes;
-     ligado, as vezes das figuras que não a Ong abrem MANUAIS para
-     o Mestre (iniciarVezManual) em vez de serem jogadas pela IA.
-     Desligado — e sempre na vista da Party —, nenhum caminho novo
-     é alcançável: o comportamento é o de hoje, ao byte. A reserva
-     da vez manual é SEPARADA da reservaMovimento dela (R3: os
-     tectos do Supervisor e dos saves são da Ong). */
-  let comandoMestreFiguras = false;   // o interruptor (só MODO_MESTRE o vê)
+  /* COMANDO DAS FIGURAS — o Mestre comanda TODAS (palavra dele de
+     13/11, repetida em 16/11: «eu não tenho nenhum personagem fixo»).
+     Em MODO_MESTRE, toda a figura é comandada directamente por ele
+     na sua vez, em qualquer abertura de vez (passarVez, restauro do
+     Supervisor, carregar de save): as vezes abrem MANUAIS
+     (iniciarVezManual) em vez de serem jogadas pela IA. A IA só
+     joga uma vez quando ele a delega: Modo automático ligado — o
+     predicado lê !modoAutomatico. Na vista da Party o predicado é
+     sempre falso (MODO_MESTRE falso) e nada muda. A reserva da vez
+     manual é SEPARADA da reservaMovimento dela (R3: os tectos do
+     Supervisor e dos saves são da Ong). */
   let vezManualAberta = false;        // a vez corrente é uma vez manual do Mestre
   let comandada = null;               // a figura da vez manual (= vezAtual quando aberta)
   let reservaManual = 0;              // metros que a figura comandada ainda pode andar nesta vez
   let atacouManual = false;           // uso de atacar da vez manual
   let ctxMovManual = null;            // { id, destino:{x,y,z}, passos } do movimento manual em curso
-  const comandoMestreActivo = () => MODO_MESTRE && comandoMestreFiguras;
+  const comandoMestreActivo = () => MODO_MESTRE && !modoAutomatico;
   let passoEmCurso = false;     // um passo de seta está a animar (pressões novas ignoram-se)
   /* Tranche ESCALA: o preço da casa captura-se no DESPACHO do
      movimento (custoPendentePreco / passoPreco) — o débito do
@@ -4849,6 +4850,26 @@
      é o Encerrar dele. A apresentação do confronto corre como
      nos golpes da IA; a esquiva do alvo só se tenta quando o
      alvo é a Ong (o único uso provado dessa máquina). */
+  /* Fecho da vez manual quando a desgraça «cai» mata a PRÓPRIA
+     figura comandada (vlabAplicarAtacanteDepois): se a batalha
+     acabou, a faixa é a do fim (com «Recomeçar») e a frase final é
+     a de fimDeBatalha; se a figura morreu e a batalha continua, a
+     vez dela fecha como no ramo da Ong a morrer — contexto manual
+     limpo e passarVez diferido. Devolve true se fechou a vez. */
+  function fechoMorteComandada(fraseDesgraca) {
+    if (batalhaFim) {
+      vezManualAberta = false; comandada = null; ctxMovManual = null;
+      estado = 'fim'; renderAcoes();
+      return true;
+    }
+    if ((unidade(comandada) || {}).vivo === false) {
+      say(fraseDesgraca);
+      vezManualAberta = false; comandada = null; ctxMovManual = null;
+      aguardar(ESPERA_FIM_MS).then(() => { if (!batalhaFim) passarVez(); });
+      return true;
+    }
+    return false;
+  }
   async function atacarManualMestre() {
     const id = comandada;
     if (!id || (estado !== 'atacar' && estado !== 'base')) return;
@@ -4915,6 +4936,7 @@
         supRegistar('accao', { acao: 'desgraca-escolha', actor: id, proposta: pendente.proposta, escolha });
         if (s2.desgracaPendente)
           supRegistar('accao', { acao: 'desgraca-pendente', actor: id, tipo: s2.desgracaPendente.tipo, aplicada: false, motivo: 'desgraça pendente não aplicada nesta casca (sem aliados ao alcance — contexto da batalha a solo)' });
+        if (fechoMorteComandada(`<b>${nomeCena(id)}</b> ${verbos.falha} <b>${nomeCena(alvoId)}</b> e falhou. ` + vlabFraseDesgraca(id, fc))) return;
         say(`<b>${nomeCena(id)}</b> ${verbos.falha} <b>${nomeCena(alvoId)}</b> e falhou. ` + vlabFraseDesgraca(id, fc));
         renderAcoes();
         return;
@@ -4923,6 +4945,7 @@
       supRegistar('accao', { acao: 'ataque', actor: id, alvo: alvoId, acerto: false, falhaCritica: fc ? fc.desgraca.id : null });
       if (s.desgracaPendente)
         supRegistar('accao', { acao: 'desgraca-pendente', actor: id, tipo: s.desgracaPendente.tipo, aplicada: false, motivo: 'desgraça pendente não aplicada nesta casca (sem aliados ao alcance — contexto da batalha a solo)' });
+      if (fechoMorteComandada(`<b>${nomeCena(id)}</b> ${verbos.falha} <b>${nomeCena(alvoId)}</b> e falhou. ` + vlabFraseDesgraca(id, fc))) return;
       say(`<b>${nomeCena(id)}</b> ${verbos.falha} <b>${nomeCena(alvoId)}</b> e falhou. ` + vlabFraseDesgraca(id, fc));
       estado = 'base'; renderAcoes();
       return;
@@ -8687,6 +8710,8 @@
     if (snap.vez === PROPRIA) {
       iniciarVez(PROPRIA);
       say(`É a vez da <b>Ong</b> (rodada ${rodada}).`);
+    } else if (comandoMestreActivo()) {
+      iniciarVezManual(snap.vez);
     } else {
       iniciarVezIA(snap.vez, false);
     }
@@ -9170,7 +9195,13 @@
       if (emVoo || estado === 'movendo' || estado === 'rolagem'
         || apresentacaoEmCurso || passoEmCurso || ataquePendente != null
         || desgracaMonstroPendente != null
-        || morteEmCurso)
+        || morteEmCurso
+        /* Vez manual já gasta: a captura não guarda reserva/ataque
+           da vez manual — guardá-la devolveria movimento e ataque
+           inteiros à mesma vez ao carregar. A captura na ABERTURA
+           da vez manual continua disponível e retoma a vez inteira. */
+        || (vezManualAberta && (atacouManual
+          || reservaManual < orcamentoIA(comandada) * CASA_M)))
         return { ok: false, erro: 'SAVE_EM_VOO' };
       return {
         rodada, indiceVez, vez: vezAtual, ordem: [...ordem], fase: estado,
@@ -9182,7 +9213,7 @@
         }),
         ong: {
           danoSofrido, paGasto, transformada, reservaMovimento,
-          atacou, alvo
+          atacou, alvo: vezManualAberta ? null : alvo
         },
         batalhaFim,
         consumiveis: [],
@@ -9441,10 +9472,11 @@
           estado = 'fim';
           atualizarVez(); renderAcoes();
         } else if (e.vez === PROPRIA) iniciarVez(PROPRIA);
+        else if (comandoMestreActivo()) iniciarVezManual(e.vez);
         else iniciarVezIA(e.vez, false);
         reservaMovimento = e.ong.reservaMovimento;
         atacou = e.ong.atacou;
-        alvo = e.ong.alvo;
+        alvo = vezManualAberta ? null : e.ong.alvo;
         /* O snapshot do próprio carregar nasce DEPOIS da
            reimposição (o de iniciarVez/iniciarVezIA leu valores
            pré-carregar — snapshot híbrido S-CRIT-06): pilha limpa e
@@ -12777,33 +12809,6 @@
         sincVoo();
       });
       sincVoo();
-      /* — Comandar as figuras (teste): o comando manual do
-         Mestre sobre as figuras que não a Ong (D1). Nasce
-         DESLIGADO em cada abertura da página, como os outros
-         testes; ligado, as vezes deles abrem manuais para ele
-         (mover, atacar, voar) em vez de serem jogadas pela IA. */
-      const g3 = cfgGrupo(pane, 'Comandar as figuras (teste)',
-        'Ligado: nas vezes dos monstros e das outras figuras, é você que comanda — mover, atacar e voar com o Grifo. Desligado: a IA joga por eles, como hoje. Vale a partir da próxima vez deles.');
-      const linhaTogCmd = document.createElement('div'); linhaTogCmd.className = 'cfgrow';
-      const rotTogCmd = document.createElement('span'); rotTogCmd.className = 'cl';
-      rotTogCmd.innerHTML = 'Comandar as figuras<small>a IA não joga por elas</small>';
-      const togCmd = document.createElement('button');
-      togCmd.type = 'button'; togCmd.id = 'teste-comando'; togCmd.className = 'tog';
-      linhaTogCmd.appendChild(rotTogCmd); linhaTogCmd.appendChild(togCmd);
-      g3.appendChild(linhaTogCmd);
-      const sincCmd = () => {
-        togCmd.classList.toggle('on', comandoMestreFiguras);
-        togCmd.textContent = comandoMestreFiguras ? 'Ligado' : 'Desligado';
-        togCmd.setAttribute('aria-pressed', String(comandoMestreFiguras));
-      };
-      togCmd.addEventListener('click', () => {
-        comandoMestreFiguras = !comandoMestreFiguras;
-        sincCmd();
-        say(comandoMestreFiguras
-          ? 'Comando das figuras <b>ligado</b> — a partir da próxima vez de um monstro, é você que o comanda.'
-          : 'Comando das figuras <b>desligado</b> — a IA volta a jogar pelos monstros.');
-      });
-      sincCmd();
     }
   }
   activarAbaCfg('jogo');
