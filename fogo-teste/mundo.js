@@ -35,7 +35,13 @@ window.TronoWorld = function (T, scene, area) {
                 if (/^(Teto_|Viga_|Roseta_)/.test(o.name || '')) o.visible = false;
             }
         });
+        /* FOGO (fogo-web, DESENHO §1/§5.2): as âncoras conferem-se
+           ANTES da fusão, pelo algoritmo do §1; o subsistema dos
+           braseiros constrói-se a seguir à fusão e preenche por
+           mutação o que nasceu síncrono no retorno. */
+        conferirAncoras(modelo);
         grupo.add(fundirSala(modelo));
+        construirFogo();
         window.__tronoModeloPronto = true;
     };
     /* FUSÃO POR MATERIAL (t-trono-otimizacao O3, sintoma B): a sala
@@ -269,13 +275,329 @@ window.TronoWorld = function (T, scene, area) {
     const calor = new T.PointLight(0xff9a3c, 9.0, 22, 2);
     calor.position.set(0, 2.6, 0);
     scene.add(calor);
+    /* ================= FOGO — SUBSISTEMA DOS BRASEIROS (fogo-web) =================
+       O fogo do Godot vive na cena .tscn (8 luzes + 8 emissores com o
+       shader faisca), nunca no GLB — a integração web nunca o construiu
+       (RELATORIO desta frente). Reconstrói-se aqui, dentro do
+       TronoWorld, pela lista fechada P1–P7 do DESENHO: chamas
+       instanciadas com o shader portado (1 chamada), brasas
+       instanciadas (1 chamada), 8 luzes 0xff7a29 sem sombras nos três
+       perfis; por perfil só muda a densidade (74/56/30 por taça). */
+    /* Âncoras (§1): [x, base final da chama (Y), z mundo] — medidas
+       offline do GLB web (nó 0,81/2,61 + topo 0,81, com a conversão
+       z_mundo = z_GLB + 22 escrita uma única vez, aqui). A luz fica
+       0,26 acima da base. Índices 0–5 = nave · 6–7 = plataforma. */
+    const TABELA_BRASA = [
+        [-7, 1.62, 11.5], [7, 1.62, 11.5],
+        [-7, 1.62, 0], [7, 1.62, 0],
+        [-7, 1.62, -9.5], [7, 1.62, -9.5],
+        [-5.2, 3.42, -20.5], [5.2, 3.42, -20.5]];
+    const CONTAGEM_NIVEL = { alta: 592, media: 448, baixa: 240 };
+    const ambienteBases = { fogueira: 9.0 };
+    /* SUCESSÃO 6 (fogo-web) — sincronização À ESCRITA do acoplamento
+       ao ambiente e ao véu. A cena escreve neste objecto
+       (ambEscrever, cena.js:759), nos proxies e nas entradas de
+       braseiros; os interceptores dessas escritas aplicam na hora a
+       mesma sincronização só-em-mudança do §5.1, sem esperar pelo
+       frame seguinte. Medido nesta sucessão (contador de frames):
+       com o renderer a ~0–1 fps, a sincronização só-no-update()
+       deixava o subsistema uma geração inteira de ambiente
+       atrasado — às 12,5 h assentadas, proxies já invisíveis e
+       base já 0, mas aVeu ainda 1 e luzes ~7,5 por tempo
+       indefinido; o acerto chegava só quando o contador de frames
+       andava (e a leitura de regresso às 23 h apanhava a geração
+       anterior, toda a 0). O update() continua a correr por frame
+       como rede de segurança e relógio da tremulação; o estado
+       derivado e a fórmula são exactamente os mesmos. */
+    let baseTochas = 7.5;
+    Object.defineProperty(ambienteBases, 'tochas', {
+        configurable: true, enumerable: true,
+        get() { return baseTochas; },
+        set(v) { baseTochas = v; for (let i = 0; i < 8; i++) aplicarLuz(i); }
+    });
+    /* Disciplina temporal (§5.2): as 8 entradas de braseiros e os
+       contentores de fontes nascem SÍNCRONOS, neste retorno — o
+       registo da cena (cena.js:520-530) fotografa-os na criação do
+       mundo, antes de o GLB chegar. Os proxies (§5.1) já estão
+       postos na scene nas âncoras da tabela; aoModelo só confere e
+       preenche por mutação (entrada.luz, push nos arrays). */
+    const braseiros = [], fontesTochas = [], fontesChamas = [];
+    const sentinelas = [];
+    for (let i = 0; i < 8; i++) {
+        const [bx, by, bz] = TABELA_BRASA[i];
+        /* Dois proxies por taça (Object3D, não renderizam): a cena
+           escreve neles o véu — visible (ambEscrever) e material
+           (veuAplicarBraseiros troca por ghostMat em «memoria») — e
+           o update() lê esse estado e sincroniza as instâncias. O
+           .material é um objecto-sentinela próprio por proxy: a cena
+           captura-o no registo e repõe-no ao voltar a «vista». */
+        const proxyChama = new T.Object3D();
+        proxyChama.position.set(bx, by, bz);
+        proxyChama.material = { sentinela: 'chama-' + i };
+        scene.add(proxyChama);
+        const proxyBrasa = new T.Object3D();
+        proxyBrasa.position.set(bx, by, bz);
+        proxyBrasa.material = { sentinela: 'brasa-' + i };
+        scene.add(proxyBrasa);
+        sentinelas.push([proxyChama.material, proxyBrasa.material]);
+        /* Interceptores da sucessão 6: as escritas da cena nestes
+           proxies (visible em ambEscrever · material em
+           veuAplicarBraseiros) sincronizam a taça na hora. */
+        vigiarProxy(proxyChama, i); vigiarProxy(proxyBrasa, i);
+        const entrada = { chamas: [proxyChama, proxyBrasa], luz: null, x: bx, z: bz };
+        let fv = 1;
+        Object.defineProperty(entrada, 'fatorVisao', {
+            configurable: true, enumerable: true,
+            get() { return fv; },
+            set(v) { fv = v; aplicarLuz(i); }
+        });
+        braseiros.push(entrada);
+    }
+    const fontes = { fogueira: calor, tochas: fontesTochas, chamas: fontesChamas };
+    /* Âncoras conferidas (§1 + P7): percorre o modelo ANTES da fusão,
+       desquantiza com o mesmo divisor da fusão e lê a matrixWorld
+       completa. Mede e regista — desvio é defeito de construção,
+       nunca paragem em runtime. Resultado em window.__fogoAncoras. */
+    const divisorAncora = (at) => {
+        if (!at.normalized) return 1;
+        const a = at.array;
+        if (a instanceof Int8Array) return 127;
+        if (a instanceof Uint8Array) return 255;
+        if (a instanceof Int16Array) return 32767;
+        if (a instanceof Uint16Array) return 65535;
+        if (a instanceof Int32Array) return 2147483647;
+        if (a instanceof Uint32Array) return 4294967295;
+        return 1;
+    };
+    const conferirAncoras = (raiz) => {
+        raiz.updateMatrixWorld(true);
+        const porIndice = new Map();
+        const v = new T.Vector3();
+        /* Agrupa pelo GRUPO Prop_Brazier_N-col: as malhas-filhas
+           chamam-se todas Prop_Brazier_0-col_1/_2 (o nome da malha
+           partilhada, não o do nó) — medido no diagnóstico desta
+           frente; quem agrupasse pelo nome da malha fundia as 8
+           taças numa só. */
+        raiz.traverse(o => {
+            const m = /^Prop_Brazier_(\d+)-col$/.exec(o.name || '');
+            if (!m || o.isMesh) return;
+            const idx = Number(m[1]);
+            const p = new T.Vector3().setFromMatrixPosition(o.matrixWorld);
+            let topo = -Infinity;
+            o.traverse(d => {
+                if (!d.isMesh || !d.geometry || !d.geometry.attributes.position) return;
+                const at = d.geometry.attributes.position, div = divisorAncora(at), M = d.matrixWorld;
+                for (let i = 0; i < at.count; i++) {
+                    v.set(at.getX(i) / div, at.getY(i) / div, at.getZ(i) / div).applyMatrix4(M);
+                    if (v.y > topo) topo = v.y;
+                }
+            });
+            porIndice.set(idx, { nome: 'Prop_Brazier_' + idx, no: [p.x, p.y, p.z], topo });
+        });
+        window.__fogoAncoras = [...porIndice.values()].sort((a, b) => a.no[2] - b.no[2] || a.no[0] - b.no[0])
+            .map(r => ({ nome: r.nome, no: r.no, baseFinal: [r.no[0], r.topo, r.no[2] + 22] }));
+    };
+    /* O subsistema em si: nasce em aoModelo, já no nível guardado. */
+    let chamasGeo = null, chamasMat = null, brasasMesh = null, aVeuAttr = null;
+    let nivelGuardado = 'alta', tremulacaoLigada = true;
+    let tempoChama = 0, avancoTempo = 1, ultimoTempo = null;
+    const estadoTaca = ['vista', 'vista', 'vista', 'vista', 'vista', 'vista', 'vista', 'vista'];
+    const COR_BRASA = new T.Color(0xe76c29), COR_FANTASMA = new T.Color(0x9aa7b4);
+    const escreverBrasa = (i, est) => {
+        const [bx, by, bz] = TABELA_BRASA[i];
+        const d = new T.Object3D();
+        d.position.set(bx, by - 0.04, bz);
+        if (est === 'apagada') d.scale.set(0, 0, 0); else d.scale.set(0.42, 0.10, 0.42);
+        d.updateMatrix();
+        brasasMesh.setMatrixAt(i, d.matrix);
+        brasasMesh.setColorAt(i, est === 'memoria' ? COR_FANTASMA : COR_BRASA);
+        brasasMesh.instanceMatrix.needsUpdate = true;
+        if (brasasMesh.instanceColor) brasasMesh.instanceColor.needsUpdate = true;
+    };
+    /* Sincronização do véu/ambiente (§5.1 + sucessão 6): deriva o
+       estado da taça dos proxies, escreve-o nas instâncias só em
+       mudança e repõe a intensidade da luz pela fórmula do §5.5
+       com o último factor de tremulação calculado. Corre no
+       update() (por frame) e à escrita da cena (interceptores
+       acima) — uma só regra, dois chamadores. */
+    const fTaca = [0, 0, 0, 0, 0, 0, 0, 0];
+    function derivarEst(i) {
+        const e = braseiros[i], pc = e.chamas[0], pb = e.chamas[1];
+        return (!pc.visible || !pb.visible) ? 'apagada'
+            : (pc.material !== sentinelas[i][0] || pb.material !== sentinelas[i][1]) ? 'memoria' : 'vista';
+    }
+    function aplicarEst(i, est) {
+        if (aVeuAttr) {
+            const vv = est === 'vista' ? 1 : est === 'memoria' ? 0.45 : 0;
+            for (let k = i; k < 592; k += 8) aVeuAttr.setX(k, vv);
+            aVeuAttr.needsUpdate = true;
+        }
+        if (brasasMesh) escreverBrasa(i, est);
+    }
+    function aplicarLuz(i) {
+        const e = braseiros[i];
+        if (!e.luz) return;
+        /* Factor (§5.3): nave = o de raio 11 que a cena escreve na
+           entrada; plataforma = o estado da casa apertada lido dos
+           proxies (vista 1, resto 0). */
+        const factor = i < 6 ? e.fatorVisao : (derivarEst(i) === 'vista' ? 1 : 0);
+        e.luz.intensity = (baseTochas + fTaca[i] * baseTochas * 0.4) * factor;
+    }
+    function sincronizarTaca(i) {
+        const est = derivarEst(i);
+        if (est !== estadoTaca[i]) { estadoTaca[i] = est; aplicarEst(i, est); }
+        aplicarLuz(i);
+    }
+    function vigiarProxy(proxy, i) {
+        let vis = proxy.visible, mat = proxy.material;
+        Object.defineProperty(proxy, 'visible', {
+            configurable: true, enumerable: true,
+            get() { return vis; },
+            set(v) { vis = v; sincronizarTaca(i); }
+        });
+        Object.defineProperty(proxy, 'material', {
+            configurable: true, enumerable: true,
+            get() { return mat; },
+            set(m) { mat = m; sincronizarTaca(i); }
+        });
+    }
+    const construirFogo = () => {
+        /* --- as chamas: o faisca portado, UMA chamada instanciada (§2) --- */
+        let semente = 9182;
+        const rndF = () => ((semente = (Math.imul(semente, 1664525) + 1013904223) >>> 0) / 4294967296);
+        const N = 592;
+        const ancora = new Float32Array(N * 3), desvio = new Float32Array(N * 3), dados = new Float32Array(N * 3), veu = new Float32Array(N);
+        for (let k = 0; k < N; k++) {
+            const taca = k % 8, [bx, by, bz] = TABELA_BRASA[taca];
+            ancora[k * 3] = bx; ancora[k * 3 + 1] = by; ancora[k * 3 + 2] = bz;
+            const ang = rndF() * Math.PI * 2, rr = Math.sqrt(rndF()) * 0.28;
+            desvio[k * 3] = Math.cos(ang) * rr; desvio[k * 3 + 1] = 0; desvio[k * 3 + 2] = Math.sin(ang) * rr;
+            dados[k * 3] = rndF(); dados[k * 3 + 1] = 0.55 + rndF() * 0.60; dados[k * 3 + 2] = 0.55 + rndF() * 0.80;
+            veu[k] = 1;
+        }
+        chamasGeo = new T.InstancedBufferGeometry();
+        chamasGeo.setAttribute('position', new T.Float32BufferAttribute([-0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0], 3));
+        chamasGeo.setAttribute('uv', new T.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2));
+        chamasGeo.setIndex([0, 1, 2, 0, 2, 3]);
+        chamasGeo.setAttribute('aAncora', new T.InstancedBufferAttribute(ancora, 3));
+        chamasGeo.setAttribute('aDesvio', new T.InstancedBufferAttribute(desvio, 3));
+        chamasGeo.setAttribute('aDados', new T.InstancedBufferAttribute(dados, 3));
+        aVeuAttr = new T.InstancedBufferAttribute(veu, 1);
+        aVeuAttr.setUsage(T.DynamicDrawUsage);
+        chamasGeo.setAttribute('aVeu', aVeuAttr);
+        chamasGeo.instanceCount = CONTAGEM_NIVEL[nivelGuardado];
+        chamasMat = new T.ShaderMaterial({
+            uniforms: { uTempo: { value: 0 }, uEscala: { value: 1 }, uAlfa: { value: 1 } },
+            transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide,
+            vertexShader: [
+                'attribute vec3 aAncora;',
+                'attribute vec3 aDesvio;',
+                'attribute vec3 aDados;',
+                'attribute float aVeu;',
+                'uniform float uTempo;',
+                'uniform float uEscala;',
+                'varying vec2 vUv;',
+                'varying float vVeu;',
+                'void main() {',
+                '  vUv = uv;',
+                '  vVeu = aVeu;',
+                '  if (aVeu <= 0.0) { gl_Position = vec4(0.0, 0.0, -3.0, 1.0); return; }',
+                '  float t = fract(uTempo / 0.85 + aDados.x);',
+                '  float seg = t * 0.85;',
+                '  float subida = aDados.y * seg + 0.5 * 0.45 * seg * seg;',
+                '  vec3 centro = aAncora + aDesvio + vec3(0.0, subida, 0.0);',
+                '  vec3 canto = vec3((uv.x - 0.5) * 0.32 * aDados.z * uEscala, uv.y * 0.62 * aDados.z * uEscala, 0.0);',
+                '  vec4 mv = viewMatrix * vec4(centro, 1.0);',
+                '  mv.xyz += canto;',
+                '  gl_Position = projectionMatrix * mv;',
+                '}'
+            ].join('\n'),
+            fragmentShader: [
+                'uniform float uTempo;',
+                'uniform float uAlfa;',
+                'varying vec2 vUv;',
+                'varying float vVeu;',
+                'void main() {',
+                '  vec2 p = 2.0 * vUv - 1.0;',
+                '  float fase = uTempo * 5.0 + vUv.y * 6.0;',
+                '  float altura = 1.0 - vUv.y;',
+                '  p.x = (p.x + 0.17 * sin(fase) * altura) / (0.42 + 0.68 * vUv.y);',
+                '  float d = length(p);',
+                '  float forma = max(0.0, 1.0 - d);',
+                '  float alfa = pow(forma, 1.15);',
+                '  vec3 cor = mix(vec3(1.6, 0.08, 0.008), vec3(3.0, 0.94, 0.13), alfa);',
+                '  float a = alfa * 0.53 * uAlfa;',
+                '  if (vVeu < 0.99) { cor = mix(cor, vec3(0.604, 0.655, 0.706), 0.55); a *= vVeu; }',
+                '  gl_FragColor = vec4(cor, a);',
+                '  #include <tonemapping_fragment>',
+                '  #include <encodings_fragment>',
+                '}'
+            ].join('\n')
+        });
+        const chamasMesh = new T.Mesh(chamasGeo, chamasMat);
+        chamasMesh.frustumCulled = false;
+        scene.add(chamasMesh);
+        /* --- as brasas: um disco por taça, 8 instâncias fixas (§3) --- */
+        brasasMesh = new T.InstancedMesh(new T.IcosahedronGeometry(1, 0), new T.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), 8);
+        brasasMesh.frustumCulled = false;
+        scene.add(brasasMesh);
+        for (let i = 0; i < 8; i++) escreverBrasa(i, 'vista');
+        /* --- as 8 luzes, pré-criadas (§5.6): as mesmas nos 3 perfis --- */
+        for (let i = 0; i < 8; i++) {
+            const [bx, by, bz] = TABELA_BRASA[i];
+            const luz = new T.PointLight(0xff7a29, 0, 12, 2);
+            luz.position.set(bx, by + 0.26, bz);
+            luz.castShadow = false;
+            scene.add(luz);
+            braseiros[i].luz = luz;
+            fontesTochas.push(luz);
+        }
+        fontesChamas.push(chamasMesh, brasasMesh);
+        /* Janela de prova desta frente (só leitura). */
+        /* Nascimento (sucessão 6): aplica o estado que os proxies já
+           tiverem — a cena pode ter escrito o ambiente/véu antes de
+           o modelo chegar e as instâncias existirem. */
+        for (let i = 0; i < 8; i++) sincronizarTaca(i);
+        window.__fogoProva = { chamasGeo, brasasMesh, braseiros, tempoChama: () => tempoChama, avanco: () => avancoTempo };
+    };
     return { ground: grupo, height: () => 0, radius: 30, obstaculos: Object.freeze([]),
-        fontes: { fogueira: calor, tochas: [], chamas: [] },
-        ambienteBases: { fogueira: 9.0, tochas: 7.5 },
-        brasasFogueira: [], pecasFogueira: [], braseiros: [],
+        fontes, ambienteBases, brasasFogueira: [], pecasFogueira: [], braseiros,
         recomputarPedras() {}, definirFantasmaPedras() {},
         pedrasDiagnostico() { return { total: 0, casas: [], mortas: [], retrato: [], vivas: [], fantasmas: [], nv: 0, nf: 0 }; },
-        setTremulacao() {}, update() {}, quality() {} };
+        setTremulacao(on) { tremulacaoLigada = !!on; },
+        update(time) {
+            /* Relógio da chama (§5.5): avança com a tremulação ligada;
+               desligada, o avanço decai 1→0 em ~0,25 s e a pose congela
+               sem salto. O tempo da tremulação das luzes é o da cena. */
+            if (ultimoTempo == null) ultimoTempo = time;
+            const dt = Math.min(0.1, Math.max(0, time - ultimoTempo));
+            ultimoTempo = time;
+            avancoTempo += ((tremulacaoLigada ? 1 : 0) - avancoTempo) * Math.min(1, dt / 0.25);
+            if (avancoTempo < 0.001 && !tremulacaoLigada) avancoTempo = 0;
+            tempoChama += dt * avancoTempo;
+            if (chamasMat) chamasMat.uniforms.uTempo.value = tempoChama;
+            for (let i = 0; i < 8; i++) {
+                /* Tremulação (§5.5): o factor da casa, guardado por
+                   taça — a sincronização à escrita reutiliza entre
+                   frames o último valor calculado. */
+                fTaca[i] = tremulacaoLigada ? Math.sin(time * 9 + i) * .10 + Math.sin(time * 17) * .06 : 0;
+                /* Sincronização do véu/ambiente (§5.1): a mesma
+                   função que os interceptores chamam à escrita —
+                   aqui corre por frame como rede de segurança. */
+                sincronizarTaca(i);
+            }
+            /* Pulso lento das brasas (§3): multiplicador neutro. */
+            if (brasasMesh) brasasMesh.material.color.setScalar(0.96 + 0.04 * Math.sin(time * 1.7));
+        },
+        quality(nivel) {
+            /* §5.6: só muta — guarda o nível e escreve o instanceCount
+               sobre os buffers alocados no máximo. Luzes, brasas,
+               fontes e braseiros nunca são substituídos: NUM_POINT_LIGHTS
+               fica constante (17) e a troca não recompila materiais. */
+            if (!CONTAGEM_NIVEL[nivel]) return;
+            nivelGuardado = nivel;
+            if (chamasGeo) chamasGeo.instanceCount = CONTAGEM_NIVEL[nivel];
+        } };
 };
 
 /* Cenário próprio CC0 de terceiros não é necessário; escala em metros. */

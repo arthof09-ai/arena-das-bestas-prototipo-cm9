@@ -2548,7 +2548,7 @@
                     sun.shadow.mapSize.set(sombraMapa, sombraMapa);
                     if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
                 }
-                world.quality('alta');
+                world.quality(options.mapa === 'trono' ? q : 'alta');
                 if (world.recomputarPedras) world.recomputarPedras(veuNunca, veuMemoria);
                 ambReaplicar();
                 resize();

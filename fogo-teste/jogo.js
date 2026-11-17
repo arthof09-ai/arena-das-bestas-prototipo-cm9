@@ -6771,7 +6771,7 @@
      do Supervisor e do Crítico corre nas DUAS vistas (alimenta-se
      também da página da Party) — a guarda cobre SÓ a escrita no
      nó, nunca o handler inteiro. */
-  if (!mostrarFps) { const stOff = $('stats'); if (stOff) stOff.remove(); } else { const stOn = $('stats'); if (stOn) document.body.appendChild(stOn); }
+  if (!mostrarFps) { const stOff = $('stats'); if (stOff) stOff.remove(); }
   view.on('stats', s => {
     if (mostrarFps) { const st = $('stats'); if (st) st.textContent = `${Math.round(s.fps)} FPS · ${s.triangles ?? '—'} triângulos · ${s.drawCalls ?? '—'} chamadas`; }
     supAmostraStats(s);                      // Supervisor: fluidez (amostras e lacunas grandes)
@@ -7137,7 +7137,7 @@
     botaoAuto.setAttribute('aria-pressed', 'false');
     linhaAuto.appendChild(rotuloAuto);
     linhaAuto.appendChild(botaoAuto);
-    cfgEl.insertBefore(linhaAuto, null);
+    cfgEl.insertBefore(linhaAuto, $('stats'));
     botaoAuto.addEventListener('click', () => definirModoAutomatico(!modoAutomatico));
   }
 
@@ -7175,7 +7175,7 @@
     }
     linhaVelocidade.appendChild(rotuloVelocidade);
     linhaVelocidade.appendChild(grupoVelocidade);
-    cfgEl.insertBefore(linhaVelocidade, null);
+    cfgEl.insertBefore(linhaVelocidade, $('stats'));
   }
   function marcarVelocidade() {
     for (const { v, b } of botoesVelocidade) b.classList.toggle('on', v === velocidade);
@@ -7211,7 +7211,7 @@
   togVermelha.type = 'button';
   linhaVermelha.appendChild(rotuloVermelha);
   linhaVermelha.appendChild(togVermelha);
-  cfgEl.insertBefore(linhaVermelha, null);
+  cfgEl.insertBefore(linhaVermelha, $('stats'));
   function marcarVermelha() {
     togVermelha.classList.toggle('on', telaVermelha);
     togVermelha.textContent = telaVermelha ? 'Ligada' : 'Desligada';
@@ -7239,7 +7239,7 @@
   togPiscar.type = 'button';
   linhaPiscar.appendChild(rotuloPiscar);
   linhaPiscar.appendChild(togPiscar);
-  cfgEl.insertBefore(linhaPiscar, null);
+  cfgEl.insertBefore(linhaPiscar, $('stats'));
   function marcarPiscar() {
     togPiscar.classList.toggle('on', telaVermelhaPiscar);
     togPiscar.textContent = telaVermelhaPiscar ? 'Ligado' : 'Desligado';
@@ -7270,14 +7270,14 @@
   linhaFps.className = 'cfgrow';
   const rotuloFps = document.createElement('span');
   rotuloFps.className = 'cl';
-  rotuloFps.innerHTML = 'Mostrar FPS<small>os quadros por segundo, no canto superior direito do ecrã de jogo</small>';
+  rotuloFps.innerHTML = 'Mostrar FPS<small>os quadros por segundo, no fundo das configurações</small>';
   const togFps = document.createElement('button');
   togFps.id = 'tog-fps';
   togFps.className = 'tog';
   togFps.type = 'button';
   linhaFps.appendChild(rotuloFps);
   linhaFps.appendChild(togFps);
-  cfgEl.insertBefore(linhaFps, null);
+  cfgEl.insertBefore(linhaFps, $('stats'));
   function marcarFps() {
     togFps.classList.toggle('on', mostrarFps);
     togFps.textContent = mostrarFps ? 'Ligado' : 'Desligado';
@@ -7291,7 +7291,7 @@
         st.id = 'stats';
         st.className = 'stats';
         st.textContent = '— FPS';
-        document.body.appendChild(st);
+        cfgEl.appendChild(st);
       }
     } else if (st) st.remove();
   }
@@ -7301,7 +7301,7 @@
     marcarFps();
     aplicarMostrarFps();
     say(mostrarFps
-      ? 'Mostrar FPS <b>ligado</b> — os quadros por segundo aparecem no canto superior direito do ecrã de jogo.'
+      ? 'Mostrar FPS <b>ligado</b> — os quadros por segundo aparecem no fundo das configurações.'
       : 'Mostrar FPS <b>desligado</b> — os quadros por segundo não aparecem.');
   });
   marcarFps();
@@ -7320,7 +7320,7 @@
   const NOTA_SOM = 'Música: a do título e a da batalha. Efeitos: hoje, a chuva e o trovão; os sons da batalha usarão este volume quando existirem.';
   const tituloSom = document.createElement('h3');
   tituloSom.textContent = 'Som';
-  cfgEl.insertBefore(tituloSom, null);
+  cfgEl.insertBefore(tituloSom, $('stats'));
   const somUI = {};
   function linhaVolumeSom(chaveCfg, rotulo, sub, ler, aoMudar) {
     const linha = document.createElement('div');
@@ -7348,7 +7348,7 @@
     volctl.appendChild(saida);
     linha.appendChild(rot);
     linha.appendChild(volctl);
-    cfgEl.insertBefore(linha, null);
+    cfgEl.insertBefore(linha, $('stats'));
     return { reg, saida };
   }
   somUI.geral = linhaVolumeSom('hudt1-som-geral', 'Volume geral', null,
@@ -7368,7 +7368,7 @@
   togMudo.className = 'tog';
   linhaMudo.appendChild(rotuloMudo);
   linhaMudo.appendChild(togMudo);
-  cfgEl.insertBefore(linhaMudo, null);
+  cfgEl.insertBefore(linhaMudo, $('stats'));
   function marcarMudo() {
     togMudo.classList.toggle('on', somMudo);
     togMudo.textContent = somMudo ? 'Ligado' : 'Desligado';
@@ -7385,7 +7385,7 @@
   const notaSomEl = document.createElement('p');
   notaSomEl.className = 'cfg-nota';
   notaSomEl.textContent = NOTA_SOM;
-  cfgEl.insertBefore(notaSomEl, null);
+  cfgEl.insertBefore(notaSomEl, $('stats'));
   /* Restaurar o padrão (sentença J4): lista branca EXPLÍCITA, a
    * mesma da entrada — chave a chave, valores gravados à vista.
    * Proibido repor por prefixo/enumeração/clear(): as chaves do
@@ -7398,7 +7398,7 @@
   btnRestaurarCfg.className = 'cfg-restaurar';
   btnRestaurarCfg.textContent = 'Restaurar o padrão';
   linhaRestaurarSom.appendChild(btnRestaurarCfg);
-  cfgEl.insertBefore(linhaRestaurarSom, null);
+  cfgEl.insertBefore(linhaRestaurarSom, $('stats'));
   btnRestaurarCfg.addEventListener('click', () => {
     somGravar('hudt1-qualidade', 'auto');
     somGravar('hudt1-numeros-dano', 'ligado');
@@ -7620,7 +7620,7 @@
   togVd.type = 'button';
   linhaVd.appendChild(rotuloVd);
   linhaVd.appendChild(togVd);
-  cfgEl.insertBefore(linhaVd, null);
+  cfgEl.insertBefore(linhaVd, $('stats'));
   function marcarVd() {
     togVd.classList.toggle('on', contadorVdLigado);
     togVd.textContent = contadorVdLigado ? 'Ligado' : 'Desligado';
@@ -9119,30 +9119,6 @@
       }
       return false;
     },
-    /* GÉMEO × ELENCO (t-gemeo-elenco): o descritor do elenco — a
-       fonte única que o módulo de saves lê para validar a FORMA
-       do elenco sem lista congelada da sua parte. Só leitura, sem
-       token (não revela nada que este ficheiro servido já não
-       mostre). Devolve um objecto NOVO por chamada, congelado em
-       profundidade, com os valores das constantes vivas — nunca
-       literais novos, nunca derivados de ELENCO nem de
-       PREPARACAO_MESTRE (a ponte existe também na página da
-       Party: isto é fronteira, não estilo). versaoPonte NÃO é
-       sonda de capacidade: quem lê confere a presença deste
-       método e a versaoDescritor. */
-    descritorElenco() {
-      const d = {
-        versaoDescritor: 1,
-        idJogadora: PROPRIA,
-        tiposBase: ELENCO_BASE.map(b => b.id),
-        tiposPrep: [...PREP_TIPOS_MONSTRO],
-        tectoPorTipo: 9,   // a pinça do motor (elencoEfectivo/prepContagem)
-        sufixosLado: ['', 'n', 'a'],   // contra/neutro/time, na ordem de criação de elencoEfectivo
-        modelosTeste: Object.keys(FIGURAS_TESTE)
-      };
-      for (const k of Object.keys(d)) if (Array.isArray(d[k])) Object.freeze(d[k]);
-      return Object.freeze(d);
-    },
     capturar() {
       if (!ponteSavesActiva) return { ok: false, erro: 'SAVE_PONTE_INACTIVA' };
       /* Guarda de voo (correcção nomeada 3 / S-CRIT-04 e S-CRIT-09):
@@ -9242,29 +9218,6 @@
     },
     aplicar(e) {
       if (!ponteSavesActiva) return { ok: false, erro: 'SAVE_PONTE_INACTIVA' };
-      /* GÉMEO × ELENCO (t-gemeo-elenco): o CABIMENTO do elenco
-         confere-se ANTES da validação genérica, com nome próprio
-         — o conjunto de ids das unidades do save (fora as figuras
-         de teste declaradas, que o save admite por si) tem de ser
-         exactamente o elenco desta batalha aberta; desencontro é
-         SAVE_ELENCO_DIFERENTE, como SAVE_MAPA_DIFERENTE nomeia o
-         desencontro de mapa. Um save ilegível (sem a lista de
-         unidades) cai na validação genérica, que o recusa como
-         hoje. Nota lavrada no desenho (§9): o cabimento é por
-         CONJUNTO de ids — o lado da cópia de id base não viaja
-         no save. */
-      if (e && typeof e === 'object' && Array.isArray(e.unidades)) {
-        const idsElenco = new Set(ELENCO.map(u => u.id));
-        const idsSave = new Set();
-        let legivel = true;
-        for (const u of e.unidades) {
-          if (!u || typeof u !== 'object' || typeof u.id !== 'string') { legivel = false; break; }
-          if (!(vooModeloDe(u.id) && !idsElenco.has(u.id))) idsSave.add(u.id);
-        }
-        if (legivel && (idsSave.size !== idsElenco.size
-          || [...idsSave].some(id => !idsElenco.has(id))))
-          return { ok: false, erro: 'SAVE_ELENCO_DIFERENTE' };
-      }
       /* Validação total ANTES de tocar em qualquer coisa: save
          inválido não muda NADA (também fora do caminho UI). */
       const erroVal = validarEstadoParaAplicar(e);
@@ -9687,11 +9640,11 @@
   if (MODO_MESTRE) {
     const tituloAmb = document.createElement('h3');
     tituloAmb.textContent = 'Ambiente';
-    cfgEl.insertBefore(tituloAmb, null);
+    cfgEl.insertBefore(tituloAmb, $('stats'));
     const estadoAmbEl = document.createElement('div');
     estadoAmbEl.id = 'amb-estado';
     estadoAmbEl.className = 'amb-estado';
-    cfgEl.insertBefore(estadoAmbEl, null);
+    cfgEl.insertBefore(estadoAmbEl, $('stats'));
     ambUI.estadoEl = estadoAmbEl;
     /* Hora: 5 botões nomeados, ordem cronológica, âncoras exactas. */
     const linhaAmbHora = document.createElement('div');
@@ -9714,7 +9667,7 @@
     }
     linhaAmbHora.appendChild(rotuloAmbHora);
     linhaAmbHora.appendChild(grupoAmbHora);
-    cfgEl.insertBefore(linhaAmbHora, null);
+    cfgEl.insertBefore(linhaAmbHora, $('stats'));
     /* Hora exacta: deslizador 0–24, passo 0,1. Arrastar PRÉ-VISUALIZA
        (aplicarAmbiente sem gravar estado nem preferência); largar
        ASSENTA (grava estado da partida + preferência do Mestre). */
@@ -9734,7 +9687,7 @@
     linhaAmbFina.appendChild(rotuloAmbFina);
     linhaAmbFina.appendChild(deslizadorAmb);
     linhaAmbFina.appendChild(leituraAmb);
-    cfgEl.insertBefore(linhaAmbFina, null);
+    cfgEl.insertBefore(linhaAmbFina, $('stats'));
     ambUI.deslizador = deslizadorAmb;
     ambUI.leitura = leituraAmb;
     deslizadorAmb.addEventListener('input', () => {
@@ -9775,7 +9728,7 @@
     }
     linhaAmbChuva.appendChild(rotuloAmbChuva);
     linhaAmbChuva.appendChild(grupoAmbChuva);
-    cfgEl.insertBefore(linhaAmbChuva, null);
+    cfgEl.insertBefore(linhaAmbChuva, $('stats'));
     /* Precipitação: Chuva | Neve (VOLTA 3 — palavra dele: «a
      * chuva anterior não tava ruim, só era neve — tem que ter a
      * opção de chuva e a opção de neve»). Os botões Sem/Pouca/
@@ -9804,12 +9757,12 @@
     }
     linhaAmbPrecip.appendChild(rotuloAmbPrecip);
     linhaAmbPrecip.appendChild(grupoAmbPrecip);
-    cfgEl.insertBefore(linhaAmbPrecip, null);
+    cfgEl.insertBefore(linhaAmbPrecip, $('stats'));
     const notaNeveAmb = document.createElement('div');
     notaNeveAmb.className = 'amb-estado';
     notaNeveAmb.textContent = 'Com neve não há raios — o céu fica quieto.';
     notaNeveAmb.hidden = ambientePartida.precip !== 'neve';
-    cfgEl.insertBefore(notaNeveAmb, null);
+    cfgEl.insertBefore(notaNeveAmb, $('stats'));
     ambUI.notaNeve = notaNeveAmb;
     /* Raios: interruptor + «⚡ Raio agora» (inactivo salvo raios
        ligados e chuva ≠ Sem; pendente visível no próprio botão). */
@@ -9824,7 +9777,7 @@
     togAmbRaios.className = 'tog';
     linhaAmbRaios.appendChild(rotuloAmbRaios);
     linhaAmbRaios.appendChild(togAmbRaios);
-    cfgEl.insertBefore(linhaAmbRaios, null);
+    cfgEl.insertBefore(linhaAmbRaios, $('stats'));
     ambUI.togRaios = togAmbRaios;
     togAmbRaios.addEventListener('click', () =>
       ambAssentar({ hora: ambientePartida.hora, chuva: ambientePartida.chuva, raios: !ambientePartida.raios }, {}));
@@ -9840,7 +9793,7 @@
     btnAmbRaio.textContent = '⚡ Raio agora';
     linhaAmbRaio.appendChild(rotuloAmbRaio);
     linhaAmbRaio.appendChild(btnAmbRaio);
-    cfgEl.insertBefore(linhaAmbRaio, null);
+    cfgEl.insertBefore(linhaAmbRaio, $('stats'));
     ambUI.btnRaio = btnAmbRaio;
     btnAmbRaio.addEventListener('click', () => ambPedirRaioManual());
     /* Som do ambiente: opção pessoal deste aparelho. */
@@ -9855,7 +9808,7 @@
     togAmbSom.className = 'tog';
     linhaAmbSom.appendChild(rotuloAmbSom);
     linhaAmbSom.appendChild(togAmbSom);
-    cfgEl.insertBefore(linhaAmbSom, null);
+    cfgEl.insertBefore(linhaAmbSom, $('stats'));
     ambUI.togSom = togAmbSom;
     togAmbSom.addEventListener('click', () => {
       ambSomLigado = !ambSomLigado;
@@ -9875,7 +9828,7 @@
     togAmbTrem.className = 'tog';
     linhaAmbTrem.appendChild(rotuloAmbTrem);
     linhaAmbTrem.appendChild(togAmbTrem);
-    cfgEl.insertBefore(linhaAmbTrem, null);
+    cfgEl.insertBefore(linhaAmbTrem, $('stats'));
     ambUI.togTremulacao = togAmbTrem;
     togAmbTrem.addEventListener('click', () => {
       ambTremulacaoLigada = !ambTremulacaoLigada;
@@ -9896,7 +9849,7 @@
     btnAmbVoltar.textContent = 'Voltar à noite do ritual';
     linhaAmbVoltar.appendChild(rotuloAmbVoltar);
     linhaAmbVoltar.appendChild(btnAmbVoltar);
-    cfgEl.insertBefore(linhaAmbVoltar, null);
+    cfgEl.insertBefore(linhaAmbVoltar, $('stats'));
     btnAmbVoltar.addEventListener('click', () => ambAssentar({ ...AMBIENTE_RITUAL }, {}));
     /* Ponto no ⚙ (só Mestre): visível quando o ambiente ≠ ritual. */
     const btnCfgAmb = $('btn-config');
@@ -9925,7 +9878,7 @@
   if (MODO_MESTRE) {
     const tituloCamLivre = document.createElement('h3');
     tituloCamLivre.textContent = 'Câmera livre';
-    cfgEl.insertBefore(tituloCamLivre, null);
+    cfgEl.insertBefore(tituloCamLivre, $('stats'));
     const linhaCamLivre = document.createElement('div');
     linhaCamLivre.className = 'cfgrow';
     const rotuloCamLivre = document.createElement('span');
@@ -9938,14 +9891,14 @@
     btnCamLivre.textContent = 'Entrar na câmera livre';
     linhaCamLivre.appendChild(rotuloCamLivre);
     linhaCamLivre.appendChild(btnCamLivre);
-    cfgEl.insertBefore(linhaCamLivre, null);
+    cfgEl.insertBefore(linhaCamLivre, $('stats'));
     const ajudaCamLivre = document.createElement('div');
     ajudaCamLivre.className = 'cfgrow';
     const ajudaTxtCamLivre = document.createElement('span');
     ajudaTxtCamLivre.className = 'cl';
     ajudaTxtCamLivre.textContent = 'Você anda e voa dentro do mapa para o analisar. Só aparece para você.';
     ajudaCamLivre.appendChild(ajudaTxtCamLivre);
-    cfgEl.insertBefore(ajudaCamLivre, null);
+    cfgEl.insertBefore(ajudaCamLivre, $('stats'));
 
     /* ----- a HUD de andar: os elementos da sala, com os tamanhos dela ----- */
     const joyCamLivre = document.createElement('div');
@@ -10182,7 +10135,7 @@
   if (MODO_MESTRE) {
     const tituloEsc = document.createElement('h3');
     tituloEsc.textContent = 'Escala';
-    cfgEl.insertBefore(tituloEsc, null);
+    cfgEl.insertBefore(tituloEsc, $('stats'));
     const linhaEsc = document.createElement('div');
     linhaEsc.className = 'cfgrow';
     const rotuloEsc = document.createElement('span');
@@ -10203,7 +10156,7 @@
     }
     linhaEsc.appendChild(rotuloEsc);
     linhaEsc.appendChild(grupoEsc);
-    cfgEl.insertBefore(linhaEsc, null);
+    cfgEl.insertBefore(linhaEsc, $('stats'));
     escSincronizarPainel();
   } else {
     /* RN-4 (tranche «Órfãs do Ledger», A-18): na vista da Party a
@@ -10225,7 +10178,7 @@
     valorEscParty.id = 'esc-vigente';
     linhaEscParty.appendChild(rotuloEscParty);
     linhaEscParty.appendChild(valorEscParty);
-    cfgEl.insertBefore(linhaEscParty, null);
+    cfgEl.insertBefore(linhaEscParty, $('stats'));
     escUI.vigenteParty = valorEscParty;
     escSincronizarPainel();
   }
@@ -10250,7 +10203,7 @@
     botaoVoltarSup.textContent = 'Voltar ao último estado bom';
     linhaSupA.appendChild(rotuloSupA);
     linhaSupA.appendChild(botaoVoltarSup);
-    cfgEl.insertBefore(linhaSupA, null);
+    cfgEl.insertBefore(linhaSupA, $('stats'));
     const linhaSupB = document.createElement('div');
     linhaSupB.className = 'cfgrow';
     const rotuloSupB = document.createElement('span');
@@ -10263,19 +10216,19 @@
     botaoExportarSup.textContent = 'Exportar registo';
     linhaSupB.appendChild(rotuloSupB);
     linhaSupB.appendChild(botaoExportarSup);
-    cfgEl.insertBefore(linhaSupB, null);
+    cfgEl.insertBefore(linhaSupB, $('stats'));
     alertasSupEl = document.createElement('div');
     alertasSupEl.id = 'sup-alertas';
-    cfgEl.insertBefore(alertasSupEl, null);
+    cfgEl.insertBefore(alertasSupEl, $('stats'));
     preSupEl = document.createElement('pre');
     preSupEl.id = 'sup-json';
-    cfgEl.insertBefore(preSupEl, null);
+    cfgEl.insertBefore(preSupEl, $('stats'));
     /* EXP-R2: linha de estado própria da secção do Supervisor —
        o retorno visível do «Voltar» e do «Exportar», só dentro
        das configurações. */
     supUltimoEl = document.createElement('div');
     supUltimoEl.id = 'sup-ultimo';
-    cfgEl.insertBefore(supUltimoEl, null);
+    cfgEl.insertBefore(supUltimoEl, $('stats'));
     botaoVoltarSup.addEventListener('click', () => supRestaurar());
     botaoExportarSup.addEventListener('click', () => supExportar());
   }
@@ -10405,10 +10358,10 @@
     botaoLimparCrit.textContent = 'Limpar histórico de análises';
     linhaCrit.appendChild(rotuloCrit);
     linhaCrit.appendChild(botaoLimparCrit);
-    cfgEl.insertBefore(linhaCrit, null);
+    cfgEl.insertBefore(linhaCrit, $('stats'));
     dicasSupEl = document.createElement('div');
     dicasSupEl.id = 'sup-dicas';
-    cfgEl.insertBefore(dicasSupEl, null);
+    cfgEl.insertBefore(dicasSupEl, $('stats'));
     botaoLimparCrit.addEventListener('click', () => {
       supCritAgg = supCritAggVazio();      // limpa SÓ o agregado entre batalhas
       supCritAggGuardar();
@@ -12160,11 +12113,11 @@
   if (MODO_MESTRE) {
     const tituloVisao = document.createElement('h3');
     tituloVisao.textContent = 'Visão';
-    cfgEl.insertBefore(tituloVisao, null);
+    cfgEl.insertBefore(tituloVisao, $('stats'));
     const estadoVisaoEl = document.createElement('div');
     estadoVisaoEl.id = 'visao-estado';
     estadoVisaoEl.className = 'amb-estado';
-    cfgEl.insertBefore(estadoVisaoEl, null);
+    cfgEl.insertBefore(estadoVisaoEl, $('stats'));
     visaoUI.estadoEl = estadoVisaoEl;
     const visaoLinha = (rotulo, aria, opcoes, registro, chave, sub) => {
       const linha = document.createElement('div');
@@ -12194,7 +12147,7 @@
       }
       linha.appendChild(rot);
       linha.appendChild(grupo);
-      cfgEl.insertBefore(linha, null);
+      cfgEl.insertBefore(linha, $('stats'));
     };
     visaoLinha('Modo', 'Modo de visão das jogadoras',
       [['zero', 'Zero'], ['parcial', 'Parcial'], ['total', 'Total'], ['ultra', 'Ultra']], visaoUI.botoesModo, 'modo',
@@ -12230,7 +12183,7 @@
     }
     linhaPrevia.appendChild(rotPrevia);
     linhaPrevia.appendChild(grupoPrevia);
-    cfgEl.insertBefore(linhaPrevia, null);
+    cfgEl.insertBefore(linhaPrevia, $('stats'));
     visaoSincronizarPainel();
   }
 
@@ -12274,7 +12227,7 @@
   corpoCfg.appendChild(indiceWrapCfg); corpoCfg.appendChild(conteudoCfg);
   const maisConteudoCfg = document.createElement('div'); maisConteudoCfg.className = 'cfg-mais-conteudo'; maisConteudoCfg.textContent = 'Há mais abaixo ↓';
   corpoCfg.appendChild(maisConteudoCfg);
-  cfgEl.insertBefore(corpoCfg, null);
+  cfgEl.insertBefore(corpoCfg, $('stats'));
   const paineisCfg = {}, celulasCfg = {};
   let cfgAbaActual = 'jogo';   // memória da última aba DESTA superfície (só variável — nenhuma chave nova)
   function activarAbaCfg(id) {
@@ -12985,6 +12938,20 @@
       return true;
     }
   });
+
+  /* ---------- RÓTULO DA PÁGINA DE TESTE (só nesta cópia) ----------
+   * Pílula ao topo do ecrã: «TESTE — FOGO DA SALA». Não intercepta
+   * toques, não é interface de acção e NÃO existe no jogo vivo —
+   * serve para o Mestre saber que está na página de teste do fogo
+   * (assunção C5 da SENTENCA-PUBLICACAO). */
+  (function rotuloTesteFogo() {
+    if (document.getElementById('teste-fogo-rotulo')) return;
+    var r = document.createElement('div');
+    r.id = 'teste-fogo-rotulo';
+    r.textContent = 'TESTE — FOGO DA SALA';
+    r.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);left:50%;transform:translateX(-50%);z-index:200;background:rgba(10,8,5,.72);color:#f3e2b3;font:600 13px/1.2 system-ui,sans-serif;letter-spacing:.08em;padding:6px 14px;border-radius:999px;white-space:nowrap;pointer-events:none';
+    document.body.appendChild(r);
+  })();
 
   /* ---------- arranque ---------- */
   view.ready.then(() => {

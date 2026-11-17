@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_109';
+  var VERSAO_JOGO = 'TESTE-FOGO';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -332,7 +332,7 @@
       padrao: 'ligado', ligado: 'Ligado', desligado: 'Desligado' },
     { chave: 'hudt1-mostrar-fps', rotulo: 'Mostrar FPS', tipo: 'tog',
       padrao: 'desligado', ligado: 'Ligado', desligado: 'Desligado',
-      sub: 'quadros por segundo, no canto superior direito do ecrã de jogo' }
+      sub: 'quadros por segundo, no fundo das configurações do jogo' }
   ];
   function lerDefinicao(def) {
     try {
