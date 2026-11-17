@@ -2285,7 +2285,7 @@
                 label.className = 'nome';
                 label.textContent = data.nome;
                 labels.appendChild(label);
-                const u = { id: data.id, nome: data.nome, x: data.x, z: data.y, altitude: data.altitude ?? 0, vivo: data.vivo, root, pivot, label, size: data.alturaMetros, queue: [], step: null, clips: { idle: data.animacoes?.idle, andar: data.animacoes?.andar, ataque:data.animacoes?.ataque, reacao:data.animacoes?.reacao }, animations: [], removed: false, oculto: false, model };
+                const u = { id: data.id, nome: data.nome, x: data.x, z: data.y, altitude: data.altitude ?? 0, vivo: data.vivo, root, pivot, label, size: data.alturaMetros, queue: [], step: null, shAnc: null, clips: { idle: data.animacoes?.idle, andar: data.animacoes?.andar, ataque:data.animacoes?.ataque, reacao:data.animacoes?.reacao }, animations: [], removed: false, oculto: false, model };
                 const tint = [0x87b4b0, 0xe5bb74, 0xb98b9d, 0xb5c3ce, 0xb7b77c][units.size % 5];
                 u.ring = ring(.56, tint);
                 u.contact = new T.Mesh(new T.CircleGeometry(.5, 24), material(0x080c12, .3));
@@ -3016,6 +3016,7 @@
                     return;
                 tCena += dt;   // relógio único da Dinâmica e do acoplamento: soma dos dt do ciclo (§5.1)
                 let dirty = !!presentation;
+                let longe = false;
                 updatePresentation(dt);
                 dinTick(dt);   // a viragem aplica-se aqui: depois da apresentação, antes de calcular a = yaw (§5.4)
                 acoplTick();   // compromisso do acoplamento (§14.3.3): candidato estável há 150 ms
@@ -3084,11 +3085,17 @@
                         u.label.textContent = camada > 0 ? `${u.nome} \u2b06${camada}` : u.nome;
                     }
                     if (u.oculto) { u.ring.visible = u.contact.visible = u.tether.visible = false; }
+                    /* t-andar-teleporte: âncora da sombra desta figura —
+                       nasce na posição actual (sem disparo); a andar
+                       (moving: step ou fila), ≥0,30 m dela = longe. */
+                    if (!u.shAnc) u.shAnc = u.root.position.clone();
+                    else if (!longe && moving(u) && u.shAnc.distanceToSquared(u.root.position) >= .09) longe = true;
                 });
                 world.update(now / 1000);
-                if (dirty && now - shadowAt > 100) {
+                if (dirty && (now - shadowAt > 100 || longe)) {
                     renderer.shadowMap.needsUpdate = true;
                     shadowAt = now;
+                    units.forEach(u => { if (u.shAnc) u.shAnc.copy(u.root.position); });
                 }
                 if (mode === 'livre') {
                     /* Câmera livre: o bloco da ortográfica NÃO corre — a
@@ -3215,7 +3222,7 @@
                 if (ambNevoaExtra > 0 && scene.fog && typeof scene.fog.density === 'number') { ambFogD0 = scene.fog.density; scene.fog.density = ambFogD0 + ambNevoaExtra; }
                 try { ceuRenderizar(); } finally { if (ambFogD0 !== null) scene.fog.density = ambFogD0; }
                 const boxes = [];
-                const bodies = [...units.values()].filter(u => !u.oculto).map(u => unitRect(u)).filter(Boolean);
+                const bodies = [...units.values()].filter(u => !u.oculto).map(u => ({ dono: u, rect: unitRect(u) })).filter(e => e.rect);
                 for (const u of [...units.values()].sort((a, b) => (b.id === selected) - (a.id === selected))) {
                     if (u.oculto) { u.label.hidden = true; continue; }
                     const p = screen(u.root.position.clone().add(new T.Vector3(0, u.vivo ? u.size + .18 : .55, 0))), hw = Math.min(120, u.nome.length * 3.2 + 10), candidates = [];
@@ -3223,7 +3230,7 @@
                         for (const dy of [0, -28, 28, -56, 56])
                             candidates.push({ x: p.x + dx, y: p.y + dy, cost: dx * dx + dy * dy });
                     candidates.sort((a, b) => a.cost - b.cost);
-                    const best = candidates.find(p => p.x > hw && p.x < width - hw && p.y > 24 && p.y < height - 90 && !bodies.some(b => p.x + hw > b.left - 2 && p.x - hw < b.right + 2 && p.y > b.top - 2 && p.y - 22 < b.bottom + 2) && !boxes.some(b => p.x + hw > b.l && p.x - hw < b.r && p.y > b.t && p.y - 22 < b.b));
+                    const best = candidates.find(p => p.x > hw && p.x < width - hw && p.y > 24 && p.y < height - 90 && !bodies.some(e => e.dono !== u && p.x + hw > e.rect.left - 2 && p.x - hw < e.rect.right + 2 && p.y > e.rect.top - 2 && p.y - 22 < e.rect.bottom + 2) && !boxes.some(b => p.x + hw > b.l && p.x - hw < b.r && p.y > b.t && p.y - 22 < b.b));
                     u.label.hidden = !best || p.depth < -1 || p.depth > 1;
                     if (best) {
                         boxes.push({ l: best.x - hw, r: best.x + hw, t: best.y - 22, b: best.y });
