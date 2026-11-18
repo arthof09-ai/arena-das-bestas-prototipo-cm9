@@ -1,0 +1,496 @@
+/* Campo de Batalha — HUD do jogo (tranche T0).
+   Linguagem visual dos mockups aprovados (DESENHO-RECONSTRUCAO.md):
+   pergaminho e dourado sobre painéis escuros, UMA linguagem só. */
+:root{
+  color-scheme:dark;
+  --ouro:#c9a227; --ouro-claro:#ffe9a8; --ouro-vivo:#ffd94d;
+  --pergaminho:#f3e9d2; --pergaminho-fraco:#cbbd93; --pergaminho-mudo:#9d8f6d;
+  --painel:rgba(16,12,8,.55); --painel-denso:linear-gradient(160deg, rgba(26,20,12,.95), rgba(14,11,7,.97));
+  --linha:rgba(201,162,39,.85); --linha-fraca:rgba(201,162,39,.3);
+  --alma:#8a76c9;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{overflow:hidden;background:#0a0f0a;color:var(--pergaminho);
+  font-family:'Segoe UI',system-ui,-apple-system,sans-serif}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;touch-action:manipulation}
+button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
+
+/* ---------- mundo ---------- */
+#mapa{position:fixed;inset:0}
+#mapa canvas{display:block;width:100%;height:100%;touch-action:none}
+/* Camada de etiquetas criada pela cena da rodada 2 dentro de #mapa:
+   tem de cobrir a montagem inteira (contrato do README da entrega). */
+#mapa .etiquetas{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.nome{position:absolute;top:0;left:0;padding:3px 8px;border:1px solid rgba(201,162,39,.35);
+  border-bottom:2px solid var(--cor,#c9a227);border-radius:5px;background:rgba(10,8,5,.82);
+  color:#fff8e5;font-size:12px;line-height:16px;font-weight:600;white-space:nowrap;will-change:transform;
+  max-width:min(240px,calc(100vw - 24px));overflow:hidden;text-overflow:ellipsis}
+.nome[hidden]{display:none}
+.nome.ativa{background:#eee5ca;color:#25332b}
+
+/* ---------- cantos: coluna do canto superior esquerdo ---------- */
+#cantos{position:fixed;left:max(10px,env(safe-area-inset-left));top:max(10px,env(safe-area-inset-top));
+  z-index:26;display:flex;flex-direction:column;gap:8px}
+.cornerbtn{width:44px;height:44px;border-radius:50%;background:rgba(16,12,8,.62);
+  border:1px solid var(--linha);color:var(--ouro-claro);font-size:19px;font-weight:800;
+  display:flex;align-items:center;justify-content:center}
+.cornerbtn.quadrado{border-radius:12px}
+.cornerbtn.on{background:var(--ouro);color:#1c1508;box-shadow:0 0 14px rgba(255,217,77,.45)}
+#btn-alerta{font-size:17px}
+
+/* ---------- pop-up de configurações rápidas (sob a engrenagem) ---------- */
+/* Altura máxima: o fundo nunca passa da faixa (topo 170 + altura ≤ ecrã-242);
+   o que não couber rola DENTRO do pop-up — estatísticas incluídas. */
+/* Folha das Configurações em abas (t-config-abas, SPEC §1.1):
+   coluna flexível — cabeçalho pegajoso, corpo (índice + conteúdo a
+   rolar DENTRO da aba) e #stats reservado no fundo, fora da rolagem.
+   Largo (≥600 px): folha de 560–600 px. Estreito (<600 px): 366 px
+   (94vw) × 78vh, encostada ao fundo acima da faixa. */
+#cfgpop{position:fixed;left:max(10px,env(safe-area-inset-left));top:170px;z-index:27;
+  width:min(600px,94vw);max-height:calc(100vh - 242px);
+  display:flex;flex-direction:column;
+  /* D3-P1-11(a) (F-09/REF_75): fundo a alfa 0,55, local a este
+     selector — --painel-denso fica intacta para os outros
+     consumidores (ex.: #desgraca-cartao). */
+  background:linear-gradient(160deg, rgba(26,20,12,.55), rgba(14,11,7,.55));border:1px solid var(--linha);
+  border-radius:12px;padding:9px 12px}
+#cfgpop[hidden]{display:none}
+/* T-D3-TEXTOS12 (D3-P0-4, executada na F-21): os textos do pop-up do
+   ⚙ vivem a pelo menos 12 px (a cláusula nomeia .cl, small, h3 e
+   .stats; a subida cobre todas as regras de texto do pop-up) — e a
+   mensagem da faixa acompanha (11,5/10,5 → 12). */
+#cfgpop h3{font-family:Georgia,'DejaVu Serif',serif;font-size:12px;letter-spacing:.18em;
+  color:var(--ouro);text-transform:uppercase;margin-bottom:5px}
+/* Faixa de cabeçalho PEGAJOSA do pop-up (t-config-entrada, lei
+   11/11 10:36): primeiro filho, colada ao topo quando a lista
+   rola — o ✕ está sempre visível, sem descer a lista. O fundo é o
+   do próprio painel: as linhas passam POR BAIXO dela. */
+.cfg-cabecalho{position:sticky;top:-9px;z-index:3;display:flex;justify-content:space-between;
+  align-items:flex-start;margin:-9px -12px 6px;padding:9px 12px 3px;
+  background:var(--painel-denso);border-radius:12px 12px 0 0}
+.cfg-fechar{flex:none;width:32px;height:32px;margin-left:8px;border:1px solid rgba(201,162,39,.8);
+  border-radius:8px;background:rgba(28,21,12,.85);color:var(--ouro-claro);
+  font-size:13px;font-weight:700;cursor:pointer;line-height:1}
+/* Reguadores de volume % (secção Som pessoal; a entrada usa as
+   mesmas classes — as folhas carregam juntas na página única) */
+.volctl{display:flex;align-items:center;gap:8px;flex:1;min-width:0;justify-content:flex-end}
+.vol-range{flex:1;min-width:56px;min-height:44px;accent-color:var(--ouro)}
+.vol-valor{font-size:12px;color:var(--pergaminho);font-variant-numeric:tabular-nums;
+  min-width:36px;text-align:right}
+.cfg-nota{font-size:12px;line-height:1.45;color:var(--pergaminho-fraco);
+  border:1px dashed rgba(201,162,39,.35);border-radius:8px;padding:7px 9px;margin:7px 0}
+.cfg-restaurar{width:100%;height:40px;border:1px solid rgba(201,162,39,.8);border-radius:8px;
+  background:rgba(28,21,12,.85);color:var(--ouro-claro);font-size:12px;font-weight:700;cursor:pointer}
+.cfgrow{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:5px 0;border-top:1px dashed rgba(201,162,39,.25)}
+.cfgrow:first-of-type{border-top:0}
+.cfgrow .cl{font-size:12px;color:var(--pergaminho)}
+.cfgrow .cl small{display:block;font-size:12px;color:var(--pergaminho-mudo)}
+.seg{display:flex;border:1px solid rgba(201,162,39,.8);border-radius:8px;overflow:hidden;height:46px}
+.seg button{background:rgba(28,21,12,.75);color:var(--pergaminho-fraco);font-size:12px;font-weight:700;
+  padding:0 10px;display:flex;align-items:center}
+.seg button.on{background:var(--ouro);color:#1c1508}
+.cfgrow.vel{flex-direction:column;align-items:stretch;gap:5px}
+.cfgrow.vel .seg button{flex:1}
+.zoomctl{display:flex;align-items:center;gap:6px}
+.zoomctl .zb{width:44px;height:44px;border-radius:8px;border:1px solid rgba(201,162,39,.8);
+  background:rgba(28,21,12,.85);color:var(--ouro-claro);font-size:15px;
+  display:flex;align-items:center;justify-content:center}
+.zoomctl .zv{font-size:12px;font-weight:700;color:#fff3d0;min-width:36px;text-align:center}
+.tog{min-width:74px;height:44px;display:inline-flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;padding:0 8px;border-radius:8px;
+  border:1px solid rgba(201,162,39,.8);background:rgba(28,21,12,.85);color:var(--pergaminho-fraco)}
+.tog.on{background:var(--ouro);color:#1c1508}
+#stats{position:fixed;top:max(10px, env(safe-area-inset-top, 0px));right:max(10px, env(safe-area-inset-right, 0px));z-index:20;background:var(--painel-denso);border:1px solid var(--linha);border-radius:9px;padding:5px 9px;font-size:13px;line-height:1.2;color:var(--pergaminho);font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none}
+/* ---------- estrutura das abas do ⚙ ----------
+   REF_88: a barra de abas é UMA fileira horizontal só com os
+   nomes (a explicação de cada aba vive dentro da aba, no topo) —
+   acabou a coluna de 172 px e as grelhas de cartões do Estreito;
+   as faixas de grupo viram rótulos compactos dentro da fileira e,
+   se as abas não couberem, a fileira desliza na horizontal. */
+.cfg-corpo{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;gap:8px}
+.cfg-indice-wrap{position:relative;flex:none;display:flex;min-width:0}
+.cfg-indice{flex:1;min-width:0;min-height:0;overflow-x:auto;overflow-y:hidden;display:flex;flex-direction:row;gap:4px;align-items:stretch}
+.cfg-celulas-todos,.cfg-celulas-suas{display:contents}
+.cfg-faixa{flex:none;display:flex;align-items:center;justify-content:center;padding:0 4px;
+  font-family:Georgia,'DejaVu Serif',serif;font-size:12px;letter-spacing:.12em;
+  color:var(--ouro);text-transform:uppercase;text-align:center;white-space:nowrap}
+.cfg-celula{height:36px;flex:none;display:flex;align-items:center;justify-content:center;
+  text-align:center;padding:4px 12px;border:1px solid rgba(201,162,39,.45);border-radius:8px;
+  background:rgba(28,21,12,.6);cursor:pointer}
+.cfg-celula b{font-size:13px;color:var(--pergaminho);white-space:nowrap;line-height:1.15}
+.cfg-celula.on{background:var(--ouro);border-color:var(--ouro)}
+.cfg-celula.on b{color:#1c1508}
+.cfg-mais{position:absolute;top:0;right:0;bottom:0;display:none;align-items:center;justify-content:flex-end;
+  padding:0 4px 0 22px;font-size:12px;font-weight:700;color:var(--ouro-claro);
+  background:linear-gradient(to left,var(--painel-denso) 55%,rgba(20,15,8,0));pointer-events:none}
+.cfg-mais.on{display:flex}
+.cfg-mais-conteudo{position:absolute;left:0;right:0;bottom:0;display:none;justify-content:center;padding:12px 0 2px;font-size:12px;font-weight:700;color:var(--ouro-claro);background:linear-gradient(rgba(20,15,8,0),rgba(14,11,7,.97) 45%);pointer-events:none;z-index:2}
+.cfg-mais-conteudo.on{display:flex}
+.cfg-conteudo{flex:1;min-width:0;min-height:0;overflow-y:auto}
+.cfg-aba{display:none}
+.cfg-aba.activa{display:block}
+.cfg-grupo{margin-top:10px}
+.cfg-grupo:first-child{margin-top:0}
+.cfg-frase{font-size:12px;line-height:1.45;color:var(--pergaminho-fraco);margin:2px 0 6px}
+.cfg-aba-frase{font-size:12px;line-height:1.45;color:var(--pergaminho);margin:0 0 8px}
+.cfg-restaurar-zona{margin-top:10px}
+.cfg-glossario b{color:var(--ouro-claro)}
+.seg.disabled{opacity:.45}
+.cfg-keys{width:100%;border-collapse:collapse}
+.cfg-keys td{padding:4px;border-top:1px dashed rgba(201,162,39,.25);vertical-align:top}
+.cfg-keys tr:first-child td{border-top:0}
+.cfg-chip{display:inline-block;border:1px solid rgba(201,162,39,.8);border-radius:6px;
+  padding:2px 6px;font-size:12px;font-weight:700;color:var(--ouro-claro);white-space:nowrap}
+.cfg-kact{font-size:12px;font-weight:700;color:var(--pergaminho);white-space:nowrap;width:86px}
+.cfg-ktut{font-size:12px;line-height:1.4;color:var(--pergaminho-fraco)}
+.cfg-keys-livre td{border-top:0;padding:2px 4px}
+@media (max-width:599px){
+  #cfgpop{width:min(366px,94vw);top:auto;bottom:calc(64px + env(safe-area-inset-bottom, 0px));height:min(78vh,calc(100vh - 170px));max-height:none}
+  .cfg-corpo{gap:6px}
+  .cfg-mais-conteudo{left:0}
+}
+/* Cartão da desgraça (T-DESGRACA-NADA): o cartão de decisão do
+   Mestre sobre a falha crítica — a mesma pele dos painéis da casa
+   (fundo denso, linha de ouro), por cima do mundo e por baixo do ⚙. */
+#desgraca-cartao{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(66px + env(safe-area-inset-bottom, 0px));z-index:26;
+  width:min(430px,calc(100vw - 20px));max-height:calc(100vh - 140px);overflow-y:auto;
+  background:var(--painel-denso);border:1px solid var(--linha);
+  border-radius:12px;padding:10px 12px;box-shadow:0 8px 28px rgba(0,0,0,.55)}
+#desgraca-cartao[hidden]{display:none}
+#desgraca-cartao h3{font-family:Georgia,'DejaVu Serif',serif;font-size:10px;letter-spacing:.18em;
+  color:var(--ouro);text-transform:uppercase;margin-bottom:5px}
+#dg-proposta{font-size:12px;line-height:1.35;color:var(--pergaminho);margin-bottom:8px}
+#dg-proposta b{color:#fff3d0}
+#dg-opcoes{display:flex;flex-direction:column;gap:6px}
+#dg-opcoes .btn{width:100%;height:40px;justify-content:flex-start}
+#dg-opcoes .btn:disabled{opacity:.45;cursor:default}
+#dg-opcoes .dg-motivo{font-size:10px;line-height:1.3;color:var(--pergaminho-mudo);margin:-2px 0 2px 2px}
+/* M1 (portão dos monstros): a opção MARCADA do cartão do monstro
+   (marcar ≠ aplicar — o «Aplicar» é outro botão) e a linha que
+   nomeia a escolha marcada. */
+#dg-opcoes .btn.marcada{outline:2px solid var(--ouro-vivo);outline-offset:-2px;background:rgba(255,157,0,.16)}
+#dg-opcoes .dg-escolhida{font-size:11px;line-height:1.35;color:var(--pergaminho);margin:2px 0 0 2px}
+#dg-opcoes .dg-escolhida b{color:#fff3d0}
+#dg-nota{margin-top:8px;font-size:10px;line-height:1.35;color:var(--pergaminho-mudo)}
+/* Supervisor do Comestre (pós-críticos T1.5, Visual A8): a área de
+   alertas e o <pre> do registo exportado ficam CONTIDOS dentro do
+   pop-up de 252 px — altura máxima com rolagem interna e quebra de
+   linha, sem transbordo horizontal nem pop-up descontrolado. */
+#sup-alertas{max-height:96px;overflow-y:auto;font-size:11px;line-height:1.4;
+  color:var(--pergaminho-fraco);overflow-wrap:break-word;word-break:break-word}
+#sup-json{max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:break-word;
+  word-break:break-word;font-size:10px;line-height:1.35;color:var(--pergaminho-fraco)}
+/* Correcções finais T1.5 (EXP-R2): a linha de estado do Supervisor
+   (#sup-ultimo) fica contida no pop-up, na mesma língua visual. */
+#sup-ultimo{font-size:11px;line-height:1.4;color:var(--pergaminho-fraco);
+  overflow-wrap:break-word;word-break:break-word;padding:4px 0}
+/* Supervisor-Crítico (T1.7): a lista «Dicas do Supervisor» fica
+   contida no pop-up como a de alertas — altura máxima com rolagem
+   interna e quebra de linha. Só existe dentro das configurações. */
+#sup-dicas{max-height:120px;overflow-y:auto;font-size:11px;line-height:1.4;
+  color:var(--pergaminho-fraco);overflow-wrap:break-word;word-break:break-word}
+/* Correcções T1.7 (R-EXP-6a): os títulos de categoria da lista de
+   dicas ganham a língua dos h3 do pop-up (dourado, 10 px, maiúsculas
+   com espaçamento) e cada dica ganha respiro — margem inferior e
+   separador tracejado como o das .cfgrow. Sem isto, a lista cheia
+   era um muro de texto onde as categorias se perdiam. */
+#sup-dicas .sup-cat{font-family:Georgia,'DejaVu Serif',serif;font-size:10px;
+  letter-spacing:.18em;color:var(--ouro);text-transform:uppercase;margin:7px 0 3px}
+#sup-dicas .sup-cat:first-child{margin-top:0}
+#sup-dicas .sup-dica{margin-bottom:6px;padding-bottom:6px;
+  border-bottom:1px dashed rgba(201,162,39,.25)}
+
+/* ---------- ecrãs baixos e largos (tranche F5) ----------
+   Num celular deitado (≤560 px de altura) o pop-up pendurado na
+   engrenagem mostrava 148 px de 519 — os controlos de baixo ficavam
+   inalcançáveis na prática. Aqui o pop-up vira uma folha encostada ao
+   lado da coluna de cantos, do topo a 64 px do fundo, com as linhas em
+   duas colunas: a 390 px a janela é de 316 px para ~308 de conteúdo —
+   sem rolagem. Fora desta consulta, nada muda. Só CSS: controlos,
+   ids e ligações intactos. */
+@media (max-height:560px) and (min-width:600px){
+  /* O regime antigo de folha em 2 colunas foi ABSORVIDO pelas abas
+     (SPEC §1.1): em ecrã baixo e largo vale a geometria Largo — a
+     folha encosta ao topo e o conteúdo rola dentro da aba activa. */
+  #cfgpop{top:max(10px,env(safe-area-inset-top));max-height:calc(100vh - 74px)}
+}
+
+/* ---------- ficha fechada: chip flutuante (só a própria) ---------- */
+#fichachip{position:fixed;left:max(12px,env(safe-area-inset-left, 0px));bottom:calc(68px + env(safe-area-inset-bottom, 0px));width:182px;z-index:20;text-align:left;
+  background:var(--painel);border:1px solid var(--linha);border-radius:11px;padding:8px 10px 9px}
+#fichachip[hidden]{display:none}
+#fichachip .fh{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+#fichachip .fname{font-family:Georgia,'DejaVu Serif',serif;font-weight:700;font-size:14px;color:var(--ouro-claro);letter-spacing:.04em}
+#fichachip .fopen{font-size:10px;color:var(--pergaminho-fraco);font-weight:700;letter-spacing:.06em}
+#fichachip .bl{display:flex;justify-content:space-between;font-size:10px;color:var(--pergaminho-fraco);letter-spacing:.08em;margin-top:5px}
+.bar{height:8px;border-radius:4px;background:rgba(255,255,255,.16);overflow:hidden;display:block}
+.bar i{display:block;height:100%;border-radius:4px}
+.bar.vida i{background:linear-gradient(90deg,#a83226,#d05545)}
+.bar.alma i{background:linear-gradient(90deg,#5b4a9e,#8a76c9)}
+#fichachip .bar{margin-top:4px}
+
+/* ---------- ficha aberta: coluna lateral de 25% ---------- */
+#ficha{position:fixed;top:0;right:0;bottom:calc(56px + env(safe-area-inset-bottom, 0px));width:25%;min-width:200px;max-width:320px;z-index:25;
+  /* D3-P1-11(a): fundo a alfa 0,55, local a este selector (ver #cfgpop). */
+  overflow-y:auto;background:linear-gradient(160deg, rgba(26,20,12,.55), rgba(14,11,7,.55));border-left:2px solid var(--ouro);padding:9px 12px}
+#ficha[hidden]{display:none}
+#ficha header{display:flex;align-items:flex-start;gap:6px}
+#ficha h1{font-family:Georgia,'DejaVu Serif',serif;font-size:19px;color:var(--ouro-claro);letter-spacing:.05em;line-height:1}
+#ficha .sub{font-size:10px;color:var(--pergaminho-fraco);margin-top:3px;letter-spacing:.03em}
+.testchip{display:inline-block;background:#7a1f1f;color:#ffd9d0;font-size:10px;font-weight:800;
+  letter-spacing:.1em;padding:2px 6px;border-radius:4px;margin-top:5px}
+.fx{margin-left:auto;flex:none;width:44px;height:44px;border-radius:8px;border:1px solid rgba(201,162,39,.7);
+  background:rgba(28,21,12,.9);color:var(--ouro-claro);font-size:15px;
+  display:flex;align-items:center;justify-content:center}
+#ficha h2{font-family:Georgia,'DejaVu Serif',serif;font-size:10px;letter-spacing:.18em;
+  color:var(--ouro);text-transform:uppercase;margin:9px 0 3px}
+.rec{margin-top:7px}
+.rec .rt{display:flex;justify-content:space-between;align-items:baseline}
+.rec .rt span{font-size:10px;letter-spacing:.1em;color:var(--pergaminho-fraco)}
+.rec .rt b{font-size:13px;color:#fff3d0}
+.rec small{display:block;font-size:10px;color:var(--pergaminho-mudo);margin-top:1px}
+.rec .bar{margin-top:2px;height:7px}
+.attrs{display:flex;gap:4px}
+.attrs div{flex:1;text-align:center;background:rgba(255,255,255,.05);border:1px solid rgba(201,162,39,.45);border-radius:6px;padding:3px 0 2px}
+.attrs b{display:block;font-size:12.5px;color:#fff3d0;line-height:1}
+.attrs span{font-size:10px;letter-spacing:.1em;color:var(--pergaminho-fraco)}
+.resumo{display:flex;gap:8px;align-items:stretch}
+.ca{width:52px;flex:none;text-align:center;background:rgba(201,162,39,.13);border:1px solid rgba(201,162,39,.65);border-radius:8px;padding:4px 0 3px}
+.ca b{display:block;font-family:Georgia,serif;font-size:17px;color:var(--ouro-claro);line-height:1}
+.ca span{display:block;font-size:10px;letter-spacing:.14em;color:var(--pergaminho-fraco)}
+.rgrid{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.rgrid div{background:rgba(255,255,255,.05);border:1px solid var(--linha-fraca);border-radius:6px;padding:2px 6px}
+.rgrid span{display:block;font-size:10px;letter-spacing:.03em;white-space:nowrap;color:var(--pergaminho-mudo)}
+.rgrid b{font-size:12px;color:#fff3d0}
+.tec{display:flex;justify-content:space-between;align-items:center;padding:2px 0;
+  border-bottom:1px dashed rgba(201,162,39,.25);font-size:11px}
+.tec em{font-style:normal;background:rgba(91,74,158,.35);border:1px solid rgba(138,118,201,.7);
+  color:#d9ccff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px}
+#ficha .nota{font-size:10px;color:var(--pergaminho-mudo);line-height:1.45;margin-top:8px}
+#ficha .vista{font-size:11px;color:var(--pergaminho-fraco);line-height:1.5;margin-top:2px}
+/* Ilustração do cartão de vista (Pokédex): moldura sobre o preto da
+   própria arte, borda fina de ouro das caixas existentes, e a figura
+   SEMPRE inteira (contain — nenhum traço aprovado fica cortado). */
+#ficha .retrato-vista{background:#000;border:1px solid rgba(201,162,39,.45);border-radius:8px;
+  margin:8px 0 2px;overflow:hidden;aspect-ratio:4/3;max-height:34vh}
+#ficha .retrato-vista img{display:block;width:100%;height:100%;object-fit:contain}
+#ficha footer{margin-top:9px;font-size:10px;color:#8a7c58;letter-spacing:.02em;line-height:1.35}
+
+/* ---------- faixa de baixo: UMA, fixa, 56 px ---------- */
+/* T-D3-SAFEAREA (D3-P0-4, executada na F-21): a faixa sobe o
+   safe-area-inset-bottom do aparelho (entalhe/indicador de gestos);
+   sem entalhe o inset é 0 e a geometria é a de sempre. Tudo o que
+   ancora na altura da faixa (#ficha, #fichachip, #desgraca-cartao e a
+   folha do ⚙ em ecrãs baixos) soma o mesmo inset. */
+#faixa{position:fixed;left:0;right:0;bottom:0;height:calc(56px + env(safe-area-inset-bottom, 0px));z-index:30;
+  background:var(--painel);border-top:1px solid var(--linha);
+  display:flex;align-items:center;gap:6px;padding:6px 6px calc(6px + env(safe-area-inset-bottom, 0px))}
+.turn{display:flex;align-items:center;gap:5px;padding:0 6px 0 2px;height:44px;flex:none;
+  border-right:1px solid rgba(201,162,39,.35);white-space:nowrap}
+.turn .tl{font-size:10px;letter-spacing:.12em;color:var(--pergaminho-fraco)}
+.turn .tn{font-family:Georgia,'DejaVu Serif',serif;font-size:16px;font-weight:700;color:var(--ouro-claro);line-height:1}
+.turn .rd{background:var(--ouro);color:#1c1508;font-size:10px;font-weight:800;border-radius:5px;padding:2px 5px}
+/* A mensagem NUNCA encolhe a zero: quebra em até 3 linhas dentro dos 44 px
+   da faixa (a faixa não cresce — o texto reparte-se, as acções encolhem). */
+#mensagem{flex:1;min-width:0;height:44px;display:flex;align-items:center;overflow:hidden;
+  font-size:12px;line-height:1.22;color:var(--pergaminho-fraco)}
+#mensagem-txt{display:block;white-space:normal}
+#mensagem b{color:#fff3d0}
+.actions{display:flex;gap:6px;align-items:center;flex:none}
+.btn{height:44px;padding:0 12px;display:flex;align-items:center;gap:6px;
+  background:rgba(28,21,12,.92);border:1px solid rgba(201,162,39,.8);border-radius:9px;
+  color:var(--pergaminho);font-size:12.5px;font-weight:600;white-space:nowrap}
+.btn .gi{font-size:14px;line-height:1}
+.btn.primary{background:linear-gradient(#8a6a1c,#6d5313);border-color:var(--ouro-vivo);color:#fff3d0}
+.btn.ghost{background:rgba(28,21,12,.55)}
+.btn .pa{font-size:10px;font-weight:800;background:rgba(91,74,158,.4);border:1px solid rgba(138,118,201,.7);
+  color:#d9ccff;padding:1px 6px;border-radius:6px}
+
+/* ---------- números de dano flutuantes + impacto (camada da casca, T1.2) ----------
+   Os elementos nascem por JS sobre a figura atacada e são posicionados
+   por transform a cada frame (projectUnit + rAF, em jogo.js); aqui vive
+   só a pele: cada TIPO de parcela com a sua cor, o total maior, e o
+   anel de impacto que expande e some (a expansão é da pele; a posição
+   e o desvanecer são do JS). */
+#danos{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:15}
+/* Tela vermelha gradual (C-07, palavra do Mestre 04/11/2026 21:23;
+   forma gradual 05/11/2026 10:42): SÓ bordas vermelhas sobre o
+   mundo — sem texto, sem números, sem capturar toques. Nasce por
+   código em jogo.js (div#tela-vermelha) e avermelha no ecrã da
+   dona à medida que a vida DELA desce dos 25% até à morte. A PELE
+   é a de sempre — é o TECTO da escala: quem comanda a opacidade é
+   o jogo.js (escala da vida × pulso lento), por isso aqui não há
+   transition nem opacity na classe .on — a classe só controla a
+   visibilidade. Por cima do mundo e dos danos flutuantes, por
+   baixo de toda a HUD. */
+#tela-vermelha{position:fixed;inset:0;pointer-events:none;z-index:18;
+  opacity:0;visibility:hidden;
+  background:radial-gradient(ellipse at center,transparent 52%,rgba(165,12,12,.38) 80%,rgba(120,0,0,.66) 100%);
+  box-shadow:inset 0 0 90px rgba(140,0,0,.55)}
+#tela-vermelha.on{visibility:visible}
+/* Botão de declarar a reacção na ficha da própria (C-39): pele mínima
+   sobre as classes da ficha; o comportamento vive em jogo.js. */
+.reacao-btn{min-height:44px;padding:8px 14px;border:1px solid var(--linha);border-radius:8px;
+  background:rgba(201,162,39,.12);color:var(--pergaminho,#f3e9d2);font-weight:700;cursor:pointer}
+.reacao-btn:disabled{opacity:.45;cursor:default}
+.dano{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;
+  will-change:transform,opacity;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,.85)}
+/* F-19 (D3-P0-2): parcela 19→26 px e contorno real no número — pilha de
+   sombras em 8 direcções (tinta escura, raio 1,5 px) + sombra de
+   profundidade; a sombra suave da .dano sozinha era o «sem contorno»
+   medido pela V8. O total herda este contorno. */
+.dano b{font-family:Georgia,'DejaVu Serif',serif;font-size:26px;
+  text-shadow:-1.5px 0 0 rgba(26,17,5,.95),1.5px 0 0 rgba(26,17,5,.95),0 -1.5px 0 rgba(26,17,5,.95),0 1.5px 0 rgba(26,17,5,.95),-1.1px -1.1px 0 rgba(26,17,5,.95),1.1px -1.1px 0 rgba(26,17,5,.95),-1.1px 1.1px 0 rgba(26,17,5,.95),1.1px 1.1px 0 rgba(26,17,5,.95),0 2px 5px rgba(0,0,0,.55)}
+.dano small{font-size:8.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.dano.t-dados{color:#fff3d0}
+.dano.t-bonus{color:var(--ouro-vivo)}
+.dano.t-tecnica{color:#8ad6ff}
+.dano.t-agua{color:#8ad6ff}
+.dano.t-total{color:var(--ouro-claro)}
+.dano.t-total b{font-size:34px}   /* F-19 (D3-P0-2): total 26→34 px */
+.impacto{position:absolute;left:0;top:0;will-change:transform,opacity}
+.impacto i{display:block;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;
+  border:2px solid rgba(255,233,168,.9);box-shadow:inset 0 0 12px rgba(255,217,77,.5);
+  animation:impactoExpande .48s ease-out forwards}
+@keyframes impactoExpande{from{transform:scale(.35)}to{transform:scale(1.25)}}
+
+/* ---------- retrato: a mesma lei, apertada (não é modo degradado) ---------- */
+@media (max-width:560px){
+  #faixa{gap:4px;padding:6px 4px calc(6px + env(safe-area-inset-bottom, 0px))}
+  /* A vez vira coluna estreita (nome sobre a rodada), com tecto de largura:
+     nem o nome mais comprido ("Lobo da Caverna") rouba o espaço da mensagem. */
+  .turn{flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;
+    padding:0 4px 0 0;max-width:48px}
+  .turn .tl{display:none}
+  .turn .tn{font-size:12px;max-width:44px;overflow:hidden;text-overflow:ellipsis}
+  .turn .rd{padding:1px 4px}
+  #mensagem{font-size:12px}
+  .actions{gap:4px}
+  .btn{padding:0 7px;font-size:11px}
+  /* Estado base em retrato: botões compactos (ícone sobre o rótulo),
+     alvos sempre ≥44×44 — é isto que liberta ≥120 px para a mensagem. */
+  .actions.compacta .btn{flex-direction:column;justify-content:center;gap:1px;
+    min-width:44px;padding:2px 4px}
+  .actions.compacta .btn .gi{font-size:14px}
+  .actions.compacta .btn .gl{font-size:10px;line-height:1.15}
+  /* Em Atacar/Rolagem a vez sai da faixa: a mensagem fica com o espaço. */
+  /* LB-C-01/02: o mesmo na base e em confirmar-fim, em retrato — o
+     indicador de vez sai e a mensagem volta a ≥120 px (na base ela
+     já diz de quem é a vez; o 5.º botão não rouba área à mensagem).
+     Sem isto, a frase de abertura e o prompt de confirmação cortam. */
+  #faixa[data-estado="base"] .turn,#faixa[data-estado="atacar"] .turn,#faixa[data-estado="rolagem"] .turn,#faixa[data-estado="previa"] .turn,#faixa[data-estado="confirmar-fim"] .turn,#faixa[data-estado="desgraca-lista"] .turn{display:none}
+  #fichachip{width:162px;left:10px;bottom:66px}
+  #ficha{width:25%;min-width:0;max-width:none;padding:8px 7px}
+  #ficha h1{font-size:14px}
+  #ficha .retrato-vista{aspect-ratio:1/1;max-height:30vh}
+  .attrs{flex-direction:column;gap:3px}
+  .attrs div{display:flex;justify-content:space-between;align-items:baseline;padding:2px 6px}
+  .attrs b{font-size:11px}
+  .resumo{flex-direction:column}
+  .ca{width:auto}
+  .rgrid{grid-template-columns:1fr}
+  .tec{flex-direction:column;align-items:flex-start;gap:2px;font-size:10px}
+  .rec .rt{flex-direction:column;align-items:flex-start}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *{transition:none!important;animation:none!important}
+}
+
+/* ---------- Ambiente (tranche AMBIENTE): só adições amb-* ----------
+   Pele do painel «Ambiente» do ⚙ (criado por jogo.js, só na vista
+   do Mestre) e do ponto indicador na engrenagem. As linhas usam as
+   classes da casa (.cfgrow/.cl/.seg/.tog); aqui vive só o que é
+   próprio do ambiente: a linha de estado, o deslizador da hora
+   exacta com a sua leitura, o estado pendente do raio e o ponto. */
+.amb-estado{font-size:11px;line-height:1.4;color:var(--pergaminho-fraco);
+  overflow-wrap:break-word;padding:4px 0}
+.amb-seg button{flex:1;padding:0 2px;font-size:10px;white-space:nowrap}
+.amb-slider-row .amb-range{flex:1;min-width:0;min-height:44px;accent-color:var(--ouro)}
+.amb-leitura{font-size:11px;font-weight:700;color:#fff3d0;min-width:38px;
+  text-align:right;font-variant-numeric:tabular-nums}
+.amb-raio-btn:disabled{opacity:.45;cursor:default}
+.amb-raio-btn.amb-pendente{background:var(--ouro);color:#1c1508;
+  animation:ambPendentePulso 1s ease-in-out infinite alternate}
+@keyframes ambPendentePulso{from{opacity:1}to{opacity:.55}}
+.amb-ponto{position:absolute;top:3px;right:3px;width:10px;height:10px;border-radius:50%;
+  background:var(--ouro-vivo);box-shadow:0 0 6px rgba(255,217,77,.8);pointer-events:none}
+.amb-ponto[hidden]{display:none}
+/* (a regra de grelha da .amb-estado morreu com o regime de 2 colunas
+   absorvido pelas abas — SPEC §1.1) */
+
+/* ---------- Câmera livre do Mestre (tranche t-camera-livre, desenho v2) ----------
+   A HUD de andar: os elementos e tamanhos da sala/museu (manípulo
+   132 px no canto inferior esquerdo · ▲▼ de 68 px no canto inferior
+   direito · dica ao fundo centrada), com z-index 21 — acima do mapa,
+   das etiquetas e dos números de dano, abaixo do ⚙ (27). O botão de
+   voltar vai no topo centrado: é a saída, tem de estar sempre
+   visível enquanto se anda. Os [hidden] destas regras (e os de
+   #faixa/#cantos) são precisos porque o CSS de base põe display:flex
+   nesses elementos — sem a guarda, o atributo hidden perdia. */
+#faixa[hidden]{display:none}
+#cantos[hidden]{display:none}
+#cam-livre-joy{position:fixed;left:22px;bottom:22px;width:132px;height:132px;border-radius:50%;
+  background:rgba(30,40,48,.30);border:2px solid rgba(255,255,255,.55);z-index:21;touch-action:none}
+#cam-livre-joy[hidden]{display:none}
+#cam-livre-nub{position:absolute;left:50%;top:50%;width:56px;height:56px;border-radius:50%;
+  background:rgba(255,255,255,.85);transform:translate(-50%,-50%);pointer-events:none}
+.cam-livre-hbtn{position:fixed;right:22px;width:68px;height:68px;border-radius:50%;z-index:21;
+  background:rgba(30,40,48,.30);border:2px solid rgba(255,255,255,.55);
+  color:#fff;font-size:30px;line-height:64px;text-align:center;touch-action:none;
+  user-select:none;-webkit-user-select:none;cursor:pointer}
+.cam-livre-hbtn[hidden]{display:none}
+#cam-livre-sobe{bottom:108px}
+#cam-livre-desce{bottom:26px}
+#cam-livre-vel{position:fixed;right:22px;bottom:190px;z-index:21;display:flex;gap:7px}
+#cam-livre-vel[hidden]{display:none}
+#cam-livre-vel button{background:rgba(30,40,48,.45);color:#fff;border:1px solid rgba(255,255,255,.55);
+  border-radius:9px;font-size:14px;padding:5px 11px;cursor:pointer}
+#cam-livre-vel button.on{background:#ffd9a0;color:#24303a;font-weight:700}
+#cam-livre-sair{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:21;
+  background:rgba(30,40,48,.55);color:#fff;border:1px solid rgba(255,255,255,.55);
+  border-radius:16px;font-size:15px;padding:8px 16px;cursor:pointer;white-space:nowrap}
+#cam-livre-sair[hidden]{display:none}
+#cam-livre-dica{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:21;
+  background:rgba(30,40,48,.45);color:#fff;font-size:15px;padding:7px 14px;
+  border-radius:16px;white-space:nowrap;transition:opacity 1.2s;pointer-events:none}
+#cam-livre-dica[hidden]{display:none}
+
+/* ---------- Contador de Vantagem/Desvantagem (tranche C-VD) ----------
+   A caixa dela, irmã da plaquinha (mesma linha de base, ao lado
+   direito): fundo DENSO (--painel-denso — a garantia de contraste
+   de EM-VD-10), borda de ouro, a palavra em cima e o número em
+   baixo. A palavra nunca encolhe: se apertar, a caixa cresce.
+   Camadas lavradas (EM-VD-13): caixa 20 · painel 26.
+   REF_86 (palavra do Mestre, 13/11/2026: «a caixa da vantagem e
+   desvantagem tá gigantescamente imensa»): a caixa inteira
+   encolheu para ~55% — min-width 118→64, número 28→16, palavra
+   11→8, padding apertado; a âncora (left/bottom) não muda. */
+#contadorvd{position:fixed;left:calc(max(12px, env(safe-area-inset-left, 0px)) + 182px + 8px);bottom:calc(68px + env(safe-area-inset-bottom, 0px));z-index:20;min-width:64px;
+  background:var(--painel-denso);border:1px solid var(--linha);border-radius:9px;
+  padding:3px 4px 4px;text-align:center;cursor:pointer}
+#contadorvd[hidden]{display:none}
+#contadorvd .cvd-palavra{display:block;font-size:8px;line-height:1.1;font-weight:700;
+  letter-spacing:.02em;color:var(--pergaminho)}
+#contadorvd .cvd-num{display:block;font-size:16px;line-height:1.05;font-weight:700;
+  color:var(--pergaminho)}
+#contadorvd.vd-vantagem .cvd-palavra,#contadorvd.vd-vantagem .cvd-num{color:#46C96A}
+#contadorvd.vd-desvantagem .cvd-palavra,#contadorvd.vd-desvantagem .cvd-num{color:#FF5347}
+#contadorvd.cvd-pulso{animation:cvdPulso .25s ease-out}
+@keyframes cvdPulso{0%{transform:scale(1.07)}100%{transform:scale(1)}}
+#cvd-painel{position:fixed;z-index:26;width:min(280px,calc(100vw - 20px));
+  background:var(--painel-denso);border:1px solid var(--linha);border-radius:11px;
+  padding:10px 12px;overflow-y:auto;color:var(--pergaminho);font-size:13px;line-height:1.45}
+#cvd-painel[hidden]{display:none}
+#cvd-painel .cvd-titulo{font-weight:700;letter-spacing:.06em;margin-bottom:5px}
+#cvd-painel .cvd-linha{margin:3px 0}
+#cvd-painel .vd-vantagem{color:#46C96A}
+#cvd-painel .vd-desvantagem{color:#FF5347}
+@media (max-width:560px){
+  #contadorvd{left:calc(10px + 162px + 8px);bottom:66px}
+}
+@media (prefers-reduced-motion:reduce){
+  #contadorvd.cvd-pulso{animation:none}
+}
