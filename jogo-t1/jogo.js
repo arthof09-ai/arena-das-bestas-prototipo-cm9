@@ -3594,6 +3594,12 @@
   let campoPronto = false, falhaArranque = '', falhaDefinitiva = false;
   let estado = 'base';        // base | atacar | consumivel | mover | movendo | previa | rolagem | resultado | vez-ia | confirmar-fim | fim
                               // 'previa' (PRÉVIA v2): alvo marcado, ainda sem rolagem — a rolagem nasce no Confirmar
+  /* resultado-prazo (b, E4): memória da abertura do confirmar-fim —
+     a origem ('base' | 'resultado') e, quando a origem é 'resultado',
+     o HTML da frase do desfecho, que a pergunta do Terminar sobrescreve
+     e o Voltar tem de repor byte a byte. */
+  let confirmarFimOrigem = null;
+  let confirmarFimFraseHTML = null;
   /* Máquina de turnos (T1.3): a vez roda por ORDEM. vezAtual,
      indiceVez e rodada só mudam em passarVez()/iniciarVezIA() e no
      arranque — nenhum outro caminho os escreve. */
@@ -5810,6 +5816,37 @@
        (que as registaria com actor PROPRIA). Com um parque de
        desgraça aberto, só a decisão (acima) passa; o resto ouve
        a frase da decisão pendente, como na vez dela. */
+    /* resultado-prazo (b, E1): na vez manual, terminar / terminar-sim /
+       voltar-de-confirmar-fim correm o CAMINHO COMUM — tratarAcaoManual
+       não conhece nenhum dos três e o Terminar a partir de `resultado`
+       ficaria inalcançável na vez comandada. A confirmação M-014, a
+       memória de origem/frase e terminarBatalha são os de sempre; o
+       validador e o registo dela não correm (a acção não é dela). */
+    if (vezManualAberta && acao === 'continuar') prazoOrigemPendente = false;
+    if (vezManualAberta && (
+      (acao === 'terminar' && estado === 'resultado') ||
+      (acao === 'terminar-sim' && estado === 'confirmar-fim') ||
+      (acao === 'voltar' && estado === 'confirmar-fim' && confirmarFimOrigem))) {
+      if (acao === 'terminar') {
+        if (apresentacaoEmCurso) { say('Primeiro volte às acções base.'); return; }
+        confirmarFimOrigem = 'resultado';
+        confirmarFimFraseHTML = msgTxt.innerHTML;
+        estado = 'confirmar-fim'; renderAcoes();
+        say(`Terminar esta batalha? A rodada ${rodada} fica por fechar — aperte <b>Sim, terminar</b> para fechar, ou <b>Voltar</b> para continuar a jogar.`);
+        return;
+      }
+      if (acao === 'terminar-sim') { terminarBatalha(); return; }
+      /* voltar de confirmar-fim, na vez manual */
+      if (confirmarFimOrigem === 'resultado') {
+        estado = 'resultado'; renderAcoes();
+        msgTxt.innerHTML = confirmarFimFraseHTML;
+      } else {
+        estado = 'base'; ataquePendente = null; renderAcoes();
+        say(`É a vez de <b>${nomeCena(vezAtual)}</b> — você comanda.`);
+      }
+      confirmarFimOrigem = null; confirmarFimFraseHTML = null;
+      return;
+    }
     if (vezManualAberta) {
       if (desgracaMonstroPendente) { say(FRASE_DECISAO_PENDENTE); return; }
       tratarAcaoManual(acao);
@@ -5859,7 +5896,15 @@
       }
       if (bloqueioSup.duro) return;
     } else if (acao !== 'ataque-basico') {
-      supRegistar('accao', { acao, actor: PROPRIA });
+      /* resultado-prazo (a, E8): a bandeira de origem da vigia do prazo
+         consome-se AQUI — só o evento 'accao/continuar' despachado pelo
+         prazo ganha o campo origem:'prazo'; nenhum outro evento o vê. */
+      if (prazoOrigemPendente && acao === 'continuar') {
+        prazoOrigemPendente = false;
+        supRegistar('accao', { acao, actor: PROPRIA, origem: 'prazo' });
+      } else {
+        supRegistar('accao', { acao, actor: PROPRIA });
+      }
     }
     /* PRÉVIA v2: o gesto «ataque-basico» já não regista à cabeça —
        o ramo da declaração é dono do seu registo: nos ramos de
@@ -5882,6 +5927,17 @@
         say(`Escolha de alvo — toque no inimigo e aperte <b>${DADOS_COMBATE.ong.arma}</b>.`);
         return;
       }
+      /* resultado-prazo (b, E4): o Voltar de um confirmar-fim aberto de
+         `resultado` devolve a `resultado` E repõe a frase do desfecho
+         (a pergunta do Terminar tinha-a sobrescrito); o de origem
+         `base` fica byte a byte como sempre. */
+      if (estado === 'confirmar-fim' && confirmarFimOrigem === 'resultado') {
+        estado = 'resultado'; renderAcoes();
+        msgTxt.innerHTML = confirmarFimFraseHTML;
+        confirmarFimOrigem = null; confirmarFimFraseHTML = null;
+        return;
+      }
+      if (estado === 'confirmar-fim') { confirmarFimOrigem = null; confirmarFimFraseHTML = null; }
       estado = 'base'; ataquePendente = null; renderAcoes(); say('É a vez da <b>Ong</b>.'); return;
     }
     if (acao === 'mover') { entrarMover(); return; }
@@ -5961,7 +6017,15 @@
          (rolagem, mover, …) a acção não abre a confirmação nem
          arrasta pendentes (as casas acesas do Mover ficariam
          fantasmas na base após o Voltar). */
-      if (estado !== 'base') { say('Primeiro volte às acções base.'); return; }
+      /* resultado-prazo (b): excepção única à LB-C-05 — de `resultado`,
+         FORA da apresentação, não há pendentes para arrastar (o
+         pendente já se consumiu; §2.1 do desenho): o Terminar abre a
+         confirmação também daqui, com a origem e a frase guardadas
+         (E4). Durante o gesto, a recusa é a de hoje (E2). */
+      if (estado !== 'base' && estado !== 'resultado') { say('Primeiro volte às acções base.'); return; }
+      if (estado === 'resultado' && apresentacaoEmCurso) { say('Primeiro volte às acções base.'); return; }
+      confirmarFimOrigem = estado;
+      confirmarFimFraseHTML = estado === 'resultado' ? msgTxt.innerHTML : null;
       /* M-014: pedir a confirmação — a batalha não fecha por um toque. */
       estado = 'confirmar-fim'; renderAcoes();
       say(`Terminar esta batalha? A rodada ${rodada} fica por fechar — aperte <b>Sim, terminar</b> para fechar, ou <b>Voltar</b> para continuar a jogar.`);
@@ -7127,6 +7191,104 @@
    * desligar não dizem frase nenhuma: o único texto novo é o
    * rótulo e os estados, dentro das configurações. */
   const PASSO_AUTO_MS = 850;   // pausa entre passos automáticos (700–1000 ms)
+
+  /* ---------- resultado-prazo (a): a vigia do prazo de `resultado` ----------
+     Desenho emendado §5.1/§5.3 (sentença da bancada, E5/E6/E8/E9/E10).
+     O estado `resultado` é tempo de leitura puro, mas não tinha saída
+     autónoma: desligado o automático a meio de um ataque, a vez ficava
+     pendurada para sempre (prova do Passo 0 do auto-jogo). Esta vigia
+     é a rede: 60 s de TEMPO VISÍVEL ACUMULADO em `resultado` e ela
+     aperta o Continuar de sempre — chama tratarAcao('continuar'),
+     nunca tratarAcaoManual directamente (o despacho roteia e herda
+     as guardas), e NUNCA termina a batalha (M-014 absoluta).
+     Base de contagem (não é relógio-de-parede): carimbo de entrada
+     (supEpoca + seqTurno + vez + manual/figura) e acumuladoMs; cada
+     tique válido soma min(Δ, 500) ms — a aba em fundo não conta
+     (document.hidden trava a acumulação) e não há disparo-surpresa
+     ao voltar; um tecto de parede de 600.000 ms garante a saída
+     mesmo com o sinal de visibilidade preso (sentença da bancada
+     C12). Congela em confirmar-fim de origem `resultado` (§5.4);
+     apaga-se em qualquer outro estado.
+     Condições de acumulação: sem apresentação a correr, sem fim, sem
+     gelo, sem decisão por resolver e com o painel ⚙ fechado (painel
+     aberto é mesa presente). Nos últimos 10 s visíveis, o botão
+     Continuar avisa no DOM (texto + classe), conferido a cada tique
+     sem renderAcoes — repinturas alheias reparam-se no tique seguinte.
+     O disparo marca-se no registo: a bandeira prazoOrigemPendente é
+     consumida no registo genérico de tratarAcao (origem:'prazo'). */
+  const PRAZO_RESULTADO_MS = 60000;
+  const PRAZO_AVISO_MS = 10000;
+  const PRAZO_TECTO_PAREDE_MS = 600000;   // tecto de parede (sentença da bancada C12): nenhum sinal preso retém a saída além de 10 min
+  let prazoCarimbo = null;        // carimbo da entrada corrente em `resultado`
+  let prazoAcumuladoMs = 0;       // tempo visível acumulado nessa entrada
+  let prazoParedeInicio = null;        // Date.now() da entrada corrente em `resultado` (relógio do tecto)
+  let prazoUltimoTique = 0;       // Date.now() do último tique da vigia
+  let prazoOrigemPendente = false;   // bandeira de origem (E8), disparo único
+  /* O reforço visual do aviso vive numa folha injectada por este bloco:
+     o diff desta correcção fica dentro de jogo.js (âncora 5 de §5.5:
+     renderAcoes com zero toques; nenhum outro ficheiro é tocado). */
+  try {
+    const stPrazo = document.createElement('style');
+    stPrazo.textContent = '@keyframes prazoPulso{0%,100%{filter:brightness(1)}50%{filter:brightness(1.55)}}'
+      + '.btn.prazo-aviso{outline:2px solid #ffb300;outline-offset:-2px;animation:prazoPulso 1s ease-in-out infinite}';
+    document.head.appendChild(stPrazo);
+  } catch (_) {}
+  function prazoCarimboActual() {
+    return supEpoca + '|' + seqTurno + '|' + vezAtual + '|' + (vezManualAberta ? comandada || '' : '');
+  }
+  function prazoLimparRotulo() {
+    const b = document.querySelector('#acoes button[data-acao="continuar"]');
+    if (!b) return;
+    const gl = b.querySelector('.gl');
+    if (gl && gl.textContent !== 'Continuar ▸') gl.textContent = 'Continuar ▸';
+    b.classList.remove('prazo-aviso');
+  }
+  function prazoPintarAviso(restamMs) {
+    const b = document.querySelector('#acoes button[data-acao="continuar"]');
+    if (!b) return;
+    const gl = b.querySelector('.gl');
+    const txt = 'Continuar ▸ (segue em ' + Math.max(1, Math.ceil(restamMs / 1000)) + ' s)';
+    if (gl && gl.textContent !== txt) gl.textContent = txt;
+    b.classList.add('prazo-aviso');
+  }
+  function prazoVigiaTique() {
+    const agora = Date.now();
+    const delta = agora - prazoUltimoTique;
+    prazoUltimoTique = agora;
+    /* Pausa congelada: a confirmação do Terminar aberta DE `resultado`
+       não conta nem apaga — no Voltar, a contagem retoma do valor
+       congelado (nem disparo-surpresa, nem prazo novo). */
+    if (estado === 'confirmar-fim' && confirmarFimOrigem === 'resultado') return;
+    if (estado !== 'resultado') {
+      if (prazoCarimbo !== null || prazoAcumuladoMs !== 0) prazoLimparRotulo();
+      prazoCarimbo = null; prazoAcumuladoMs = 0; prazoParedeInicio = null;
+      return;
+    }
+    const carimbo = prazoCarimboActual();
+    if (carimbo !== prazoCarimbo) { prazoCarimbo = carimbo; prazoAcumuladoMs = 0; prazoParedeInicio = agora; }
+    const conta = !apresentacaoEmCurso && !batalhaFim && !supCongelado
+      && !decisaoPorResolver() && cfgEl.hidden && !document.hidden;
+    if (conta) prazoAcumuladoMs += Math.min(Math.max(delta, 0), 500);
+    if (prazoParedeInicio !== null && agora - prazoParedeInicio >= PRAZO_TECTO_PAREDE_MS)
+      prazoAcumuladoMs = PRAZO_RESULTADO_MS;
+    if (prazoAcumuladoMs >= PRAZO_RESULTADO_MS) {
+      /* Trinco de disparo único: apaga carimbo e acumulado ANTES de
+         despachar — um segundo tique nunca repete o disparo. */
+      prazoCarimbo = null; prazoAcumuladoMs = 0; prazoParedeInicio = null;
+      prazoLimparRotulo();
+      prazoOrigemPendente = true;
+      tratarAcao('continuar');
+      /* O caminho síncrono até ao registo genérico já correu: se uma
+         guarda anterior o devolveu sem registar, a bandeira não pode
+         ficar armada para um evento vizinho. */
+      prazoOrigemPendente = false;
+      return;
+    }
+    if (conta && prazoAcumuladoMs >= PRAZO_RESULTADO_MS - PRAZO_AVISO_MS)
+      prazoPintarAviso(PRAZO_RESULTADO_MS - prazoAcumuladoMs);
+    else prazoLimparRotulo();
+  }
+  setInterval(prazoVigiaTique, 250);
   let modoAutomatico = false;
   let geracaoAuto = 0;         // geração do controlador: desligar invalida pendentes
   let relogioAuto = null;      // o único relógio do controlador
