@@ -6877,15 +6877,17 @@
     }
     if (!gesto || multi) return;
     const dx = e.clientX - gesto.lastX, dy = e.clientY - gesto.lastY;
+    let nasceu = false;
     if (Math.hypot(e.clientX - gesto.x, e.clientY - gesto.y) > 7) {
       /* C-360-4 (DIAG-360): fora do 360, o aviso de modo aparece
          quando o arrasto nasce (ao passar os 7 px), não só ao
          largar — fraseArrasto já se cala no 360. */
-      if (!gesto.drag) fraseArrasto();
+      if (!gesto.drag) { fraseArrasto(); nasceu = true; }
       gesto.drag = true;
     }
     if (gesto.drag) {
-      view.orbit(dx, dy);
+      view.orbit(nasceu ? e.clientX - gesto.x : dx,
+                 nasceu ? e.clientY - gesto.y : dy);
       view.showHover(null);
     } else if (estado === 'mover') {
       view.showHover(view.hitTest(e.clientX, e.clientY).cell);
