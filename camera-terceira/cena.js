@@ -1712,7 +1712,7 @@
                que o espaço livre atrás da figura permite (a parede e a
                coluna aproximam a câmera da figura; nunca a atravessa,
                nunca sai da sala, nunca prende o gesto). */
-            const TP_DIST0 = 4, TP_PITCH_MIN = -.12, TP_PITCH_MAX = 1.30, TP_PITCH0 = .30, TP_MARGEM = .35;
+            const TP_DIST0 = 4, TP_DIST_MAX = 41.5, TP_PITCH_MIN = -.12, TP_PITCH_MAX = 1.30, TP_PITCH0 = .30, TP_MARGEM = .35;
             const tpEstado = { yaw: 0, yawAlvo: 0, pitch: TP_PITCH0, pitchAlvo: TP_PITCH0, dist: TP_DIST0, distEfectiva: TP_DIST0, mira: new T.Vector3(0, .35, 0), snap: true, ultimoArrasto: -Infinity };
             if (TP) zoom.fixa = 1;   // nascimento a 4 m nos dois modos (factor 1 = 4 m)
             function tpDistAlvo() { return TP_DIST0 / (zoom[mode] || 1); }
@@ -2669,9 +2669,15 @@
             }
             function zoomRange() {
                 /* CÂMERA TERCEIRA PESSOA (teste): o factor de zoom passa a
-                   ser 4/distância — 0,5 (8 m) a 1,6 (2,5 m) — pelos canais
-                   de sempre (pinça, roda, botões ±). */
-                if (TP) return { min: .5, max: 1.6 };
+                   ser 4/distância — 1,6 (2,5 m) ao tecto medido
+                   TP_DIST_MAX (41,5 m) — pelos canais de sempre (pinça,
+                   roda, botões ±). O tecto é o maior afastamento que a
+                   câmera alcança na Sala do Trono (medição com o
+                   resolvedor real sobre a grelha × yaw × pitch ×
+                   figuras: máximo 41,83 m — volta-olho-1 da sede,
+                   2026-11-17). Acima dele o curso seria morto na sala;
+                   junto a paredes/obstáculos o resolvedor encolhe. */
+                if (TP) return { min: TP_DIST0 / TP_DIST_MAX, max: 1.6 };
                 /* CORRECÇÃO t-mapa-trono (bancada, item 6): neste mapa o
                    zoom-out pára em 0,52× — é o enquadramento da composição
                    (item 3); mais aberto, a caixa da sala flutua no céu.
