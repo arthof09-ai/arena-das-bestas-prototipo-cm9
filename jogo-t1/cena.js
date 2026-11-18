@@ -2685,7 +2685,13 @@
                (u, v) do quadro é T + direita·u + frente·d, com
                d = (v + yT·cos p)/sin p, direita = (cos a, −sin a) e
                frente = (−sin a, −cos a) no plano xz. Se os 4 cantos
-               poisam dentro do mundo, nenhum píxel mostra fora dele. */
+               poisam dentro do mundo, nenhum píxel mostra fora dele.
+               RESTAURAÇÃO VOLTA 1 (17/11/2026): a alavanca (3) é hoje
+               só do TRONO — no campo, guardarEnquadramento devolve o
+               pedido sem resolver (ver o comentário junto à devolução
+               em guardarEnquadramento): a D1 está suspensa no campo
+               pela palavra do Mestre de 17/11, com o vazamento a
+               pitch baixo como preço aceite. */
             const SALA = { x0: -15.5, x1: 15.5, z0: -27.5, z1: 21.5 };
             function cantosProjecao(alvo, p, a, vw) {
                 const H = vw * height / width, hs = vw / width * 36;
@@ -2991,20 +2997,22 @@
             }
             function guardarEnquadramento(alvo, p, a, vw, dist) {
                 if (options.mapa === 'trono') return guardarTrono(alvo, p, a, vw);
-                if (p >= 1.4) return { p, vw };
-                if (folgaCampo(alvo, p, a, vw, dist) >= 0) return { p, vw };
-                /* Bissecção: a folga cresce com o pitch (o raio de baixo
-                   levanta sobre o corredor e o de cima encurta o alcance);
-                   procura o menor pitch que cumpre, entre o pedido e o
-                   tecto legal. Se nem a 1,4 cumprir, devolve 1,4 (o melhor
-                   possível dentro da lei antiga). */
-                let lo = p, hi = 1.4;
-                if (folgaCampo(alvo, hi, a, vw, dist) < 0) return { p: hi, vw };
-                for (let i = 0; i < 16; i++) {
-                    const mid = (lo + hi) / 2;
-                    if (folgaCampo(alvo, mid, a, vw, dist) >= 0) hi = mid; else lo = mid;
-                }
-                return { p: hi, vw };
+                /* RESTAURAÇÃO VOLTA 1 (17/11/2026, SENTENCA-VOLTA1 da
+                   bancada da regressão da câmera): no CAMPO, o pedido
+                   devolve-se SEM resolver — o pitch desenhado volta a
+                   ser o pitch do jogador, o comportamento exacto da
+                   REF_105. A doutrina D1 (nunca mostrar fora do mundo)
+                   fica SUSPENSA no campo pela palavra do Mestre de
+                   17/11 («a antiga era boa; o único problema dela era
+                   vazar um pouco para o limbo quando eu descia muito
+                   a câmera»), e o vazamento a pitch baixo com o
+                   quadro largo é o preço aceite, nomeado. No TRONO a
+                   D1 continua inteira, servida por guardarTrono.
+                   folgaCampo fica sem chamadores, de propósito: é a
+                   matéria-prima declarada da Volta 2 (o vazamento
+                   tratado por alavancas ordenadas), que só avança se
+                   o Mestre pedir o vazamento fechado. */
+                return { p, vw };
             }
             function animate(now) {
                 if (disposed)
