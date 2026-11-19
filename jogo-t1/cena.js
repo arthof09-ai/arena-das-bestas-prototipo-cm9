@@ -2602,6 +2602,16 @@
             function detectarPerfilInicial() {
                 const movel = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
                 if (!movel) return 'alta';
+                /* SENTENÇA DA BANCADA (t-desempenho-celular — correcção
+                   de desempenho): telemóvel — ponteiro grosso + toque
+                   + lado menor do ecrã ≤480 px CSS — nasce em 'media'.
+                   A regra de núcleos/RAM não mede a GPU e pôs o Redmi
+                   (8 núcleos) em 'alta' (DPR 2) a engasgar; PC e
+                   tablets (lado menor >480) mantêm a regra de sempre.
+                   (window.screen explícito: há uma função local
+                   `screen` de projecção neste mesmo âmbito.) */
+                const ladoMenor = Math.min(window.screen.width || 9999, window.screen.height || 9999);
+                if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches && (navigator.maxTouchPoints || 0) > 0 && ladoMenor <= 480) return 'media';
                 const nucleos = navigator.hardwareConcurrency || 0, memoria = navigator.deviceMemory || 0;
                 return (memoria >= 4 || nucleos >= 8) ? 'alta' : 'media';
             }
@@ -3328,8 +3338,11 @@
                     if (benchTempo >= 4000 || parede >= 10000) {
                         const fpsBench = benchTempo >= 1000 ? benchFrames * 1000 / benchTempo : benchFrames * 1000 / Math.max(parede, 1);
                         benchEstado = 'off';
+                        // Abaixo de 24 FPS desce DOIS perfis de uma vez
+                        // (alta→Leve): um só não chegava (diagnóstico
+                        // de desempenho, §4). Entre 24 e 42 desce um.
                         if (fpsBench < 42 && quality !== 'baixa')
-                            aplicarPerfil(quality === 'alta' ? 'media' : 'baixa');
+                            aplicarPerfil(fpsBench < 24 ? 'baixa' : quality === 'alta' ? 'media' : 'baixa');
                     }
                 }
                 times.push(now);

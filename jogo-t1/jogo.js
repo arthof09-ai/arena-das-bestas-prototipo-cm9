@@ -744,9 +744,10 @@
   const ambUI = { estadoEl: null, ponto: null, botoesHora: [], botoesChuva: [], botoesPrecip: [],
     deslizador: null, leitura: null, togRaios: null, btnRaio: null, togSom: null, togTremulacao: null, notaNeve: null };
   let ambDegrau = 0;                       // escada só-desce, por sessão
-  const AMB_DEGRAUS = ['', 'POUCA', 'MÍNIMA', 'SÓ_SOM', 'DPR 1'];
+  const AMB_DEGRAUS = ['', 'POUCA', 'DPR 1', 'MÍNIMA', 'SÓ_SOM'];
   const ambAmostrasFps = [];
   let ambVigiasBaixas = 0;
+  let ambCriticoDesde = 0;                 // início da janela do tecto absoluto (<12,5 FPS)
   /* Única porta da casca para a vista: valida já aconteceu a montante;
    * vista sem o contrato (cena anterior) degrada em silêncio — a
    * página nunca parte por o ambiente ainda não existir do outro lado. */
@@ -1802,26 +1803,39 @@
   }
 
   /* ---------- Degradação nomeada (apresentação local) ----------
-   * Vigia a mediana de 5 amostras de FPS do evento 'stats' da
-   * vista; mediana <24 sustentada em 3 vigias seguidas desce UM
+   * Vigia a mediana de 3 amostras de FPS do evento 'stats' da
+   * vista; mediana <24 sustentada em 2 vigias seguidas desce UM
    * degrau; a escada só desce na sessão e o estado da mesa não
-   * muda: Forte→Pouca (teto 1200) → MÍNIMA (400) → SÓ_SOM (0)
-   * → DPR de sessão 1. Cada descida nomeia-se na linha de estado. */
+   * muda: Forte→Pouca (teto 1200) → DPR de sessão 1 → MÍNIMA
+   * (400) → SÓ_SOM (0). TECTO ABSOLUTO (bancada — sentença da
+   * correcção de desempenho): mediana <12,5 FPS — o limiar em
+   * que o tecto de dt da cena morde — sustentada 10 s salta
+   * directo ao degrau do DPR, sem esperar degraus intermédios.
+   * Cada descida nomeia-se na linha de estado. */
   function ambDegradacaoAmostra(fps) {
     if (typeof fps !== 'number' || !Number.isFinite(fps)) return;
     if (ambDegrau >= AMB_DEGRAUS.length - 1) return;
     ambAmostrasFps.push(fps);
-    if (ambAmostrasFps.length > 5) ambAmostrasFps.shift();
-    if (ambAmostrasFps.length < 5) return;
-    const ord = [...ambAmostrasFps].sort((a, b) => a - b), mediana = ord[2];
+    if (ambAmostrasFps.length > 3) ambAmostrasFps.shift();
+    if (ambAmostrasFps.length < 3) return;
+    const ord = [...ambAmostrasFps].sort((a, b) => a - b), mediana = ord[1];
+    if (mediana < 12.5) {
+      if (!ambCriticoDesde) ambCriticoDesde = performance.now();
+      else if (ambDegrau < 2 && performance.now() - ambCriticoDesde >= 10000) {
+        ambCriticoDesde = 0; ambVigiasBaixas = 0; ambAmostrasFps.length = 0; ambDegrau = 2;
+        try { if (typeof view.setDprSessao === 'function') view.setDprSessao(1); } catch (_) {}
+        ambSincronizarPainel();
+        return;
+      }
+    } else ambCriticoDesde = 0;
     ambVigiasBaixas = mediana < 24 ? ambVigiasBaixas + 1 : 0;
-    if (ambVigiasBaixas < 3) return;
+    if (ambVigiasBaixas < 2) return;
     ambVigiasBaixas = 0; ambAmostrasFps.length = 0; ambDegrau++;
     try {
       if (ambDegrau === 1 && typeof view.setCapChuva === 'function') view.setCapChuva(1200);
-      else if (ambDegrau === 2 && typeof view.setCapChuva === 'function') view.setCapChuva(400);
-      else if (ambDegrau === 3 && typeof view.setCapChuva === 'function') view.setCapChuva(0);
-      else if (ambDegrau === 4 && typeof view.setDprSessao === 'function') view.setDprSessao(1);
+      else if (ambDegrau === 2 && typeof view.setDprSessao === 'function') view.setDprSessao(1);
+      else if (ambDegrau === 3 && typeof view.setCapChuva === 'function') view.setCapChuva(400);
+      else if (ambDegrau === 4 && typeof view.setCapChuva === 'function') view.setCapChuva(0);
     } catch (_) {}
     ambSincronizarPainel();
   }
