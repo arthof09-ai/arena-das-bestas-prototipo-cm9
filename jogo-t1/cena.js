@@ -2235,12 +2235,79 @@
                     animation(u, false);
                 renderer.shadowMap.needsUpdate = true;
             }
+            /* Remendo t-grifo-matriarca (palavra do Mestre, 18/11/2026):
+               corpo próprio do Grifo — quadrúpede alado de primitivas,
+               na mesma pedra mate dos marcadores. Medidas declaradas:
+               u.size é a altura TOTAL = ombro × 1,355; o ombro S (fonte
+               VZ: 380 cm no ombro) sai S = u.size / 1,355; pescoço+cabeça
+               = 0,355·S acima do ombro; a envergadura de 8 m da fonte é
+               de asas ABERTAS — em repouso as asas vão dobradas ao longo
+               do corpo. Frente = +Z (a convenção do Orc e do Lobo).
+               Nenhum outro marcador passa por aqui. */
+            function addMarkerGrifo(u, m) {
+                const S = u.size / 1.355;
+                const g = new T.Group();
+                const bola = (rx, ry, rz, x, y, z) => {
+                    const p = new T.Mesh(new T.SphereGeometry(1, 10, 8), m);
+                    p.scale.set(rx, ry, rz); p.position.set(x, y, z); g.add(p);
+                };
+                const entre = (ax, ay, az, bx, by, bz, ra, rb) => {
+                    const a = new T.Vector3(ax, ay, az), b = new T.Vector3(bx, by, bz);
+                    const d = b.clone().sub(a), len = d.length();
+                    const p = new T.Mesh(new T.CylinderGeometry(rb, ra, len, 9), m);
+                    p.position.copy(a).addScaledVector(d, .5);
+                    p.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), d.normalize());
+                    g.add(p);
+                };
+                const cone = (r, h, x, y, z, rx, rz, achata) => {
+                    const p = new T.Mesh(new T.ConeGeometry(r, h, 7), m);
+                    if (achata) p.scale.x = achata;
+                    p.position.set(x, y, z); p.rotation.set(rx, 0, rz); g.add(p);
+                };
+                // Tronco e peito: o dorso fica à altura do ombro (S).
+                bola(.21 * S, .185 * S, .36 * S, 0, .815 * S, 0);
+                bola(.185 * S, .20 * S, .21 * S, 0, .76 * S, .27 * S);
+                // Pescoço e cabeça de águia, com bico e tufos.
+                entre(0, .86 * S, .33 * S, 0, 1.13 * S, .47 * S, .10 * S, .068 * S);
+                bola(.092 * S, .090 * S, .108 * S, 0, 1.19 * S, .50 * S);
+                cone(.052 * S, .18 * S, 0, 1.155 * S, .585 * S, 1.83, 0);
+                cone(.034 * S, .10 * S, 0, 1.11 * S, .565 * S, 1.65, 0);
+                cone(.035 * S, .11 * S, -.048 * S, 1.283 * S, .455 * S, -.5, -.35);
+                cone(.035 * S, .11 * S, .048 * S, 1.283 * S, .455 * S, -.5, .35);
+                // Pernas: as da frente com garras de águia, as de trás de leão.
+                for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+                    const x = sx * .13 * S, z = sz * .24 * S, f = sz > 0;
+                    const meio = z + (f ? .035 : -.045) * S;
+                    entre(x, .66 * S, z, x, .36 * S, meio, .075 * S, .056 * S);
+                    entre(x, .38 * S, meio, x, .05 * S, z + (f ? .02 : .03) * S, .046 * S, .038 * S);
+                    bola(.058 * S, .034 * S, .095 * S, x, .034 * S, z + (f ? .05 : .04) * S);
+                    if (f) for (let i = -1; i <= 1; i++)
+                        cone(.013 * S, .055 * S, x + i * .032 * S, .026 * S, z + .125 * S, 2.2, 0);
+                }
+                // Asas DOBRADAS ao longo do corpo (ver o cabeçalho).
+                for (const sx of [-1, 1]) {
+                    entre(sx * .13 * S, .93 * S, .20 * S, sx * .225 * S, .86 * S, -.08 * S, .045 * S, .034 * S);
+                    const asa = new T.Mesh(new T.SphereGeometry(1, 10, 8), m);
+                    asa.scale.set(.035 * S, .10 * S, .30 * S);
+                    asa.position.set(sx * .225 * S, .78 * S, -.22 * S);
+                    asa.rotation.x = .10; g.add(asa);
+                    cone(.045 * S, .15 * S, sx * .21 * S, .74 * S, -.50 * S, -1.95, 0, .35);
+                }
+                // Cauda com tufo na ponta.
+                entre(0, .88 * S, -.34 * S, 0, .76 * S, -.52 * S, .032 * S, .025 * S);
+                entre(0, .76 * S, -.52 * S, 0, .80 * S, -.68 * S, .023 * S, .017 * S);
+                bola(.05 * S, .06 * S, .07 * S, 0, .815 * S, -.70 * S);
+                u.pivot.add(g);
+            }
             // Recurso visual: preserva a unidade e usa os mesmos marcadores locais.
             function addMarker(u) {
                 // Pedra mate, independente da cor de identificação do anel.
                 u.markerTint = u.model === 'marcador-lobo' ? 0x777b79 : 0x817c73;
                 const m = new T.MeshLambertMaterial({ color: C(u.markerTint) });
-                if (u.model === 'marcador-lobo') {
+                if (u.model === 'marcador-grifo') {
+                    addMarkerGrifo(u, m);
+                }
+                else if (u.model === 'marcador-lobo') {
                     const body = new T.Mesh(new T.IcosahedronGeometry(1, 1), m);
                     body.scale.set(.3, u.size * .5, .7);
                     body.position.y = u.size * .5;
@@ -2273,7 +2340,7 @@
                 const model = data.modelo || 'marcador';
                 if (typeof model !== 'string')
                     throw new TypeError('Modelo inválido.');
-                if (!['marcador', 'marcador-lobo'].includes(model)) {
+                if (!['marcador', 'marcador-lobo', 'marcador-grifo'].includes(model)) {
                     const url = new URL(model, location.href);
                     if (url.origin !== location.origin || !url.pathname.endsWith('.glb'))
                         throw new TypeError('GLB local obrigatório.');

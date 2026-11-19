@@ -390,7 +390,13 @@
    * a fonte PJR1 os declara (characters.gd, entrada grifo):
    * Vida 110, CA 30 e dano das Garras 2d6+3 são o PREENCHIMENTO
    * DE PROTÓTIPO daquela fonte; iniciativa 1 idem; a altura
-   * 3,8 m é o corpus VZ (380 cm no ombro, SISTEMA-DE-MEDIDAS);
+   * 3,8 m é o corpus VZ (380 cm no ombro, SISTEMA-DE-MEDIDAS) —
+   * desde o remendo de 18/11/2026 (frente t-grifo-matriarca,
+   * palavra do Mestre), alturaMetros declara o TOTAL de 5,15 m
+   * = ombro 3,8 m + pescoço/cabeça 1,35 m (conta declarada no
+   * relatório do remendo) e o corpo é o marcador próprio
+   * 'marcador-grifo' de cena.js (quadrúpede alado de primitivas),
+   * não o peão genérico;
    * ataque 1d6+10 e reserva interna 6 são preenchimento DESTE
    * banco de ensaio (o «atk 7» do PJR1 é outra convenção de
    * protótipo e não se converte; +10 é o padrão corpo-a-corpo
@@ -400,7 +406,7 @@
   const VOO_METROS_CAMADA = 1.5;
   const FIGURAS_TESTE = {
     grifo: {
-      nome: 'Grifo-Matriarca de Sílica', modelo: 'marcador', alturaMetros: 3.8,
+      nome: 'Grifo-Matriarca de Sílica', modelo: 'marcador-grifo', alturaMetros: 5.15,
       voo: 'asas', vida: 110,
       combate: { ca: 30, atkQtd: 1, atkFaces: 6, atkBonus: 10, arma: 'Garras',
         dano: { qtd: 2, faces: 6, bonus: 3 }, alcance: 1.5 },
