@@ -2039,7 +2039,8 @@
                 }
                 valid(p);
                 mesh.visible = true;
-                mesh.position.set(wx(p.x), world.height(wx(p.x), wz(p.z)) + .045, wz(p.z));
+                /* CORRECÇÃO-VOO: o anel (hover/destino) honra a altitude da casa — na laje de uma voadora, não no chão. */
+                mesh.position.set(wx(p.x), world.height(wx(p.x), wz(p.z)) + (p.altitude || 0) + .045, wz(p.z));
             }
             function showMovement(cells = []) {
                 cells = cells.filter(p => { try { valid(p); return true; } catch { return false; } });
@@ -2828,7 +2829,7 @@
                         }
                 return r;
             }
-            function hit(clientX, clientY) {
+            function hit(clientX, clientY, opcoes) {
                 const rect = renderer.domElement.getBoundingClientRect(), sx = clientX - rect.left, sy = clientY - rect.top, hits = [];
                 units.forEach(u => {
                     if (u.oculto)
@@ -2839,13 +2840,22 @@
                 });
                 hits.sort((a, b) => a.distance - b.distance);
                 ray.setFromCamera(new T.Vector2(sx / width * 2 - 1, 1 - sy / height * 2), camaraActiva());
-                const point = ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), 0), new T.Vector3());
+                /* CORRECÇÃO-VOO (19/11): o plano do toque é o da camada de quem
+                   se move (opcoes.altitude, em metros); sem opção, o
+                   plano do chão de sempre. Antes, o raio caía sempre
+                   em y=0: tocar numa casa da laje de uma voadora
+                   devolvia a casa projectada no solo — deslocada de
+                   altitude/tan(pitch) na direcção da câmera (medido:
+                   1 casa a 6 m e pitch ~1,35; ~11 casas a pitch 0,35,
+                   fora do campo) — daí o «só pega num ângulo certo». */
+                const altPlano = (opcoes && Number.isFinite(opcoes.altitude) && opcoes.altitude > 0) ? opcoes.altitude : 0;
+                const point = ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), -altPlano), new T.Vector3());
                 let cell = null;
                 if (point) {
                     const x = Math.floor(point.x / CELL + area.cols / 2) + area.origin.x, z = Math.floor(point.z / CELL + area.rows / 2) + area.origin.y;
                     try {
                         valid({ x, z });
-                        cell = { x, z };
+                        cell = altPlano > 0 ? { x, z, altitude: altPlano } : { x, z };
                     }
                     catch {
                     }

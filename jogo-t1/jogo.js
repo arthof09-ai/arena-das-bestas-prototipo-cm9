@@ -4380,8 +4380,13 @@
       say('Fim do campo por aí.');
       return;
     }
+    /* Ocupação por coordenada exacta (regra do Mestre, 19/11):
+       só bloqueia o passo quem está NA casa do chão (camada 0) —
+       uma voadora sobre a casa não a ocupa para quem anda em
+       baixo. Sem a camada, a seta recusava «Essa casa está
+       ocupada.» debaixo de quem voa. */
     const ocupada = view.getState().units.some(v =>
-      v.id !== PROPRIA && v.posicao.x === nx && v.posicao.y === ny);
+      v.id !== PROPRIA && v.posicao.x === nx && v.posicao.y === ny && camadaDe(v.id) === 0);
     if (ocupada) { supRegistar('bloqueada', { acao: 'mover', actor: PROPRIA, razao: 'Casa ocupada' }); say('Essa casa está ocupada.'); return; }
     passoEmCurso = true;
     passoPreco = CASA_M;   // ESCALA: preço capturado no despacho do passo
@@ -4480,6 +4485,15 @@
   function iniciarVez(id) {
     vezAtual = id;
     vezManualAberta = false; comandada = null; ctxMovManual = null;   // D1: a vez dela nunca é manual de monstro
+    /* CORRECÇÃO-VOO (19/11): a figura seleccionada é a da vez. Sem
+       esta reposição, a selecção ficava presa na última figura
+       comandada à mão (abrirVezManual selecciona-a) e o Mover da
+       Ong lia o alcance e a grelha DESSA figura — com uma voadora
+       a voar, a laje dela à altitude dela e «longe demais» em
+       todas as casas do chão (o alcance 3D não responde à chave
+       2D do toque dela). Medido na REF_117: grelha de 39 casas
+       centrada na posição do Grifo durante o Mover da Ong. */
+    selecionar(PROPRIA);
     atacou = false;
     /* C-39: a declaração de reacção é da ronda — ao abrir a vez
        dela, a declaração por usar expira e a Reacção renova
@@ -5025,6 +5039,17 @@
   function seqTurnoMorto(epoca, id) {
     return supEpoca !== epoca || batalhaFim || supCongelado || !vezManualAberta || vezAtual !== id;
   }
+  /* CORRECÇÃO-VOO (19/11): o plano do toque durante o Mover é o da
+     camada de quem se move — a cena intersecta o raio com esse
+     plano, para a casa tocada ser a casa VISTA (a da laje, para
+     uma voadora), em qualquer ângulo de câmera. Fora do Mover,
+     sem opção: o plano do chão de sempre. */
+  function planoToqueMover() {
+    if (estado !== 'mover') return undefined;
+    const id = vezManualAberta ? comandada : selecionada;
+    const alt = camadaDe(id) * VOO_METROS_CAMADA;
+    return alt > 0 ? { altitude: alt } : undefined;
+  }
   /* O toque no mundo durante a vez manual: tocar noutra figura
      marca-a como alvo DA FIGURA COMANDADA (nunca «alvo da Ong»);
      tocar no chão em Mover despacha o movimento dela; tocar na
@@ -5036,20 +5061,41 @@
     if (estado === 'movendo' || view.getState().moving) { say(`Espere — <b>${nomeCena(id)}</b> ainda está a andar.`); return; }
     if (estado === 'resultado' || apresentacaoEmCurso) { say('Aperte <b>Continuar</b> para seguir.'); return; }
     if (decisaoPorResolver()) { say(FRASE_DECISAO_PENDENTE); return; }
-    const hit = view.hitTest(clientX, clientY);
-    if (hit.unitId) {
-      const fig = unidade(hit.unitId);
-      const nome = fig ? fig.nome : nomeCena(hit.unitId);
-      if (hit.unitId === id) {
+    const hit = view.hitTest(clientX, clientY, planoToqueMover());
+    /* CORRECÇÃO-VOO 2+3 (19/11): em Mover, o rect da própria
+       comandada cobre casas vizinhas (no ar, as da laje à volta
+       dela) e o rect de uma figura NOUTRA camada pode cobrir a
+       casa tocada (quem está no chão, sob a laje): se a casa sob
+       o toque é um destino do alcance, diferente da casa dela,
+       o toque é de MOVIMENTO — ignora-se o unitId e cai-se no
+       ramo das casas abaixo. Medido: tocar na casa ao lado do
+       Grifo a voar não andava (o toque caía no rect do modelo
+       dele e era lido como toque NA figura); e a regra do
+       Mestre manda ocupação por coordenada exacta, nunca por
+       coluna. */
+    let toqueUnidade = hit.unitId;
+    if (estado === 'mover' && hit.unitId && hit.cell
+      && (hit.unitId === id || camadaDe(hit.unitId) !== camadaDe(id))) {
+      const celT = casaMotor(hit.cell);
+      const uT = unidade(id);
+      if (celT && uT
+        && (celT.x !== uT.posicao.x || celT.y !== uT.posicao.y)
+        && [...alcance.values()].some(c => c.x === celT.x && c.y === celT.y))
+        toqueUnidade = null;
+    }
+    if (toqueUnidade) {
+      const fig = unidade(toqueUnidade);
+      const nome = fig ? fig.nome : nomeCena(toqueUnidade);
+      if (toqueUnidade === id) {
         if (estado === 'mover') { say(`<b>${nome}</b> já está aqui — toque numa casa acesa para andar.`); return; }
-        abrirFicha(hit.unitId);
+        abrirFicha(toqueUnidade);
         say(`Você comanda <b>${nome}</b> nesta vez.`);
         return;
       }
-      alvo = hit.unitId;
+      alvo = toqueUnidade;
       if (estado === 'mover') sairMover();
       else if (estado === 'atacar') { estado = 'base'; renderAcoes(); }
-      abrirFicha(hit.unitId);
+      abrirFicha(toqueUnidade);
       say(`<b>${nome}</b> é o alvo. Aperte <b>Atacar</b> para <b>${nomeCena(id)}</b> o atacar.`);
       return;
     }
@@ -6521,27 +6567,47 @@
        linha é a que fecha a vez dela (o parque de oportunidade
        da M2) e fica lavrada já. */
     if (decisaoPorResolver()) { say(FRASE_DECISAO_PENDENTE); return; }
-    const hit = view.hitTest(clientX, clientY);
+    const hit = view.hitTest(clientX, clientY, planoToqueMover());
     if (estado === 'movendo') {
       say(`Espere — <b>${nomeCena(selecionada)}</b> ainda está a andar.`);
       return;
     }
-    if (hit.unitId) {
-      const fig = unidade(hit.unitId);
-      const nome = fig ? fig.nome : nomeCena(hit.unitId);
+    /* CORRECÇÃO-VOO 2+3 (19/11): em Mover, o rect da própria Ong
+       pode cobrir a casa vizinha tocada, e o rect de uma figura
+       NOUTRA camada (a voadora sobre a casa) cobre a casa debaixo
+       dela: se essa casa é um destino do alcance, diferente da
+       casa dela, o toque é de MOVIMENTO — ignora-se o unitId e
+       cai-se no ramo das casas abaixo. Sem isto, tocar ao lado
+       dela devolvia «já está aqui» e tocar debaixo da voadora
+       marcava-a como alvo em vez de andar (regra do Mestre:
+       ocupação por coordenada exacta — a casa do chão debaixo
+       de quem voa é de quem anda no chão). */
+    let toqueUnidade = hit.unitId;
+    if (estado === 'mover' && hit.unitId && hit.cell
+      && (hit.unitId === PROPRIA || camadaDe(hit.unitId) !== camadaDe(PROPRIA))) {
+      const celT = casaMotor(hit.cell);
+      const uT = unidade(PROPRIA);
+      if (celT && uT
+        && (celT.x !== uT.posicao.x || celT.y !== uT.posicao.y)
+        && alcance.get(chave(celT.x, celT.y)))
+        toqueUnidade = null;
+    }
+    if (toqueUnidade) {
+      const fig = unidade(toqueUnidade);
+      const nome = fig ? fig.nome : nomeCena(toqueUnidade);
       /* PRÉVIA v2: com a prévia aberta, tocar noutra figura TROCA o
          alvo da prévia e re-deriva-a (o desenho §4.2: a prévia
          segue o alvo marcado) — ou mata-a para a escolha de alvo
          se o portão recusar o alvo novo. Sem registo novo (§7.4).
          O cartão da figura não se abre por cima da prévia. */
-      if (estado === 'previa' && hit.unitId !== PROPRIA) {
-        alvo = hit.unitId;
+      if (estado === 'previa' && toqueUnidade !== PROPRIA) {
+        alvo = toqueUnidade;
         const bloqueioToque = validarAlvoAtaqueOng('atacar');
         if (bloqueioToque) { estado = 'atacar'; renderAcoes(); say(bloqueioToque.mensagem); return; }
         renderAcoes();
         return;
       }
-      if (hit.unitId === PROPRIA) {
+      if (toqueUnidade === PROPRIA) {
         // A própria: abre a ficha dela. Em Mover, o toque nela só diz
         // que ela já está aqui (a casa dela não é destino).
         if (estado === 'mover') {
@@ -6560,12 +6626,12 @@
          (T1.1, intacto) e marca-a como ALVO da Ong; a figura activa
          e a vez continuam a ser da Ong. Um estado pendente que esteja
          aberto repõe-se à base, com a faixa a acompanhar. */
-      alvo = hit.unitId;
+      alvo = toqueUnidade;
       if (estado === 'mover') sairMover();
       else if (estado === 'atacar' || estado === 'rolagem' || estado === 'consumivel' || estado === 'confirmar-fim' || estado === 'desgraca-lista') {
         estado = 'base'; ataquePendente = null; renderAcoes();
       }
-      abrirFicha(hit.unitId);
+      abrirFicha(toqueUnidade);
       say(`<b>${nome}</b> é o seu alvo. Aperte <b>Atacar</b> para a atacar com a Ong, ou <b>Mover</b> para você se aproximar.`);
       return;
     }
@@ -6929,7 +6995,7 @@
     if (ponteiros.size === 1) {
       gesto = { id: e.pointerId, x: e.clientX, y: e.clientY, lastX: e.clientX, lastY: e.clientY, drag: false };
       multi = false;
-      if (estado === 'mover') view.showHover(view.hitTest(e.clientX, e.clientY).cell);
+      if (estado === 'mover') view.showHover(view.hitTest(e.clientX, e.clientY, planoToqueMover()).cell);
     } else {
       multi = true;
       view.showHover(null);
@@ -6974,7 +7040,7 @@
                  nasceu ? e.clientY - gesto.y : dy);
       view.showHover(null);
     } else if (estado === 'mover') {
-      view.showHover(view.hitTest(e.clientX, e.clientY).cell);
+      view.showHover(view.hitTest(e.clientX, e.clientY, planoToqueMover()).cell);
     }
     gesto.lastX = e.clientX; gesto.lastY = e.clientY;
   });
