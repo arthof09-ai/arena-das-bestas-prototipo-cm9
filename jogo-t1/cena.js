@@ -1913,7 +1913,7 @@
              * por compromisso; quem faz os efeitos de mundo (visaoAplicar
              * + transporte) é a casca, ao recebê-lo. A Dinâmica nunca
              * passa por aqui: ela escreve só yaw (§14.9). */
-            const FRENTE_OFFSET = 0;   // §14.3.2: 0 MEDIDO (DIAG 3, 17/11) — o desvio de montagem de cada modelo corrige-se DENTRO do pivot (FRENTE_MODELO, junto a addUnit); frente do pivot = frente do corpo. Não «corrigir» aqui.
+            const FRENTE_OFFSET = 0;   // §14.3.2: derivado 0 — a PC1 mede antes de contar como verificado
             const ACOPL_CARDINAIS = [['S', 0], ['E', 90], ['N', 180], ['W', 270]];
             let acoplId = null, acoplComprometido = null, acoplCandidato = null, acoplCandidatoDesde = 0, acoplPendente = false;
             let acoplAssentadaGraus = 0, acoplCompromissos = 0, acoplRecalculos = 0;
@@ -1986,18 +1986,6 @@
              * camaraActiva() — o único ponto de troca. Sair é voltar à
              * ortográfica congelada: exacto por construção. */
             const ctrlLivre = { pos: new T.Vector3(0, 1.6, 4.9), yaw: 0, pitch: 0, joyX: 0, joyY: 0, sobe: 0, teclas: {} };
-            /* ---------- MOVIMENTO LIVRE COM JOYSTICK (aba «Testes»,
-               t-movimento-livre-joystick, 19/11/2026) ----------
-               Ferramenta de teste pedida pelo Mestre: conduzir a
-               figura seleccionada com um manípulo no ecrã para ver o
-               andar com as próprias mãos. O estado contínuo do
-               manípulo vive aqui (molde do ctrlLivre); o passo corre
-               em animate (passoMovLivre). Não é mecânica de jogo:
-               fora da grelha, dos turnos e do PA — a casa lógica só
-               muda ao assentar (largar o manípulo), por snap para a
-               casa mais próxima. */
-            const ctrlMovLivre = { joyX: 0, joyY: 0 };
-            let movLivreUnidade = null;   // a unidade em condução, ou null
             let velLivre = 1;
             const camaraActiva = () => mode === 'livre' ? cameraLivre : camera;
             const livreRound = v => Math.round(v * 100) / 100;
@@ -2039,8 +2027,7 @@
                 }
                 valid(p);
                 mesh.visible = true;
-                /* CORRECÇÃO-VOO: o anel (hover/destino) honra a altitude da casa — na laje de uma voadora, não no chão. */
-                mesh.position.set(wx(p.x), world.height(wx(p.x), wz(p.z)) + (p.altitude || 0) + .045, wz(p.z));
+                mesh.position.set(wx(p.x), world.height(wx(p.x), wz(p.z)) + .045, wz(p.z));
             }
             function showMovement(cells = []) {
                 cells = cells.filter(p => { try { valid(p); return true; } catch { return false; } });
@@ -2151,22 +2138,12 @@
                 const clip = T.AnimationClip.findByName(u.animations, name);
                 if (!clip)
                     return;
-                /* B2-R (bancada das correccoes da Ong, sentenca S4.3): o fade
-                   escolhe-se POR PAR (origem, destino) aqui dentro do
-                   playClip - o par idle-andar funde em 0,06 s nos dois
-                   sentidos; entradas de gesto (ataque/reaccao), saidas de
-                   gesto para idle e todos os outros pares mantem 0,15 s.
-                   NAO parametrizar via animation(): apanharia escondido as
-                   saidas de gesto (animation(u,false) em fim de gesto). */
-                const parIdleAndar = (u.actionName === u.clips.idle && name === u.clips.andar)
-                    || (u.actionName === u.clips.andar && name === u.clips.idle);
-                const fade = parIdleAndar ? .06 : .15;
                 const next = u.mixer.clipAction(clip);
                 next.reset().setLoop(duration ? T.LoopOnce : T.LoopRepeat, duration ? 1 : Infinity);
                 next.clampWhenFinished = !!duration;
-                next.setEffectiveTimeScale(duration ? clip.duration / duration : 1).fadeIn(fade).play();
+                next.setEffectiveTimeScale(duration ? clip.duration / duration : 1).fadeIn(.15).play();
                 if (u.action)
-                    u.action.fadeOut(fade);
+                    u.action.fadeOut(.15);
                 u.action = next;
                 u.actionName = name;
             }
@@ -2258,79 +2235,12 @@
                     animation(u, false);
                 renderer.shadowMap.needsUpdate = true;
             }
-            /* Remendo t-grifo-matriarca (palavra do Mestre, 18/11/2026):
-               corpo próprio do Grifo — quadrúpede alado de primitivas,
-               na mesma pedra mate dos marcadores. Medidas declaradas:
-               u.size é a altura TOTAL = ombro × 1,355; o ombro S (fonte
-               VZ: 380 cm no ombro) sai S = u.size / 1,355; pescoço+cabeça
-               = 0,355·S acima do ombro; a envergadura de 8 m da fonte é
-               de asas ABERTAS — em repouso as asas vão dobradas ao longo
-               do corpo. Frente = +Z (a convenção do Orc e do Lobo).
-               Nenhum outro marcador passa por aqui. */
-            function addMarkerGrifo(u, m) {
-                const S = u.size / 1.355;
-                const g = new T.Group();
-                const bola = (rx, ry, rz, x, y, z) => {
-                    const p = new T.Mesh(new T.SphereGeometry(1, 10, 8), m);
-                    p.scale.set(rx, ry, rz); p.position.set(x, y, z); g.add(p);
-                };
-                const entre = (ax, ay, az, bx, by, bz, ra, rb) => {
-                    const a = new T.Vector3(ax, ay, az), b = new T.Vector3(bx, by, bz);
-                    const d = b.clone().sub(a), len = d.length();
-                    const p = new T.Mesh(new T.CylinderGeometry(rb, ra, len, 9), m);
-                    p.position.copy(a).addScaledVector(d, .5);
-                    p.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), d.normalize());
-                    g.add(p);
-                };
-                const cone = (r, h, x, y, z, rx, rz, achata) => {
-                    const p = new T.Mesh(new T.ConeGeometry(r, h, 7), m);
-                    if (achata) p.scale.x = achata;
-                    p.position.set(x, y, z); p.rotation.set(rx, 0, rz); g.add(p);
-                };
-                // Tronco e peito: o dorso fica à altura do ombro (S).
-                bola(.21 * S, .185 * S, .36 * S, 0, .815 * S, 0);
-                bola(.185 * S, .20 * S, .21 * S, 0, .76 * S, .27 * S);
-                // Pescoço e cabeça de águia, com bico e tufos.
-                entre(0, .86 * S, .33 * S, 0, 1.13 * S, .47 * S, .10 * S, .068 * S);
-                bola(.092 * S, .090 * S, .108 * S, 0, 1.19 * S, .50 * S);
-                cone(.052 * S, .18 * S, 0, 1.155 * S, .585 * S, 1.83, 0);
-                cone(.034 * S, .10 * S, 0, 1.11 * S, .565 * S, 1.65, 0);
-                cone(.035 * S, .11 * S, -.048 * S, 1.283 * S, .455 * S, -.5, -.35);
-                cone(.035 * S, .11 * S, .048 * S, 1.283 * S, .455 * S, -.5, .35);
-                // Pernas: as da frente com garras de águia, as de trás de leão.
-                for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-                    const x = sx * .13 * S, z = sz * .24 * S, f = sz > 0;
-                    const meio = z + (f ? .035 : -.045) * S;
-                    entre(x, .66 * S, z, x, .36 * S, meio, .075 * S, .056 * S);
-                    entre(x, .38 * S, meio, x, .05 * S, z + (f ? .02 : .03) * S, .046 * S, .038 * S);
-                    bola(.058 * S, .034 * S, .095 * S, x, .034 * S, z + (f ? .05 : .04) * S);
-                    if (f) for (let i = -1; i <= 1; i++)
-                        cone(.013 * S, .055 * S, x + i * .032 * S, .026 * S, z + .125 * S, 2.2, 0);
-                }
-                // Asas DOBRADAS ao longo do corpo (ver o cabeçalho).
-                for (const sx of [-1, 1]) {
-                    entre(sx * .13 * S, .93 * S, .20 * S, sx * .225 * S, .86 * S, -.08 * S, .045 * S, .034 * S);
-                    const asa = new T.Mesh(new T.SphereGeometry(1, 10, 8), m);
-                    asa.scale.set(.035 * S, .10 * S, .30 * S);
-                    asa.position.set(sx * .225 * S, .78 * S, -.22 * S);
-                    asa.rotation.x = .10; g.add(asa);
-                    cone(.045 * S, .15 * S, sx * .21 * S, .74 * S, -.50 * S, -1.95, 0, .35);
-                }
-                // Cauda com tufo na ponta.
-                entre(0, .88 * S, -.34 * S, 0, .76 * S, -.52 * S, .032 * S, .025 * S);
-                entre(0, .76 * S, -.52 * S, 0, .80 * S, -.68 * S, .023 * S, .017 * S);
-                bola(.05 * S, .06 * S, .07 * S, 0, .815 * S, -.70 * S);
-                u.pivot.add(g);
-            }
             // Recurso visual: preserva a unidade e usa os mesmos marcadores locais.
             function addMarker(u) {
                 // Pedra mate, independente da cor de identificação do anel.
                 u.markerTint = u.model === 'marcador-lobo' ? 0x777b79 : 0x817c73;
                 const m = new T.MeshLambertMaterial({ color: C(u.markerTint) });
-                if (u.model === 'marcador-grifo') {
-                    addMarkerGrifo(u, m);
-                }
-                else if (u.model === 'marcador-lobo') {
+                if (u.model === 'marcador-lobo') {
                     const body = new T.Mesh(new T.IcosahedronGeometry(1, 1), m);
                     body.scale.set(.3, u.size * .5, .7);
                     body.position.y = u.size * .5;
@@ -2346,17 +2256,6 @@
                 }
                 u.pivot.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
             }
-            /* FRENTE DO MODELO — correcção do andar de ré (desenho
-             * t-andar-teleporte/correccao-re; medição DIAG 3): a frente do corpo
-             * é propriedade do FICHEIRO (medida no Blender, pose de repouso) e
-             * inscreve-se aqui, por caminho do modelo, ANTES de o modelo ser
-             * usado. Os zeros do Orc e do Lobo são MEDIDOS, não omissões:
-             * ausência da tabela ≠ 0 — é «por medir», e a guarda de addUnit
-             * grita (frenteMedida=false + console.warn nomeado). O desvio
-             * corrige-se DENTRO do pivot (rotação da cena do GLB na montagem),
-             * por isso o §14 fica com FRENTE_OFFSET = 0: frente do pivot =
-             * frente do corpo para todos os modelos. */
-            const FRENTE_MODELO = { 'modelos/manequim-f-roxa.glb': Math.PI, 'modelos/manequim-m.glb': Math.PI, 'modelos/orc-mutante.glb': 0, 'modelos/lobo-cinzento-051.glb': 0 };
             async function addUnit(data) {
                 for (const key of Object.keys(data))
                     if (!UNIT_KEYS.has(key))
@@ -2374,21 +2273,11 @@
                 const model = data.modelo || 'marcador';
                 if (typeof model !== 'string')
                     throw new TypeError('Modelo inválido.');
-                if (!['marcador', 'marcador-lobo', 'marcador-grifo'].includes(model)) {
+                if (!['marcador', 'marcador-lobo'].includes(model)) {
                     const url = new URL(model, location.href);
                     if (url.origin !== location.origin || !url.pathname.endsWith('.glb'))
                         throw new TypeError('GLB local obrigatório.');
                 }
-                /* Frente do modelo: resolve-se ANTES da tentativa de carga, para
-                 * a unidade caída no recurso de erro conservar os dois campos.
-                 * .glb inscrita → valor da tabela, frenteMedida=true; .glb
-                 * ausente → 0/false + o warn da guarda (§3.3.4 do desenho);
-                 * sem GLB (marcadores) → 0/true («sem frente por medir»). */
-                const frenteTabela = model.endsWith('.glb') ? FRENTE_MODELO[model] : undefined;
-                const frenteModeloRad = frenteTabela !== undefined ? frenteTabela : 0;
-                const frenteMedida = !model.endsWith('.glb') || frenteTabela !== undefined;
-                if (model.endsWith('.glb') && frenteTabela === undefined)
-                    console.warn('FRENTE_MODELO: modelo sem frente medida inscrita: "' + model + '" (unidade "' + data.id + '") — montado com offset 0 e frenteMedida=false; medir a frente e inscrever na tabela ANTES de usar este modelo.');
                 const root = new T.Group(), pivot = new T.Group();
                 root.add(pivot);
                 scene.add(root);
@@ -2396,7 +2285,7 @@
                 label.className = 'nome';
                 label.textContent = data.nome;
                 labels.appendChild(label);
-                const u = { id: data.id, nome: data.nome, x: data.x, z: data.y, altitude: data.altitude ?? 0, vivo: data.vivo, root, pivot, label, size: data.alturaMetros, queue: [], step: null, shAnc: null, clips: { idle: data.animacoes?.idle, andar: data.animacoes?.andar, ataque:data.animacoes?.ataque, reacao:data.animacoes?.reacao }, animations: [], removed: false, oculto: false, model, frenteModeloRad, frenteMedida };
+                const u = { id: data.id, nome: data.nome, x: data.x, z: data.y, altitude: data.altitude ?? 0, vivo: data.vivo, root, pivot, label, size: data.alturaMetros, queue: [], step: null, clips: { idle: data.animacoes?.idle, andar: data.animacoes?.andar, ataque:data.animacoes?.ataque, reacao:data.animacoes?.reacao }, animations: [], removed: false, oculto: false, model };
                 const tint = [0x87b4b0, 0xe5bb74, 0xb98b9d, 0xb5c3ce, 0xb7b77c][units.size % 5];
                 u.ring = ring(.56, tint);
                 u.contact = new T.Mesh(new T.CircleGeometry(.5, 24), material(0x080c12, .3));
@@ -2427,8 +2316,6 @@
                             release(gltf.scene);
                             return;
                         }
-                        if (frenteModeloRad !== 0)
-                            gltf.scene.rotateY(frenteModeloRad);
                         gltf.scene.updateMatrixWorld(true);
                         const b = new T.Box3().setFromObject(gltf.scene), s = b.getSize(new T.Vector3()), center = b.getCenter(new T.Vector3());
                         gltf.scene.scale.setScalar(data.alturaMetros / s.y);
@@ -2597,87 +2484,6 @@
                 const alturaSolo = world.alturaVisivel ? world.alturaVisivel(ctrlLivre.pos.x, ctrlLivre.pos.z) : world.height(ctrlLivre.pos.x, ctrlLivre.pos.z);
                 ctrlLivre.pos.y = clamp(ctrlLivre.pos.y, alturaSolo + .4, 45);
             }
-            /* Assentar a condução do movimento livre: a casa lógica
-               passa a ser a casa mais próxima da posição contínua,
-               pose() põe o root exactamente nela e volta o repouso.
-               'moveend' só se a condução interrompeu um movimento da
-               casca a meio — para a casca não ficar pendurada em
-               «movendo»; sem interrupção, nenhum evento nasce daqui
-               (nenhum despacho da casca existiu, logo nenhum custo
-               pode ser descontado por esta ferramenta). */
-            function assentarMovLivre(u) {
-                if (!u.movLivrePos) return;
-                const px = u.movLivrePos.x, pz = u.movLivrePos.z;
-                u.movLivrePos = null;
-                if (movLivreUnidade === u) movLivreUnidade = null;
-                const interrompeu = !!u.movLivreInterrompeu;
-                u.movLivreInterrompeu = false;
-                if (u.vivo && units.get(u.id) === u) {
-                    u.x = clamp(Math.round(px / CELL + area.origin.x + (area.cols - 1) / 2), area.origin.x, area.origin.x + area.cols - 1);
-                    u.z = clamp(Math.round(pz / CELL + area.origin.y + (area.rows - 1) / 2), area.origin.y, area.origin.y + area.rows - 1);
-                    u.pivot.rotation.y = Math.atan2(Math.sin(u.pivot.rotation.y), Math.cos(u.pivot.rotation.y));
-                    pose(u);
-                    if (interrompeu) emit('moveend', publicUnit(u));
-                }
-            }
-            /* O passo da condução (movimento livre), chamado em
-               animate antes do ciclo das unidades. Velocidade: a do
-               andar de hoje — 140 ms por casa de 1,5 m (≈10,7 m/s)
-               no empurrão máximo, escalada pelo módulo analógico do
-               manípulo (empurrar de leve = andar devagar). Direcção
-               relativa à câmera: empurrar para cima afasta da
-               câmera. Virar suave, tecto de 10 rad/s, para o rumo
-               pedido. Colisão simples por eixo (desliza ao longo):
-               borda da área · círculos de world.obstaculos + 0,35 m
-               · outras figuras vivas a 0,8 m · degrau > 0,55 m. */
-            function passoMovLivre(dt) {
-                const alvo = (mode !== 'livre' && selected) ? units.get(selected) : null;
-                if (movLivreUnidade && (movLivreUnidade !== alvo || !movLivreUnidade.vivo || units.get(movLivreUnidade.id) !== movLivreUnidade))
-                    assentarMovLivre(movLivreUnidade);
-                if (!alvo || !alvo.vivo) return;
-                const jx = ctrlMovLivre.joyX, jy = ctrlMovLivre.joyY;
-                if (Math.hypot(jx, jy) <= .12) {
-                    if (movLivreUnidade === alvo) assentarMovLivre(alvo);
-                    return;
-                }
-                const u = alvo;
-                if (movLivreUnidade !== u) {
-                    cancelFor(u);
-                    u.movLivreInterrompeu = !!(u.step || u.queue.length);
-                    u.queue = []; u.step = null;
-                    destination.visible = false;
-                    u.movLivrePos = u.root.position.clone();
-                    movLivreUnidade = u;
-                    animation(u, true);
-                }
-                let fx = u.root.position.x - camera.position.x, fz = u.root.position.z - camera.position.z;
-                const fm = Math.hypot(fx, fz);
-                if (fm < .01) { fx = Math.sin(u.pivot.rotation.y); fz = Math.cos(u.pivot.rotation.y); }
-                else { fx /= fm; fz /= fm; }
-                const dx = -fz * jx - fx * jy, dz = fx * jx - fz * jy;
-                const vel = CELL / .140 * dt;
-                let nx = u.movLivrePos.x + dx * vel, nz = u.movLivrePos.z + dz * vel;
-                const livreEm = (px, pz) => {
-                    if (world.height(px, pz) - world.height(u.movLivrePos.x, u.movLivrePos.z) > .55) return false;
-                    for (const o of world.obstaculos ?? []) {
-                        const ox = px - o.x, oz = pz - o.z;
-                        if (ox * ox + oz * oz < (o.r + .35) * (o.r + .35)) return false;
-                    }
-                    for (const v of units.values()) {
-                        if (v === u || !v.vivo) continue;
-                        const ox = px - v.root.position.x, oz = pz - v.root.position.z;
-                        if (ox * ox + oz * oz < .64) return false;
-                    }
-                    return true;
-                };
-                nx = clamp(nx, wx(area.origin.x), wx(area.origin.x + area.cols - 1));
-                nz = clamp(nz, wz(area.origin.y), wz(area.origin.y + area.rows - 1));
-                if (livreEm(nx, u.movLivrePos.z)) u.movLivrePos.x = nx;
-                if (livreEm(u.movLivrePos.x, nz)) u.movLivrePos.z = nz;
-                const dYaw = angleDelta(u.pivot.rotation.y, Math.atan2(dx, dz)), tectoYaw = 10 * dt;
-                u.pivot.rotation.y += clamp(dYaw, -tectoYaw, tectoYaw);
-                u.root.position.set(u.movLivrePos.x, world.height(u.movLivrePos.x, u.movLivrePos.z) + u.altitude, u.movLivrePos.z);
-            }
             function baseWidth() {
                 if (mode === 'fixa' && width < height)
                     return Math.max(area.rows * CELL * 1.44, area.cols * CELL * Math.sin(.72) * 1.44 * width / Math.max(150, height - 110));
@@ -2729,16 +2535,6 @@
             function detectarPerfilInicial() {
                 const movel = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0;
                 if (!movel) return 'alta';
-                /* SENTENÇA DA BANCADA (t-desempenho-celular — correcção
-                   de desempenho): telemóvel — ponteiro grosso + toque
-                   + lado menor do ecrã ≤480 px CSS — nasce em 'media'.
-                   A regra de núcleos/RAM não mede a GPU e pôs o Redmi
-                   (8 núcleos) em 'alta' (DPR 2) a engasgar; PC e
-                   tablets (lado menor >480) mantêm a regra de sempre.
-                   (window.screen explícito: há uma função local
-                   `screen` de projecção neste mesmo âmbito.) */
-                const ladoMenor = Math.min(window.screen.width || 9999, window.screen.height || 9999);
-                if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches && (navigator.maxTouchPoints || 0) > 0 && ladoMenor <= 480) return 'media';
                 const nucleos = navigator.hardwareConcurrency || 0, memoria = navigator.deviceMemory || 0;
                 return (memoria >= 4 || nucleos >= 8) ? 'alta' : 'media';
             }
@@ -2752,7 +2548,7 @@
                     sun.shadow.mapSize.set(sombraMapa, sombraMapa);
                     if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
                 }
-                world.quality(options.mapa === 'trono' ? q : 'alta');
+                world.quality('alta');
                 if (world.recomputarPedras) world.recomputarPedras(veuNunca, veuMemoria);
                 ambReaplicar();
                 resize();
@@ -2839,7 +2635,7 @@
                         }
                 return r;
             }
-            function hit(clientX, clientY, opcoes) {
+            function hit(clientX, clientY) {
                 const rect = renderer.domElement.getBoundingClientRect(), sx = clientX - rect.left, sy = clientY - rect.top, hits = [];
                 units.forEach(u => {
                     if (u.oculto)
@@ -2850,22 +2646,13 @@
                 });
                 hits.sort((a, b) => a.distance - b.distance);
                 ray.setFromCamera(new T.Vector2(sx / width * 2 - 1, 1 - sy / height * 2), camaraActiva());
-                /* CORRECÇÃO-VOO (19/11): o plano do toque é o da camada de quem
-                   se move (opcoes.altitude, em metros); sem opção, o
-                   plano do chão de sempre. Antes, o raio caía sempre
-                   em y=0: tocar numa casa da laje de uma voadora
-                   devolvia a casa projectada no solo — deslocada de
-                   altitude/tan(pitch) na direcção da câmera (medido:
-                   1 casa a 6 m e pitch ~1,35; ~11 casas a pitch 0,35,
-                   fora do campo) — daí o «só pega num ângulo certo». */
-                const altPlano = (opcoes && Number.isFinite(opcoes.altitude) && opcoes.altitude > 0) ? opcoes.altitude : 0;
-                const point = ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), -altPlano), new T.Vector3());
+                const point = ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), 0), new T.Vector3());
                 let cell = null;
                 if (point) {
                     const x = Math.floor(point.x / CELL + area.cols / 2) + area.origin.x, z = Math.floor(point.z / CELL + area.rows / 2) + area.origin.y;
                     try {
                         valid({ x, z });
-                        cell = altPlano > 0 ? { x, z, altitude: altPlano } : { x, z };
+                        cell = { x, z };
                     }
                     catch {
                     }
@@ -2877,7 +2664,7 @@
                 return { area: JSON.parse(JSON.stringify(area)), selected, camera: mode, zoom: mode === 'livre' ? null : zoom[mode], zoomRange: mode === 'livre' ? null : zoomRange(), livre: mode === 'livre' ? { pos: [livreRound(ctrlLivre.pos.x), livreRound(ctrlLivre.pos.y), livreRound(ctrlLivre.pos.z)], yaw: livreRound(ctrlLivre.yaw), pitch: livreRound(ctrlLivre.pitch) } : null, gridVisible: grid.visible, qualidade: quality, dinamica: { ligada: dinLigada, velocidade: dinVel, estado: dinEstado, yawRad: yaw, alvoYawRad: dinPara, deltaRad: dinDelta, duracaoS: dinDur, decorridoS: dinT, tipoUltimoEvento: dinTipoUltimo, scoreActual: dinScoreActual, scoreEscolhido: dinScoreEscolhido, ganho: dinGanho, candidatosAvaliados: dinCand, fallbackUsado: dinFallback, resgate: dinResgate, resgateFoco: dinResgateFoco, resgateEscolha: dinResgateEscolha, intervencoes60s: dinJanela.length, graus60s: dinGraus60(), arrefecimentoRestanteS: dinFimUltima === -Infinity ? 0 : Math.max(0, 2 - (tCena - dinFimUltima)), imunidadeRestanteS: dinArrT0 === -Infinity ? 0 : Math.max(0, 8 - (tCena - dinArrT0)), ultimoMotivo: dinMotivo }, acoplamento: acoplEstado(), moving: [...units.values()].some(u => u.step || u.queue.length), units: [...units.values()].map(publicUnit) };
             }
             function stats() {
-                return { movementCells:movementCells.map(p=>({...p})), presentation:presentation ? {attacker:presentation.a.id,target:presentation.b.id,phase:!presentation.started?'waiting':presentation.t<.2?'turn':'gesture'} : null, hoverVisible: hover.visible, destinationVisible: destination.visible, reachableCells: (moveLayer.children[0]?.geometry.attributes.position.count ?? 0)/6, fps, triangles: renderer.info.render.triangles, totalTriangles: count(scene), drawCalls: renderer.info.render.calls, ceuCalls: ceuDelta.calls, ceuTriangles: ceuDelta.triangles, dpr: renderer.getPixelRatio(), width, height, visibleWidthMeters: viewWidth, cellPixels: CELL / viewWidth * width, shadowSize: renderer.shadowMap.enabled ? sun.shadow.mapSize.x : 0, qualidadeModo, qualidadePerfil: quality, areaMeters: { width: area.cols * CELL, height: area.rows * CELL }, models: [...units.values()].map(u => ({ id:u.id, frente:((T.MathUtils.radToDeg(u.pivot.rotation.y)%360)+360)%360, drawOffset:{x:u.root.position.x-wx(u.x),y:u.root.position.y-world.height(wx(u.x),wz(u.z))-u.altitude,z:u.root.position.z-wz(u.z)}, modelo:u.model, frenteModeloRad:u.frenteModeloRad ?? 0, frenteMedida:u.frenteMedida ?? false, loadError:u.loadError ?? null, triangles:count(u.pivot), markerTint:u.markerTint ?? null, skins:(()=>{const skins=new Set();u.pivot.traverse(o=>{if(o.isSkinnedMesh)skins.add(o.skeleton.bones.map(b=>b.uuid).join(','))});return skins.size})(), action:u.actionName ?? null, actionTime:u.action?.time ?? null, clips:u.animations.map(a=>a.name), clipDurations:u.animations.map(a=>({name:a.name,duration:a.duration})) })), animations: { idle: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.idle).length, walk: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.andar).length, advancing: [...units.values()].filter(u => u.mixer && u.mixer.time > 0).length } };
+                return { movementCells:movementCells.map(p=>({...p})), presentation:presentation ? {attacker:presentation.a.id,target:presentation.b.id,phase:!presentation.started?'waiting':presentation.t<.2?'turn':'gesture'} : null, hoverVisible: hover.visible, destinationVisible: destination.visible, reachableCells: (moveLayer.children[0]?.geometry.attributes.position.count ?? 0)/6, fps, triangles: renderer.info.render.triangles, totalTriangles: count(scene), drawCalls: renderer.info.render.calls, ceuCalls: ceuDelta.calls, ceuTriangles: ceuDelta.triangles, dpr: renderer.getPixelRatio(), width, height, visibleWidthMeters: viewWidth, cellPixels: CELL / viewWidth * width, shadowSize: renderer.shadowMap.enabled ? sun.shadow.mapSize.x : 0, qualidadeModo, qualidadePerfil: quality, areaMeters: { width: area.cols * CELL, height: area.rows * CELL }, models: [...units.values()].map(u => ({ id:u.id, frente:((T.MathUtils.radToDeg(u.pivot.rotation.y)%360)+360)%360, drawOffset:{x:u.root.position.x-wx(u.x),y:u.root.position.y-world.height(wx(u.x),wz(u.z))-u.altitude,z:u.root.position.z-wz(u.z)}, modelo:u.model, loadError:u.loadError ?? null, triangles:count(u.pivot), markerTint:u.markerTint ?? null, skins:(()=>{const skins=new Set();u.pivot.traverse(o=>{if(o.isSkinnedMesh)skins.add(o.skeleton.bones.map(b=>b.uuid).join(','))});return skins.size})(), action:u.actionName ?? null, actionTime:u.action?.time ?? null, clips:u.animations.map(a=>a.name), clipDurations:u.animations.map(a=>({name:a.name,duration:a.duration})) })), animations: { idle: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.idle).length, walk: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.andar).length, advancing: [...units.values()].filter(u => u.mixer && u.mixer.time > 0).length } };
             }
             /* ============ GUARDA DE ENQUADRAMENTO (t-camera-enquadramento) ============
                Doutrina do Mestre (15/11/2026, 12:34): em nenhum ângulo
@@ -2898,13 +2685,7 @@
                (u, v) do quadro é T + direita·u + frente·d, com
                d = (v + yT·cos p)/sin p, direita = (cos a, −sin a) e
                frente = (−sin a, −cos a) no plano xz. Se os 4 cantos
-               poisam dentro do mundo, nenhum píxel mostra fora dele.
-               RESTAURAÇÃO VOLTA 1 (17/11/2026): a alavanca (3) é hoje
-               só do TRONO — no campo, guardarEnquadramento devolve o
-               pedido sem resolver (ver o comentário junto à devolução
-               em guardarEnquadramento): a D1 está suspensa no campo
-               pela palavra do Mestre de 17/11, com o vazamento a
-               pitch baixo como preço aceite. */
+               poisam dentro do mundo, nenhum píxel mostra fora dele. */
             const SALA = { x0: -15.5, x1: 15.5, z0: -27.5, z1: 21.5 };
             function cantosProjecao(alvo, p, a, vw) {
                 const H = vw * height / width, hs = vw / width * 36;
@@ -3210,22 +2991,20 @@
             }
             function guardarEnquadramento(alvo, p, a, vw, dist) {
                 if (options.mapa === 'trono') return guardarTrono(alvo, p, a, vw);
-                /* RESTAURAÇÃO VOLTA 1 (17/11/2026, SENTENCA-VOLTA1 da
-                   bancada da regressão da câmera): no CAMPO, o pedido
-                   devolve-se SEM resolver — o pitch desenhado volta a
-                   ser o pitch do jogador, o comportamento exacto da
-                   REF_105. A doutrina D1 (nunca mostrar fora do mundo)
-                   fica SUSPENSA no campo pela palavra do Mestre de
-                   17/11 («a antiga era boa; o único problema dela era
-                   vazar um pouco para o limbo quando eu descia muito
-                   a câmera»), e o vazamento a pitch baixo com o
-                   quadro largo é o preço aceite, nomeado. No TRONO a
-                   D1 continua inteira, servida por guardarTrono.
-                   folgaCampo fica sem chamadores, de propósito: é a
-                   matéria-prima declarada da Volta 2 (o vazamento
-                   tratado por alavancas ordenadas), que só avança se
-                   o Mestre pedir o vazamento fechado. */
-                return { p, vw };
+                if (p >= 1.4) return { p, vw };
+                if (folgaCampo(alvo, p, a, vw, dist) >= 0) return { p, vw };
+                /* Bissecção: a folga cresce com o pitch (o raio de baixo
+                   levanta sobre o corredor e o de cima encurta o alcance);
+                   procura o menor pitch que cumpre, entre o pedido e o
+                   tecto legal. Se nem a 1,4 cumprir, devolve 1,4 (o melhor
+                   possível dentro da lei antiga). */
+                let lo = p, hi = 1.4;
+                if (folgaCampo(alvo, hi, a, vw, dist) < 0) return { p: hi, vw };
+                for (let i = 0; i < 16; i++) {
+                    const mid = (lo + hi) / 2;
+                    if (folgaCampo(alvo, mid, a, vw, dist) >= 0) hi = mid; else lo = mid;
+                }
+                return { p: hi, vw };
             }
             function animate(now) {
                 if (disposed)
@@ -3236,13 +3015,12 @@
                 if (document.hidden)
                     return;
                 tCena += dt;   // relógio único da Dinâmica e do acoplamento: soma dos dt do ciclo (§5.1)
+                retratosTick();   // RETRATOS (§5.1): no máximo uma fatia por quadro, só depois de ready
                 let dirty = !!presentation;
-                let longe = false;
                 updatePresentation(dt);
                 dinTick(dt);   // a viragem aplica-se aqui: depois da apresentação, antes de calcular a = yaw (§5.4)
                 acoplTick();   // compromisso do acoplamento (§14.3.3): candidato estável há 150 ms
                 raioActualizar(now);
-                passoMovLivre(dt);
                 units.forEach(u => {
                     if (!u.step && u.queue.length) {
                         u.step = { ...u.queue.shift(), t: 0, from: u.root.position.clone() };
@@ -3279,7 +3057,7 @@
                        nem ocultas. O nível entra devagar (0,5 s) e sai
                        depressa (0,3 s); a escala nasce nos pés. */
                     {
-                        const elegivel = u.vivo && !u.temIdleRepouso && !moving(u) && !u.oculto && !u.movLivrePos
+                        const elegivel = u.vivo && !u.temIdleRepouso && !moving(u) && !u.oculto
                             && !(presentation && (presentation.a === u || presentation.b === u));
                         u.respNivel = clamp((u.respNivel || 0) + (elegivel ? dt / .5 : -dt / .3), 0, 1);
                         if (u.respNivel > 0) {
@@ -3307,17 +3085,11 @@
                         u.label.textContent = camada > 0 ? `${u.nome} \u2b06${camada}` : u.nome;
                     }
                     if (u.oculto) { u.ring.visible = u.contact.visible = u.tether.visible = false; }
-                    /* t-andar-teleporte: âncora da sombra desta figura —
-                       nasce na posição actual (sem disparo); a andar
-                       (moving: step ou fila), ≥0,30 m dela = longe. */
-                    if (!u.shAnc) u.shAnc = u.root.position.clone();
-                    else if (!longe && moving(u) && u.shAnc.distanceToSquared(u.root.position) >= .09) longe = true;
                 });
                 world.update(now / 1000);
-                if (dirty && (now - shadowAt > 100 || longe)) {
+                if (dirty && now - shadowAt > 100) {
                     renderer.shadowMap.needsUpdate = true;
                     shadowAt = now;
-                    units.forEach(u => { if (u.shAnc) u.shAnc.copy(u.root.position); });
                 }
                 if (mode === 'livre') {
                     /* Câmera livre: o bloco da ortográfica NÃO corre — a
@@ -3444,7 +3216,7 @@
                 if (ambNevoaExtra > 0 && scene.fog && typeof scene.fog.density === 'number') { ambFogD0 = scene.fog.density; scene.fog.density = ambFogD0 + ambNevoaExtra; }
                 try { ceuRenderizar(); } finally { if (ambFogD0 !== null) scene.fog.density = ambFogD0; }
                 const boxes = [];
-                const bodies = [...units.values()].filter(u => !u.oculto).map(u => ({ dono: u, rect: unitRect(u) })).filter(e => e.rect);
+                const bodies = [...units.values()].filter(u => !u.oculto).map(u => unitRect(u)).filter(Boolean);
                 for (const u of [...units.values()].sort((a, b) => (b.id === selected) - (a.id === selected))) {
                     if (u.oculto) { u.label.hidden = true; continue; }
                     const p = screen(u.root.position.clone().add(new T.Vector3(0, u.vivo ? u.size + .18 : .55, 0))), hw = Math.min(120, u.nome.length * 3.2 + 10), candidates = [];
@@ -3452,7 +3224,7 @@
                         for (const dy of [0, -28, 28, -56, 56])
                             candidates.push({ x: p.x + dx, y: p.y + dy, cost: dx * dx + dy * dy });
                     candidates.sort((a, b) => a.cost - b.cost);
-                    const best = candidates.find(p => p.x > hw && p.x < width - hw && p.y > 24 && p.y < height - 90 && !bodies.some(e => e.dono !== u && p.x + hw > e.rect.left - 2 && p.x - hw < e.rect.right + 2 && p.y > e.rect.top - 2 && p.y - 22 < e.rect.bottom + 2) && !boxes.some(b => p.x + hw > b.l && p.x - hw < b.r && p.y > b.t && p.y - 22 < b.b));
+                    const best = candidates.find(p => p.x > hw && p.x < width - hw && p.y > 24 && p.y < height - 90 && !bodies.some(b => p.x + hw > b.left - 2 && p.x - hw < b.right + 2 && p.y > b.top - 2 && p.y - 22 < b.bottom + 2) && !boxes.some(b => p.x + hw > b.l && p.x - hw < b.r && p.y > b.t && p.y - 22 < b.b));
                     u.label.hidden = !best || p.depth < -1 || p.depth > 1;
                     if (best) {
                         boxes.push({ l: best.x - hw, r: best.x + hw, t: best.y - 22, b: best.y });
@@ -3475,11 +3247,8 @@
                     if (benchTempo >= 4000 || parede >= 10000) {
                         const fpsBench = benchTempo >= 1000 ? benchFrames * 1000 / benchTempo : benchFrames * 1000 / Math.max(parede, 1);
                         benchEstado = 'off';
-                        // Abaixo de 24 FPS desce DOIS perfis de uma vez
-                        // (alta→Leve): um só não chegava (diagnóstico
-                        // de desempenho, §4). Entre 24 e 42 desce um.
                         if (fpsBench < 42 && quality !== 'baixa')
-                            aplicarPerfil(fpsBench < 24 ? 'baixa' : quality === 'alta' ? 'media' : 'baixa');
+                            aplicarPerfil(quality === 'alta' ? 'media' : 'baixa');
                     }
                 }
                 times.push(now);
@@ -3814,8 +3583,185 @@
             function limparFantasmas() {
                 [...fantasmas.keys()].forEach(removeFantasma);
             }
+            /* ---------- RETRATOS DOS PRÓPRIOS MODELOS (t-previsao-turnos, §5) ----------
+               A geração corre em fatias dentro do animate (uma
+               passagem por quadro, só depois de as unidades
+               carregarem — o arranque nunca paga os retratos).
+               retratos() devolve o mapa actual modelo → dataURL|null
+               e pede a geração dos que faltam; cada retrato pronto
+               emite 'retrato' com { modelo, url, ms, totalMs }. */
+            const RETRATO_TAM = 112;
+            const retratoRegras = { 'modelos/lobo-cinzento-051.glb': { mira: .55, janela: .70 } };
+            const retratoRegraDe = modelo => retratoRegras[modelo] || { mira: .82, janela: .38 };
+            const retratoCache = new Map();    // modelo → dataURL | null (null = sem retrato: marcador ou falha)
+            const retratoFila = [];            // modelos por gerar, pela ordem de chegada das unidades
+            const retratoTempos = {};          // modelo → soma dos ms das suas passagens (E19)
+            let retratoAlvo = null, retratoCanvas = null, retratoCtx = null;
+            let retratoQuadro = 0, retratoEspaco = 1, retratoUltimaFatia = -99, retratoTotalMs = 0;
+            function retratos() {
+                const vistos = [];
+                for (const u of units.values()) if (!vistos.includes(u.model)) vistos.push(u.model);
+                for (const m of vistos) {
+                    if (retratoCache.has(m) || retratoFila.includes(m)) continue;
+                    /* §5.4: os marcadores ficam com a letra POR DESENHO
+                       — não têm modelo para fotografar. */
+                    if (m === 'marcador' || m === 'marcador-lobo') { retratoCache.set(m, null); continue; }
+                    retratoFila.push(m);
+                }
+                const mapa = {};
+                for (const [m, url] of retratoCache) mapa[m] = url;
+                return mapa;
+            }
+            function retratoUnidadeEmRepouso(u) {
+                if (!u || u.removed) return false;
+                if (u.step || u.queue.length) return false;         // em passo
+                if (presentation) return false;                    // em apresentação
+                if (u.loadError) return false;                     // modelo que falhou: letra por falha (§5.4)
+                if (!u.pivot || !u.pivot.children.length) return false;   // modelo ainda a carregar
+                if (u.mixer && u.clips.idle && u.actionName && u.actionName !== u.clips.idle) return false;   // em clipe de ataque/reacção
+                return true;
+            }
+            function retratoGerar(modelo, u) {
+                const t0 = performance.now();
+                const regra = retratoRegraDe(modelo);
+                const caixa3 = new T.Box3().setFromObject(u.pivot);
+                const altura = Math.max(.1, caixa3.max.y - caixa3.min.y);
+                const centro = new T.Vector3();
+                caixa3.getCenter(centro);
+                const mira = new T.Vector3(centro.x, caixa3.min.y + regra.mira * altura, centro.z);
+                const janela = regra.janela * altura;
+                const yaw = u.pivot.rotation.y;
+                const frente = new T.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+                const cam = new T.OrthographicCamera(-janela / 2, janela / 2, janela / 2, -janela / 2, .1, 60);
+                cam.position.copy(mira).addScaledVector(frente, janela * 3 + 2);
+                cam.lookAt(mira);
+                cam.updateProjectionMatrix();
+                /* — captura de tudo o que a passagem toca (§5.2) — */
+                const fundoAnt = scene.background;
+                const expAnt = renderer.toneMappingExposure;
+                const hemiAnt = { cor: hemi.color.clone(), chao: hemi.groundColor.clone(), int: hemi.intensity };
+                const sunAnt = { cor: sun.color.clone(), int: sun.intensity, pos: sun.position.clone(), alvo: sun.target.position.clone() };
+                const visManuais = [];
+                const esconder = o => { if (o) { visManuais.push([o, o.visible]); o.visible = false; } };
+                /* itens 1–2: os root das outras figuras; ring/contact/
+                   tether de TODAS, incluindo a da alvo */
+                for (const outra of units.values()) {
+                    if (outra !== u) esconder(outra.root);
+                    esconder(outra.ring); esconder(outra.contact); esconder(outra.tether);
+                }
+                /* item 3 (V5/C7): a enumeração universal — todos os
+                   descendentes da cena, excepto a sub-árvore do root
+                   da alvo, hemi, sun e a câmara de retrato (que não
+                   vive na cena). O nó scene fica fora do registo. */
+                const registo = [];
+                scene.traverse(o => {
+                    if (o === scene) return;
+                    let dentro = false;
+                    for (let p = o; p; p = p.parent) if (p === u.root) { dentro = true; break; }
+                    if (dentro || o === hemi || o === sun) return;
+                    registo.push([o, o.visible]);
+                    o.visible = false;
+                });
+                /* item 4 (V5/C5/C6): luz própria e fixa — hemi/sun com
+                   os valores de retrato; TODAS as outras luzes já
+                   estão apagadas pela enumeração (não é por
+                   world.fontes: no Trono ele só tem o calor). E a
+                   exposição força-se a 1,0 — o escalar que a
+                   enumeração não toca (Dia 1,02 vs Noite 0,92). */
+                hemi.color.set(0xfff3e0); hemi.groundColor.set(0x574433); hemi.intensity = 1.0;
+                sun.color.set(0xffe9c4); sun.intensity = 2.0;
+                sun.position.copy(mira).addScaledVector(frente, 6); sun.position.y += 8;
+                sun.target.position.copy(mira);
+                sun.target.updateMatrixWorld();
+                renderer.toneMappingExposure = 1.0;
+                /* item 5: o fundo força-se ao tom da caixa */
+                scene.background = new T.Color(0x100c08);
+                /* itens 6–7 (D12, sucessor 11): o retrato RE-RENDERIZA
+                   o mapa de sombra com o sol forçado — o mapa que o
+                   render principal deixou é o DA HORA e contaminava
+                   a luminância do modelo (auto-sombra do torso nas
+                   pernas; |Dia−Noite| 0,0332). Renderiza para o alvo
+                   e lê os píxeis (o renderer não tem
+                   preserveDrawingBuffer — o dataURL sai da leitura). */
+                if (!retratoAlvo) {
+                    retratoAlvo = new T.WebGLRenderTarget(RETRATO_TAM, RETRATO_TAM);
+                    retratoAlvo.texture.encoding = T.sRGBEncoding;
+                    retratoCanvas = document.createElement('canvas');
+                    retratoCanvas.width = RETRATO_TAM; retratoCanvas.height = RETRATO_TAM;
+                    retratoCtx = retratoCanvas.getContext('2d');
+                }
+                let url = null;
+                try {
+                    renderer.setRenderTarget(retratoAlvo);
+                    renderer.shadowMap.needsUpdate = true;   // D12: mapa com o sol forçado, não o da hora
+                    renderer.render(scene, cam);
+                    const buf = new Uint8Array(RETRATO_TAM * RETRATO_TAM * 4);
+                    renderer.readRenderTargetPixels(retratoAlvo, 0, 0, RETRATO_TAM, RETRATO_TAM, buf);
+                    /* inversão vertical (V12): a leitura vem com a
+                       origem em baixo (convenção WebGL) */
+                    const img = retratoCtx.createImageData(RETRATO_TAM, RETRATO_TAM);
+                    const linha = RETRATO_TAM * 4;
+                    for (let y = 0; y < RETRATO_TAM; y++)
+                        img.data.set(buf.subarray((RETRATO_TAM - 1 - y) * linha, (RETRATO_TAM - y) * linha), y * linha);
+                    retratoCtx.putImageData(img, 0, 0);
+                    url = retratoCanvas.toDataURL('image/jpeg', .85);
+                } catch (_) { url = null; }
+                /* — reposição (C7): a enumeração repõe-se por ordem
+                   inversa ANTES das capturas manuais dos itens 1–2;
+                   depois luzes, exposição e fundo — tudo antes de
+                   devolver o controlo ao animate. */
+                renderer.setRenderTarget(null);
+                for (let i = registo.length - 1; i >= 0; i--) registo[i][0].visible = registo[i][1];
+                for (let i = visManuais.length - 1; i >= 0; i--) visManuais[i][0].visible = visManuais[i][1];
+                hemi.color.copy(hemiAnt.cor); hemi.groundColor.copy(hemiAnt.chao); hemi.intensity = hemiAnt.int;
+                sun.color.copy(sunAnt.cor); sun.intensity = sunAnt.int;
+                sun.position.copy(sunAnt.pos);
+                sun.target.position.copy(sunAnt.alvo);
+                sun.target.updateMatrixWorld();
+                /* D12: o retrato deixou o mapa do sol forçado — o
+                   render principal seguinte re-renderiza-o com o
+                   sol da hora reposto (senão a cena ficava com a
+                   sombra do retrato até ao próximo needsUpdate). */
+                renderer.shadowMap.needsUpdate = true;
+                renderer.toneMappingExposure = expAnt;
+                scene.background = fundoAnt;
+                const ms = performance.now() - t0;
+                retratoTempos[modelo] = (retratoTempos[modelo] || 0) + ms;
+                retratoTotalMs += ms;
+                return url;
+            }
+            function retratosTick() {
+                retratoQuadro++;
+                if (!unidadesCarregadas || !retratoFila.length) return;
+                if (retratoQuadro - retratoUltimaFatia < retratoEspaco) return;
+                const modelo = retratoFila[0];
+                /* a figura-padrão (V12): a primeira EM REPOUSO do
+                   modelo, pela ordem das unidades — a padrão
+                   primeiro; com preferência por uma viva. */
+                let escolhida = null;
+                for (const u of units.values()) {
+                    if (u.model !== modelo || !retratoUnidadeEmRepouso(u)) continue;
+                    if (u.vivo) { escolhida = u; break; }
+                    if (!escolhida) escolhida = u;
+                }
+                if (!escolhida) return;   // espera por um quadro em repouso
+                retratoFila.shift();
+                retratoUltimaFatia = retratoQuadro;
+                const url = retratoGerar(modelo, escolhida);
+                retratoCache.set(modelo, url);
+                /* espaçamento (E19/C8): vale o MAIOR entre o do
+                   modelo em excesso (>100 ms → 1 fatia/4 quadros) e
+                   o de N>4 modelos (1 fatia/ceil(N/4) quadros). Os
+                   400 ms medem a SOMA dos tempos de geração. */
+                const nModelos = retratoCache.size + retratoFila.length;
+                let esp = 1;
+                if ((retratoTempos[modelo] || 0) > 100) esp = 4;
+                if (nModelos > 4) esp = Math.max(esp, Math.ceil(nModelos / 4));
+                retratoEspaco = esp;
+                emit('retrato', { modelo, url, ms: retratoTempos[modelo], totalMs: retratoTotalMs });
+            }
             const ready = Promise.all((options.units || []).map(addUnit)).then(r => { unidadesCarregadas = true; return r; });
-            return Object.freeze({ ready, addUnit, removeUnit, move, select, apresentarAtaque, setCamera, setDinamica, setFrenteAcoplada, setZoom, setQualidade, getQualidade: () => ({ modo: qualidadeModo, perfil: quality }), showMovement, showPrevia, setFrente, getFrente, setOculto, estaOculto: id => !!requireUnit(id).oculto, setCamadas, limparCamadas: () => setCamadas(null), addFantasma, removeFantasma, limparFantasmas, listaFantasmas: () => [...fantasmas.entries()].map(([chave, f]) => ({ chave, x: f.x, z: f.z })), livreOlhar(dx, dy) {
+            return Object.freeze({ ready, retratos, addUnit, removeUnit, move, select, apresentarAtaque, setCamera, setDinamica, setFrenteAcoplada, setZoom, setQualidade, getQualidade: () => ({ modo: qualidadeModo, perfil: quality }), showMovement, showPrevia, setFrente, getFrente, setOculto, estaOculto: id => !!requireUnit(id).oculto, setCamadas, limparCamadas: () => setCamadas(null), addFantasma, removeFantasma, limparFantasmas, listaFantasmas: () => [...fantasmas.entries()].map(([chave, f]) => ({ chave, x: f.x, z: f.z })), livreOlhar(dx, dy) {
                     /* O arrasto de olhar da sala: 0,0045 rad/px, pitch preso
                        a ±1,45. Fora do modo 'livre', é inerte. */
                     if (mode !== 'livre') return;
@@ -3839,14 +3785,6 @@
                             if (entrada.teclas[k]) ok[k] = true;
                         ctrlLivre.teclas = ok;
                     }
-                }, movLivreEntrada(entrada) {
-                    /* A casca entrega o estado contínuo do manípulo
-                       do movimento livre sempre que ele muda; a cena
-                       guarda-o em ctrlMovLivre. Valores validados:
-                       números finitos presos a [-1, 1]. */
-                    if (!entrada || typeof entrada !== 'object') return;
-                    if (Number.isFinite(entrada.joyX)) ctrlMovLivre.joyX = clamp(entrada.joyX, -1, 1);
-                    if (Number.isFinite(entrada.joyY)) ctrlMovLivre.joyY = clamp(entrada.joyY, -1, 1);
                 }, on, getState: state, getStats: stats, getFrameTimes: () => times.slice(), hitTest: hit, projectUnit: id => unitRect(requireUnit(id), true), setVivo(id, vivo) {
                     if (typeof vivo !== 'boolean')
                         throw new TypeError('vivo booleano');
