@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_121';
+  var VERSAO_JOGO = 'REF_122';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -459,10 +459,11 @@
    * NPCs da partida — e só ao apertar «Começar batalha» é que o jogo
    * arranca. A vista é só dele por construção: só se chega aqui por
    * arrancarJogo(true); o caminho da Jogadora nunca a toca.
-   * Os registos MAPAS_PARTIDA / MONSTROS_PARTIDA são a lista viva da
-   * tela: um mapa ou um tipo novo entra AQUI, sem reescrever a vista.
-   * Hoje o jogo tem dois mapas e três tipos de monstro; NPCs ainda não
-   * há tipos nenhuns no jogo (a secção nasce presente e honesta). */
+   * Os registos MAPAS_PARTIDA / MONSTROS_PARTIDA / NPCS_PARTIDA são
+   * a lista viva da tela: um mapa, um tipo ou um NPC novo entra AQUI,
+   * sem reescrever a vista. Hoje o jogo tem dois mapas, três tipos
+   * de monstro e uma NPC (a Ong, por interruptor — entra só se você
+   * a puser). */
   var MAPAS_PARTIDA = [
     { id: 'campo', nome: 'Campo de batalha', nota: 'A fogueira, as ruínas e os braseiros — o campo de sempre.' },
     /* MAPA-TRONO (palavra do Mestre 15/11/2026 06:25: «A sala do
@@ -482,6 +483,12 @@
     { id: 'orc', nome: 'Orc', indoleTxt: 'Ataca ao ver' },
     { id: 'capanga', nome: 'Capanga', indoleTxt: 'Ataca ao ver' },
     { id: 'lobo', nome: 'Lobo da Caverna', indoleTxt: 'Ataca ao ver' }
+  ];
+  /* NPCs da partida (t-ong-impregnada, D1/D2): figuras ÚNICAS —
+     entram por INTERRUPTOR, não por contagem. Um NPC novo entra
+     por registo, sem reescrever a vista. */
+  var NPCS_PARTIDA = [
+    { id: 'ong', nome: 'Ong', nota: 'A maga. Heroína das jogadoras — entra só se você a puser.' }
   ];
   /* O tecto é do TOTAL do tipo (a soma dos três lados = 9 no
    * máximo — correcção F3 da bancada): a tela trava o «+» de
@@ -516,6 +523,9 @@
   var prepEscolhas = { mapa: MAPAS_PARTIDA[0].id, monstros: {}, npcs: {} };
   MONSTROS_PARTIDA.forEach(function (m) {
     prepEscolhas.monstros[m.id] = { contra: 0, neutro: 0, time: 0 };
+  });
+  NPCS_PARTIDA.forEach(function (n) {
+    prepEscolhas.npcs[n.id] = 0;   // t-ong-impregnada (D1): o interruptor nasce FORA
   });
 
   /* A SALA (t-area-mestre, palavra do Mestre 16/11/2026 00:17:
@@ -664,7 +674,25 @@
   });
 
   salaPaineis['quem-entra'].appendChild(el('h3', 'prep-titulo', 'NPCs'));
-  salaPaineis['quem-entra'].appendChild(el('p', 'ent-nota', 'Ainda não há NPCs no jogo.'));
+  var prepNpcEls = {};
+  NPCS_PARTIDA.forEach(function (n) {
+    var bloco = el('div', 'prep-tipo');
+    bloco.appendChild(el('div', 'prep-nome', n.nome));
+    if (n.nota) bloco.appendChild(el('div', 'prep-indole', n.nota));
+    /* O interruptor reusa .prep-mapa (botão de escolha com estado
+       .on visível) — entrada.css NÃO se toca nesta correcção. */
+    var interruptor = el('button', 'prep-mapa', 'Não entra');
+    interruptor.type = 'button';
+    interruptor.setAttribute('aria-pressed', 'false');
+    interruptor.setAttribute('aria-label', n.nome + ' — entra na batalha');
+    interruptor.addEventListener('click', function () {
+      prepEscolhas.npcs[n.id] = prepEscolhas.npcs[n.id] ? 0 : 1;
+      pintarPreparacao();
+    });
+    bloco.appendChild(interruptor);
+    salaPaineis['quem-entra'].appendChild(bloco);
+    prepNpcEls[n.id] = { interruptor: interruptor };
+  });
 
   /* Rodapé da sala (faixa própria no fluxo da coluna, sempre
    * visível em qualquer aba — substitui a barra sticky G1 do
@@ -686,7 +714,9 @@
       var c = prepEscolhas.monstros[m.id];
       monstros[m.id] = { contra: c.contra | 0, neutro: c.neutro | 0, time: c.time | 0 };
     });
-    window.PREPARACAO_MESTRE = { mapa: prepEscolhas.mapa, monstros: monstros, npcs: {} };
+    var npcs = {};
+    NPCS_PARTIDA.forEach(function (n) { npcs[n.id] = prepEscolhas.npcs[n.id] | 0; });
+    window.PREPARACAO_MESTRE = { mapa: prepEscolhas.mapa, monstros: monstros, npcs: npcs };
     preparacaoFeita = true;
     arrancarJogo(true);
   });
@@ -718,9 +748,20 @@
       var tt = prepQtdEls[m.id] && prepQtdEls[m.id].totalTipo;
       if (tt) tt.textContent = 'Total: ' + somaTipo;
     });
+    NPCS_PARTIDA.forEach(function (n) {
+      var dentro = prepEscolhas.npcs[n.id] | 0 ? 1 : 0;
+      totalGeral += dentro;
+      var c = prepNpcEls[n.id];
+      if (c && c.interruptor) {
+        c.interruptor.textContent = dentro ? 'Entra' : 'Não entra';
+        c.interruptor.setAttribute('aria-pressed', String(!!dentro));
+        c.interruptor.classList.toggle('on', !!dentro);
+      }
+    });
     /* M2: o resumo da batalha, vivo no rodapé da sala — o nome do
-       mapa escolhido e o total de figuras escolhidas (a Ong não
-       se conta: a semântica lavrada na REF_97). */
+       mapa escolhido e o total de figuras escolhidas (t-ong-impregnada:
+       o total conta todas as figuras escolhidas, ela incluída quando
+       posta — a semântica da REF_97 morreu com a palavra do Mestre). */
     if (prepTotalEl) {
       var nomeMapaActual = prepEscolhas.mapa;
       MAPAS_PARTIDA.forEach(function (mp) {

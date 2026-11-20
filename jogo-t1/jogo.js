@@ -275,6 +275,14 @@
     };
     for (const base of ELENCO_BASE) {
       if (!PREP_TIPOS_MONSTRO.includes(base.id)) {
+        /* t-ong-impregnada (D1/D2, R2): as figuras únicas fora dos
+           tipos de monstro não se contam — ligam-se. A presença
+           lê-se do canal npcs da preparação, pinçada a {0,1};
+           0 (ou canal ausente) = não nasce, e a casa dela fica
+           livre para a varredura das cópias, como qualquer casa
+           livre. */
+        const dentro = Math.min(1, prepContagem(prep.npcs && prep.npcs[base.id]));
+        if (!dentro) continue;
         saida.push(base);
         ocupadas.add(base.x + ',' + base.y);
         continue;
@@ -289,10 +297,11 @@
          dos três lados —, não de cada lado. A pinça corta na
          ordem de criação (contra → neutro → time): o que passa
          do tecto NÃO nasce (nada de figuras empilhadas em
-         silêncio). Com 3 tipos × 9 + a Ong = 28 figuras no
-         máximo, as 70 casas da grelha nunca estouram e o ramo
-         de recurso de casaLivre() fica inalcançável. A tela
-         aplica o mesmo tecto ao toque (entrada.js). */
+         silêncio). Com 3 tipos × 9 = 27, mais 1 quando ela está
+         dentro (28 figuras no máximo), as 70 casas da grelha
+         nunca estouram e o ramo de recurso de casaLivre() fica
+         inalcançável. A tela aplica o mesmo tecto ao toque
+         (entrada.js). */
       let tetoTipo = 9;
       for (const chave of ['contra', 'neutro', 'time']) {
         cont[chave] = Math.min(cont[chave], tetoTipo);
@@ -331,6 +340,12 @@
     return saida;
   }
   const ELENCO = elencoEfectivo();
+  /* t-ong-impregnada (R4): a presença dela é facto do elenco —
+     um só predicado, derivado daqui, lido por todos os ramos
+     desta correcção (nunca o modo, nunca vezAtual). O id é o
+     literal 'ong' porque PROPRIA só se declara mais abaixo
+     (jogo.js:1831), como o próprio ladoDe já faz. */
+  const ONG_PRESENTE = ELENCO.some(u => u.id === 'ong');
   /* MAPA DA PARTIDA (t-mapa-trono, palavra do Mestre 15/11/2026
      06:25): o mundo onde a batalha nasce. Só a preparação do
      Mestre escolhe — e só o id registado em MAPAS_PARTIDA
@@ -2320,7 +2335,7 @@
   const ORDEM = [...ELENCO].sort((a, b) =>
     (INICIATIVA[b.id] - INICIATIVA[a.id])
     || (ELENCO.indexOf(a) - ELENCO.indexOf(b))).map(u => u.id);
-  // ORDEM = ['ong', 'lobo', 'capanga', 'orc']
+  // ORDEM deriva do ELENCO — com ela, ['ong', 'lobo', 'capanga', 'orc']
   /* O alcance de ataque da IA é o alcance da ficha do
      próprio monstro (DADOS_COMBATE[id].alcance), lido onde
      a IA age — constante separada não existe. */
@@ -2539,7 +2554,7 @@
   }
   /* A FichaJogo da própria passa a carregar os três campos lidos
      (envelopes completos, com estado e proveniência). */
-  if (FICHAS[PROPRIA]) {
+  if (FICHAS[PROPRIA] && PROGRESSAO_LIDA[PROPRIA]) {
     FICHAS[PROPRIA].classificacao = PROGRESSAO_LIDA[PROPRIA].classificacao;
     FICHAS[PROPRIA].rank = PROGRESSAO_LIDA[PROPRIA].rank;
     FICHAS[PROPRIA].dadoProgressao = PROGRESSAO_LIDA[PROPRIA].dadoProgressao;
@@ -3588,7 +3603,7 @@
   }
 
   /* ---------- estado da casca ---------- */
-  let selecionada = PROPRIA;   // constante nesta vista: a figura activa é sempre a Ong
+  let selecionada = ORDEM.length ? ORDEM[0] : null;   // t-ong-impregnada (D4): a figura activa é a da vez — com ela, a Ong; sem ela, a inaugural (ou nenhuma, na batalha vazia)
   let alvo = null;              // última figura não-própria tocada (ou nenhuma)
   let atacou = false;           // uso de atacar da vez dela (atacar ×1; a Transformação também o consome)
   let ataquePendente = null;    // rolagem dela entre o clique e o Confirmar (T1.4 §1: o resultado NÃO se revela antes)
@@ -3623,8 +3638,12 @@
   /* Máquina de turnos (T1.3): a vez roda por ORDEM. vezAtual,
      indiceVez e rodada só mudam em passarVez()/iniciarVezIA() e no
      arranque — nenhum outro caminho os escreve. */
-  let ordem = ORDEM, indiceVez = 0, vezAtual = PROPRIA, seqTurno = 0, rodada = 1;
+  let ordem = ORDEM, indiceVez = 0, vezAtual = ORDEM.length ? ORDEM[0] : null, seqTurno = 0, rodada = 1;
   let batalhaFim = false;       // trava do fim de batalha (só a queda dela, §1.7 do desenho T1.3)
+  let confirmarFimDoMestre = false;   // t-ong-impregnada (REV2, c3): a confirmação M-014 está aberta por gesto do Mestre — o piloto espera enquanto ela estiver posta
+  /* t-ong-impregnada (§4): a frase do campo vazio, uma só vez —
+     dita pelo arranque e pela espera, nunca copiada em três sítios. */
+  const FRASE_CAMPO_VAZIO = 'O campo está vazio — esta batalha não tem figuras. Aperte <b>Recomeçar</b> para montar outra, ou admita uma figura de teste nas Configurações.';
   let danoSofrido = 0;          // vida perdida acumulada DELA — nasce a 0; a ficha e o chip lêem daqui
   let paGasto = 0;              // PA gasto por ela em tempo de corrida — só a Transformação o escreve
   let transformada = false;     // snapshot da Transformação aplicado (expressão 8d6+34, CA 36 na forma transformada)
@@ -3919,13 +3938,23 @@
         acoesEl.innerHTML = B('continuar', '', 'Continuar ▸', 'primary');
       } else if (estado === 'desgraca-lista') {
         acoesEl.innerHTML = 'A escolher a desgraça…';
+      } else if (estado === 'confirmar-fim') {
+        /* t-ong-impregnada (§4 (c)): o bloco manual tem ramo para
+           a confirmação — sem ele a faixa ficava com o conteúdo
+           velho quando o Mestre abre o Terminar na vez manual. */
+        acoesEl.innerHTML = B('voltar', '←', 'Voltar', 'ghost') + B('terminar-sim', '✓', 'Sim, terminar', 'primary');
       }
       ataquePreviaDesenhar();
       sincronizarCartaoDesgraca();
       atualizarContadorVD();
       return;
     }
-    if (estado === 'base') {
+    if (vezAtual === null && estado === 'base') {
+      /* t-ong-impregnada (§4 (b)): batalha vazia — a faixa é a de
+         mesa, não a faixa dela: só texto de estado; as saídas
+         (Recomeçar e Terminar) vivem fora da faixa. */
+      acoesEl.innerHTML = 'O campo está vazio — esta batalha não tem figuras.';
+    } else if (estado === 'base') {
       // Rótulos curtos em retrato (dívida S-2 do desenho): é o que liberta
       // os ≥120 px da linha de mensagem sem tocar nos alvos de 44 px.
       acoesEl.innerHTML =
@@ -4017,7 +4046,13 @@
        nome e a rodada seguem a regra de sempre (só batalhaFim os
        troca), sem tocar em mais nada. */
     $('vez-rotulo').textContent = (batalhaFim || supCongelado) ? 'FIM' : 'VEZ DE';
-    $('vez-nome').textContent = batalhaFim ? nomeCena(PROPRIA) : nomeCena(vezAtual);
+    /* t-ong-impregnada (§4 (b)): sem vez, o nome é «—»; no fim,
+       sem ela, o nome é o da figura da vez do fecho, ou «a mesa»
+       quando não a há (batalha vazia fechada pelo Terminar). Com
+       ela, o nome do fim continua o de hoje (O-1). */
+    $('vez-nome').textContent = batalhaFim
+      ? (ONG_PRESENTE ? nomeCena(PROPRIA) : (vezAtual ? nomeCena(vezAtual) : 'a mesa'))
+      : (vezAtual ? nomeCena(vezAtual) : '—');
     $('vez-rodada').textContent = 'R' + rodada;
   }
 
@@ -4480,8 +4515,14 @@
   function fraseEsperaVez() {
     say(batalhaFim
       ? 'A batalha acabou — aperte <b>Recomeçar</b>.'
+      : vezAtual === null
+      ? FRASE_CAMPO_VAZIO
       : `É a vez de <b>${nomeCena(vezAtual)}</b> — espere que ele aja.`);
   }
+  /* t-ong-impregnada (D4/§5.2): SÓ a função da vez dela — quem a
+     chama garante a presença (o arranque por D4, passarVez só com
+     seguinte === PROPRIA, o restauro só com e.vez === PROPRIA);
+     sem ela no elenco, ESTADO_VLAB.ong nem existe e ninguém a chama. */
   function iniciarVez(id) {
     vezAtual = id;
     vezManualAberta = false; comandada = null; ctxMovManual = null;   // D1: a vez dela nunca é manual de monstro
@@ -4539,10 +4580,30 @@
     }
     return false;
   }
+  /* t-ong-impregnada (R9, forma final da sentença §3.3): fecho
+     próprio da exaustão da rotação — sem figura viva com vez e
+     sem vitória declarada, a mesa fecha o encontro. Não reutiliza
+     o corpo de terminarBatalha nem o seu registo: com todas as
+     figuras caídas nenhum id pode ser o actor. */
+  function fecharExaustaoRotacao() {
+    if (!ordem.length || batalhaFim) return false;
+    if (ordem.some(id => (unidade(id) || {}).vivo !== false)) return false;
+    batalhaFim = true;
+    estado = 'fim';
+    atualizarVez(); renderAcoes();
+    supRegistar('fim', { actor: null, origem: 'exaustao' });
+    say('Todas as figuras caíram — a mesa fecha este encontro. Aperte <b>Recomeçar</b> para jogar outra vez.');
+    musSincronizar();
+    return true;
+  }
   function passarVez() {
+    confirmarFimDoMestre = false;   // t-ong-impregnada (c3): uma mudança de vez desfaz qualquer confirmação aberta
     try { supCritAntesDePassarVez(); } catch (_) { supCritErrosCamada++; }   // T1.7: fecha a vez nos acumuladores (passivo)
     seqTurno++;                       // invalida qualquer sequência antiga
-    avancarParaFiguraComVez();
+    if (!avancarParaFiguraComVez()) {
+      if (fecharExaustaoRotacao()) return;
+      if (!ordem.length) return;   // elenco vazio: não há vez para passar
+    }
     /* RAIO E FOGO (desenho 05/11): a viragem da ronda abre com o
        momento de ambiente, ANTES da primeira vez dela. O momento
        pode deitar a figura seguinte (impacto/tick não há aqui —
@@ -4550,7 +4611,7 @@
     ambMomentoSeNovaRodada();
     if (batalhaFim) return;
     while (ordem[indiceVez] !== PROPRIA && (unidade(ordem[indiceVez]) || {}).vivo === false) {
-      if (!avancarParaFiguraComVez()) return;
+      if (!avancarParaFiguraComVez()) { fecharExaustaoRotacao(); return; }
       ambMomentoSeNovaRodada();
       if (batalhaFim) return;
     }
@@ -4853,11 +4914,32 @@
     const id = comandada;
     if (!id || batalhaFim) return;
     if (acao === 'encerrar') { passarVez(); return; }
+    if (acao === 'terminar') {
+      /* t-ong-impregnada (§4 (c)): o Terminar na vez manual de
+         outra figura — só a partir da base, com o fluxo M-014. */
+      if (estado !== 'base') { say('Primeiro volte às acções base.'); return; }
+      confirmarFimDoMestre = true;
+      estado = 'confirmar-fim'; renderAcoes();
+      say(`Terminar esta batalha? A rodada ${rodada} fica por fechar — aperte <b>Sim, terminar</b> para fechar, ou <b>Voltar</b> para continuar a jogar.`);
+      return;
+    }
+    if (acao === 'terminar-sim') {
+      if (estado !== 'confirmar-fim') { say('Primeiro aperte <b>Terminar</b> para confirmar.'); return; }
+      terminarBatalha(); return;
+    }
     if (acao === 'continuar') {
       if (estado === 'resultado') { estado = 'base'; renderAcoes(); say(`É a vez de <b>${nomeCena(id)}</b> — você comanda.`); }
       return;
     }
     if (acao === 'voltar') {
+      if (estado === 'confirmar-fim') {
+        /* t-ong-impregnada (§4 (c2)): a saída Voltar na chegada
+           manual — a confirmação desfaz-se, a vez da figura
+           comandada continua. */
+        estado = 'base'; confirmarFimDoMestre = false; renderAcoes();
+        say(`É a vez de <b>${nomeCena(id)}</b> — você comanda.`);
+        return;
+      }
       if (estado === 'mover') sairMover();
       if (estado === 'atacar' || estado === 'mover') { estado = 'base'; renderAcoes(); }
       return;
@@ -5711,6 +5793,7 @@
      de actualização do chip chamado no arranque, no dano, no
      restauro — e, desde esta correcção, também na Transformação. */
   function atualizarChipVida() {
+    if (!ONG_PRESENTE) { chipEl.hidden = true; return; }   // t-ong-impregnada (R6): sem ela, o chip esconde-se e a função sai cedo
     const barraVida = chipEl.querySelector('.bar.vida i');
     if (barraVida) barraVida.style.width =
       Math.max(0, Math.round((FICHAS.ong.vida.total - danoSofrido) / FICHAS.ong.vida.total * 100)) + '%';
@@ -5739,7 +5822,9 @@
        fecho indeterminado (motor/progressão ilegível — nomeado no
        registo, nunca disfarçado). Sem causa, o comportamento e a
        frase são os de sempre. */
-    supRegistar('fim', { actor: PROPRIA, danoSofrido,
+    /* t-ong-impregnada (§5.2/D7): sem ela, o actor do fim por
+       vitória é a figura da vez do fecho — com ela, o de sempre. */
+    supRegistar('fim', { actor: ONG_PRESENTE ? PROPRIA : vezAtual, danoSofrido,
       causa: causa || 'queda', morteAdjudicada: causa === 'morte' });
     /* M1 (§3.5 do desenho): fecho defensivo — um parque de
        monstro aberto não atravessa o fim da batalha. Hoje é
@@ -5780,7 +5865,9 @@
     estado = 'fim';
     atualizarVez(); renderAcoes();
     say(causa === 'vitoria'
-      ? 'Os inimigos caíram todos — <b>vitória</b> da <b>Ong</b> nesta batalha. Aperte <b>Recomeçar</b> para jogar outra vez.'
+      ? (ONG_PRESENTE
+        ? 'Os inimigos caíram todos — <b>vitória</b> da <b>Ong</b> nesta batalha. Aperte <b>Recomeçar</b> para jogar outra vez.'
+        : 'Os inimigos caíram todos — <b>vitória</b> nesta batalha. Aperte <b>Recomeçar</b> para jogar outra vez.')
       : causa === 'estabilizada'
       ? 'A <b>Ong</b> caiu, mas estabilizou — ela volta com <b>1 de Vida</b> e fica caída, sem lutar, até receber uma cura. A cura soma por cima desse 1.'
       : 'A <b>Ong</b> caiu — fim desta batalha. Aperte <b>Recomeçar</b> para jogar outra vez.');
@@ -5792,6 +5879,7 @@
      a origem ('terminar') para o fim declarado se distinguir do fim
      natural no registo exportado. */
   function terminarBatalha() {
+    confirmarFimDoMestre = false;   // t-ong-impregnada (c3): o funil único do 'terminar-sim' — a bandeira limpa-se à cabeça
     supRegistar('fim', { actor: PROPRIA, danoSofrido, origem: 'terminar' });
     /* M1 (§3.5 do desenho): fecho defensivo, como em
        fimDeBatalha — o Terminar só existe na vez dela em 'base',
@@ -5837,6 +5925,43 @@
        só produzem a frase de espera. Excepção EM-P2: no estado
        'fim', a acção recomecar NUNCA é bloqueada. */
     if (acao === 'recomecar') { location.reload(); return; }
+    /* t-ong-impregnada (§4 (c)/(c2), REV2): o Terminar, o
+       «Sim, terminar» e o Voltar da confirmação M-014
+       despacham-se ANTES da guarda de vez — nas chegadas nula e
+       da IA (vezAtual !== PROPRIA e sem vez manual aberta); a
+       chegada manual serve-se pelos casos de tratarAcaoManual e
+       a chegada dela segue o fluxo de sempre. */
+    if (vezAtual !== PROPRIA && !vezManualAberta
+      && (acao === 'terminar' || acao === 'terminar-sim' || acao === 'voltar')) {
+      if (acao === 'voltar') {
+        if (estado === 'confirmar-fim') {
+          if (vezAtual === null) {
+            estado = 'base'; confirmarFimDoMestre = false; renderAcoes();
+            say('O campo continua vazio — esta batalha não tem figuras.');
+          } else {
+            estado = 'vez-ia'; confirmarFimDoMestre = false; renderAcoes();
+            say(`A vez de <b>${nomeCena(vezAtual)}</b> continua.`);
+          }
+          return;
+        }
+        /* Fora de confirmação não há nada para desfazer — segue
+           o fluxo de hoje (a guarda de vez responde a frase de
+           espera, como hoje). */
+      } else if (acao === 'terminar') {
+        if (estado !== 'base' && estado !== 'vez-ia') {
+          if (desgracaMonstroPendente) say(FRASE_DECISAO_PENDENTE);
+          else say('Primeiro volte às acções base.');
+          return;
+        }
+        confirmarFimDoMestre = true;
+        estado = 'confirmar-fim'; renderAcoes();
+        say(`Terminar esta batalha? A rodada ${rodada} fica por fechar — aperte <b>Sim, terminar</b> para fechar, ou <b>Voltar</b> para continuar a jogar.`);
+        return;
+      } else {
+        if (estado !== 'confirmar-fim') { say('Primeiro aperte <b>Terminar</b> para confirmar.'); return; }
+        terminarBatalha(); return;
+      }
+    }
     /* M1 (§3.2 do desenho): a decisão do cartão do MONSTRO
        despacha AQUI — depois da guarda de gelo e do atalho
        recomecar, ANTES da guarda de vez (na vez da IA a guarda
@@ -5979,6 +6104,7 @@
        intenções — o registo do ataque nasce no Confirmar, por
        arrasto da rolagem, §7.3/EM-S-17). */
     if (acao === 'voltar') {
+      confirmarFimDoMestre = false;   // t-ong-impregnada (c3): à cabeça do ramo genérico — a vez dela
       /* J1 (carta IBX-213): com uma rolagem por resolver, o Voltar
          NÃO a deita fora — devolve à mesma rolagem pendente. Sem
          rolagem pendente, o Voltar é o de sempre (incl. cancelar a
@@ -6093,6 +6219,7 @@
       confirmarFimOrigem = estado;
       confirmarFimFraseHTML = estado === 'resultado' ? msgTxt.innerHTML : null;
       /* M-014: pedir a confirmação — a batalha não fecha por um toque. */
+      confirmarFimDoMestre = true;   // t-ong-impregnada (c3): posta por todo o 'terminar' que abre confirmar-fim — o ramo existente incluído
       estado = 'confirmar-fim'; renderAcoes();
       say(`Terminar esta batalha? A rodada ${rodada} fica por fechar — aperte <b>Sim, terminar</b> para fechar, ou <b>Voltar</b> para continuar a jogar.`);
       return;
@@ -6456,10 +6583,14 @@
       <header><div><h1>${f ? f.nome : v.nome}</h1><div class="sub">${f ? f.sub : v.sub}</div></div>${fechar}</header>
       ${corpo}`;
     fichaEl.hidden = false;
-    chipEl.hidden = true;
+    if (ONG_PRESENTE) chipEl.hidden = true;   // t-ong-impregnada (§5.2, item 1): sem ela, o chip fica escondido
     atualizarContadorVD();   // C-VD: a caixa nasce e morre com a plaquinha
   }
-  function fecharFicha() { fichaAberta = null; fichaEl.hidden = true; chipEl.hidden = false; atualizarContadorVD(); }
+  function fecharFicha() {
+    fichaAberta = null; fichaEl.hidden = true;
+    if (ONG_PRESENTE) chipEl.hidden = false;   // t-ong-impregnada (§5.2, item 1): sem ela, o chip fica escondido
+    atualizarContadorVD();
+  }
   fichaEl.addEventListener('click', e => {
     if (e.target.closest('[data-fechar]')) fecharFicha();
     else if (e.target.closest('[data-declarar-defender]')) {
@@ -7752,6 +7883,7 @@
      acontece («quebrou algo no corpo» — bancada prévia, Q6). */
   function vdFontesEstado() {
     const fontes = [];
+    if (!ONG_PRESENTE) return fontes;   // t-ong-impregnada (§5.2, item 1, forma primária): sem ela, a cadeia não chega a ESTADO_VLAB.ong
     const estados = vlabEstadosDe(PROPRIA);
     if (estados.includes('caido')) fontes.push({ nome: 'caída', niveis: 1, lado: 'D' });
     if (estados.includes('fraco')) fontes.push({ nome: 'fraca', niveis: 1, lado: 'D' });
@@ -7991,7 +8123,7 @@
     if (estado === 'resultado') { tratarAcao('continuar'); agendarPassoAuto(); return; }
     if (estado === 'mover') { tratarAcao('cancelar'); agendarPassoAuto(); return; }
     if (estado === 'consumivel') { tratarAcao('voltar'); agendarPassoAuto(); return; }
-    if (estado === 'confirmar-fim') { tratarAcao('voltar'); agendarPassoAuto(); return; }   // M-014: o automático nunca termina a batalha sozinho — a confirmação é gesto da mesa
+    if (estado === 'confirmar-fim') { if (confirmarFimDoMestre) { agendarPassoAuto(); return; } tratarAcao('voltar'); agendarPassoAuto(); return; }   // M-014: o automático nunca termina a batalha sozinho — a confirmação é gesto da mesa; com a bandeira posta, o piloto reagenda e espera (t-ong-impregnada, c3)
     if (estado === 'atacar') {
       if (!autoAtaqueEmCurso) { tratarAcao('voltar'); agendarPassoAuto(); return; }
       autoAtaqueEmCurso = false;
@@ -9177,8 +9309,12 @@
      * não trazem o campo e a guarda é inerte para eles. Texto gémeo
      * no módulo (saves-mestre.js, validarEstado). */
     if ('versao' in e && e.versao !== 2) return 'SAVE_VERSAO_INCOMPATIVEL';
+    /* t-ong-impregnada (D6): 'ong' é campo OPCIONAL-CONDICIONAL
+       do estado (presente confere-se, ausente pode ser válido) —
+       sai da lista obrigatória e entra na régua dos opcionais
+       conhecidos, na verificação de chaves estranhas abaixo. */
     const chavesEstado = ['rodada', 'indiceVez', 'vez', 'ordem', 'fase',
-      'unidades', 'ong', 'batalhaFim', 'consumiveis', 'dados', 'vlab'];
+      'unidades', 'batalhaFim', 'consumiveis', 'dados', 'vlab'];
     for (const c of chavesEstado) if (!(c in e)) return FALTA;
     /* Tranche AMBIENTE: 'ambiente'/'ambienteCurva' são campos
        OPCIONAIS do estado (save antigo sem eles é válido — carrega
@@ -9195,7 +9331,7 @@
     /* Tranche VOO (F-36): 'voo' é campo OPCIONAL do estado, na
        mesma régua (save antigo sem ele é válido — ninguém traz
        asa torada); o 'z' das unidades confere-se junto delas. */
-    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala' && k !== 'visao' && k !== 'furtividade' && k !== 'previaPublica' && k !== 'voo' && k !== 'frentesAssentadas' && k !== 'lados' && k !== 'mapa')) return INV;
+    if (Object.keys(e).some(k => !chavesEstado.includes(k) && k !== 'ong' && k !== 'ambiente' && k !== 'ambienteCurva' && k !== 'escala' && k !== 'visao' && k !== 'furtividade' && k !== 'previaPublica' && k !== 'voo' && k !== 'frentesAssentadas' && k !== 'lados' && k !== 'mapa')) return INV;
     /* Os ids válidos são os do elenco MAIS as figuras de teste
        que o próprio save declara nas unidades (aplicar um save
        admite as que ele traz; um save não pode inventar figuras
@@ -9242,8 +9378,13 @@
     }
     const porId = id => e.unidades.find(u => u.id === id);
     const ongU = porId(PROPRIA);
-    if (!ongU) return INV;
     if (porId(e.vez).vivo !== true) return INV;  // vez de figura morta
+    if (!ongU) {
+      /* t-ong-impregnada (D6): sem a unidade dela no save, o bloco
+         'ong' presente é inválido; o bloco salta-se e batalhaFim
+         fica livre — só a coerência de fase se mantém (abaixo). */
+      if ('ong' in e) return INV;
+    } else {
     const o = e.ong;
     if (!o || typeof o !== 'object') return FALTA;
     const chavesOng = ['danoSofrido', 'paGasto', 'transformada',
@@ -9289,14 +9430,15 @@
       if (Math.abs(passosReserva - Math.round(passosReserva)) > 1e-9) return INV; }
     if (o.alvo !== null && (!ids.includes(o.alvo) || o.alvo === PROPRIA
       || porId(o.alvo).vivo !== true)) return INV;   // alvo-próprio ou morto
+    if (saveEstabilizada) { if (e.batalhaFim || ongU.vivo) return INV; }   // Q4: caída com a batalha a correr
+    else if (e.batalhaFim !== !ongU.vivo) return INV;     // batalhaFim coerente
+    }
     if (typeof e.batalhaFim !== 'boolean') return INV;
     /* VOLTA 2 (S-CONF-03): coerência de fase — fase 'fim' ⇔
        batalhaFim; fase 'vez-ia' ⇒ vez não é a Ong (e vez da Ong ⇒
        fase não é 'vez-ia': é a mesma porta, vista dos dois lados). */
     if ((e.fase === 'fim') !== e.batalhaFim) return INV;
     if (e.fase === 'vez-ia' && e.vez === PROPRIA) return INV;
-    if (saveEstabilizada) { if (e.batalhaFim || ongU.vivo) return INV; }   // Q4: caída com a batalha a correr
-    else if (e.batalhaFim !== !ongU.vivo) return INV;     // batalhaFim coerente
     /* consumiveis (correcção nomeada 5): a v2 NÃO tem inventário —
        lista não-vazia é REJEITADA, nunca descartada em silêncio. */
     if (!Array.isArray(e.consumiveis) || e.consumiveis.length !== 0) return INV;
@@ -9420,6 +9562,11 @@
     },
     capturar() {
       if (!ponteSavesActiva) return { ok: false, erro: 'SAVE_PONTE_INACTIVA' };
+      /* t-ong-impregnada (D5/§5.3, forma final da sentença §3.4):
+         batalha vazia não se guarda — primeira guarda depois do
+         trinco, antes de qualquer leitura de estado dela. */
+      if (!ELENCO.length && !testesPresentes.size)
+        return { ok: false, erro: 'SAVE_ELENCO_VAZIO' };
       /* Guarda de voo (correcção nomeada 3 / S-CRIT-04 e S-CRIT-09):
          a meio de um movimento a cena só actualiza a posição lógica
          no fim do passo e a reserva só desconta no moveend — o par
@@ -9432,7 +9579,7 @@
          sequências a meio. */
       let emVoo = false;
       try { emVoo = !!(view.getState().moving); } catch (_) { emVoo = true; }
-      const morteEmCurso = !!(ESTADO_VLAB.ong.estadoMorte
+      const morteEmCurso = !!(ONG_PRESENTE && ESTADO_VLAB.ong.estadoMorte
         && ESTADO_VLAB.ong.estadoMorte.fase === 'aMorrer');
       /* M1 (§3.6 do desenho): o parque do monstro entra na mesma
          recusa — sem a condição, uma captura a meio do parque
@@ -9461,10 +9608,12 @@
           if (z > 0) su.z = z;
           return su;
         }),
-        ong: {
+        /* t-ong-impregnada (D6): o bloco só nasce com ela presente
+           (espalhar condicional, o precedente da previaPublica). */
+        ...(ONG_PRESENTE ? { ong: {
           danoSofrido, paGasto, transformada, reservaMovimento,
           atacou, alvo: vezManualAberta ? null : alvo
-        },
+        } } : {}),
         batalhaFim,
         consumiveis: [],
         dados: { estado: dadoEstado, roladas: roladasDados },
@@ -9675,8 +9824,13 @@
            silenciosa: a coerência já foi conferida acima). */
         ordem = [...e.ordem];
         rodada = e.rodada; indiceVez = e.indiceVez;
-        danoSofrido = e.ong.danoSofrido; paGasto = e.ong.paGasto;
-        transformada = e.ong.transformada;
+        /* t-ong-impregnada (D6/§5.3, item 3): sem ela no save, os
+           três escalares não se lêem de e.ong — ficam os do
+           arranque, inertes. */
+        if (e.unidades.some(u => u.id === PROPRIA)) {
+          danoSofrido = e.ong.danoSofrido; paGasto = e.ong.paGasto;
+          transformada = e.ong.transformada;
+        }
         /* O estado do motor volta campo a campo, como no restauro
            do Supervisor (PORTA C-23). */
         for (const id of Object.keys(ESTADO_VLAB)) {
@@ -9706,9 +9860,13 @@
            restaurado (morte pelo motor deixa estadoMorte null;
            estabilizada deixa 'estabilizado'; vitória deixa-a viva)
            — e a tela vermelha reaplica-se sobre a vida restaurada. */
+        /* t-ong-impregnada (D6/§5.3, item 3): a bandeira lê-se da
+           unidade do save — sem ela, é false; a segunda leitura
+           (e.vlab.ong) leva a mesma guarda. */
+        const ongSave = e.unidades.find(u => u.id === PROPRIA);
         mortePropriaAdjudicada = !!(e.batalhaFim
-          && e.unidades.find(u => u.id === PROPRIA).vivo === false
-          && !(e.vlab.ong.estadoMorte && e.vlab.ong.estadoMorte.fase === 'estabilizado'));
+          && ongSave && ongSave.vivo === false
+          && !(e.vlab.ong && e.vlab.ong.estadoMorte && e.vlab.ong.estadoMorte.fase === 'estabilizado'));
         aplicarTelaVermelha();
         supPilha.length = 0;            // a linha do tempo abandonada sai da pilha
         supCongelado = false;           // carregar é também a saída do congelamento
@@ -9724,9 +9882,13 @@
         } else if (e.vez === PROPRIA) iniciarVez(PROPRIA);
         else if (comandoMestreActivo()) iniciarVezManual(e.vez);
         else iniciarVezIA(e.vez, false);
-        reservaMovimento = e.ong.reservaMovimento;
-        atacou = e.ong.atacou;
-        alvo = vezManualAberta ? null : e.ong.alvo;
+        /* t-ong-impregnada (D6/§5.3): só com a unidade dela no save
+           se repõem os três escalares; sem ela, ficam os do arranque. */
+        if (e.unidades.some(u => u.id === PROPRIA)) {
+          reservaMovimento = e.ong.reservaMovimento;
+          atacou = e.ong.atacou;
+          alvo = vezManualAberta ? null : e.ong.alvo;
+        }
         /* O snapshot do próprio carregar nasce DEPOIS da
            reimposição (o de iniciarVez/iniciarVezIA leu valores
            pré-carregar — snapshot híbrido S-CRIT-06): pilha limpa e
@@ -10357,7 +10519,7 @@
     function camLivreSincronizarHud() {
       const livre = camLivreActiva();
       $('faixa').hidden = livre;
-      chipEl.hidden = livre;
+      chipEl.hidden = !ONG_PRESENTE || livre;   // t-ong-impregnada (§5.2, item 1): sem ela, o chip fica escondido
       atualizarContadorVD();   // C-VD: a caixa segue a plaquinha também aqui
       $('cantos').hidden = livre;
       for (const el of hudCamLivre) el.hidden = !livre;
@@ -11871,28 +12033,53 @@
   say('A preparar o campo…');
   view.ready.then(() => {
     const falhas = view.getStats().models.filter(m => m.loadError);
-    if (falhas.some(m => m.id === PROPRIA)) {
-      falhaArranque = 'Modelo da Ong indisponível. Batalha não iniciada.';
+    /* t-ong-impregnada (D4/§5.2): a vez inaugural é a de ORDEM[0]
+       — com ela, a Ong; sem ela, a primeira figura da ordem; sem
+       elenco, ninguém. O bloqueio de modelo segue a inaugural. */
+    const inaugural = ORDEM.length ? ORDEM[0] : null;
+    if (inaugural && falhas.some(m => m.id === inaugural)) {
+      falhaArranque = `Modelo da ${nomeCena(inaugural)} indisponível. Batalha não iniciada.`;
       renderAcoes(); say('');
       return;
     }
-    selecionar(PROPRIA);
+    if (!inaugural) {
+      /* Batalha vazia (§4): ninguém a seleccionar, nenhuma vez a
+         abrir — o campo nasce ocioso, com a frase do campo vazio. */
+      sincronizarCamera();
+      mostrarZoom();
+      campoPronto = true;
+      renderAcoes();
+      say(FRASE_CAMPO_VAZIO);
+      return;
+    }
+    selecionar(inaugural);
     sincronizarCamera();
     mostrarZoom();
-    iniciarVez(PROPRIA);         // a batalha começa na vez dela, rodada 1 (D-13.3)
+    if (inaugural === PROPRIA) iniciarVez(PROPRIA);         // a batalha começa na vez dela, rodada 1 (D-13.3)
+    else if (comandoMestreActivo()) iniciarVezManual(inaugural);
+    else iniciarVezIA(inaugural, false);
     /* Correcção E-02 da assimilação: a bandeira só sobe DEPOIS de o
        arranque estar completo — antes dela, say()/renderAcoes()
        mostram o estado de carregamento e nenhuma acção corre; se
        alguma função do arranque lançar, o catch apanha-a com a
        guarda ainda fechada e a falha fica visível com saída. */
     campoPronto = true;
+    if (modoAutomatico) agendarPassoAuto();
     renderAcoes();
     /* A nota de modelo em falta JUNTA-SE à dica da primeira vez —
        nunca a sobrescreve (observação do juiz na análise do pacote). */
-    say('É a vez da <b>Ong</b>. Aperte <b>Mover</b> e toque numa casa acesa para andar.'
-      + (falhas.length
-        ? `<br>${falhas.map(m => nomeCena(m.id)).join(', ')} ${falhas.length > 1 ? 'entram' : 'entra'} em cena como boneco de treino.`
-        : ''));
+    /* t-ong-impregnada (D4): os say() do despacho são engolidos
+       pela guarda campoPronto — por isso o arranque diz a frase
+       de abertura: com ela, a de hoje; sem ela, a inaugural. */
+    say(inaugural === PROPRIA
+      ? 'É a vez da <b>Ong</b>. Aperte <b>Mover</b> e toque numa casa acesa para andar.'
+        + (falhas.length
+          ? `<br>${falhas.map(m => nomeCena(m.id)).join(', ')} ${falhas.length > 1 ? 'entram' : 'entra'} em cena como boneco de treino.`
+          : '')
+      : `É a vez de <b>${nomeCena(inaugural)}</b> (rodada ${rodada}).`
+        + (falhas.length
+          ? `<br>${falhas.map(m => nomeCena(m.id)).join(', ')} ${falhas.length > 1 ? 'entram' : 'entra'} em cena como boneco de treino.`
+          : ''));
   }).catch(error => {
     /* Correcção E-07 da assimilação: falha de DADOS (a validação da
        cena lança TypeError/RangeError) não se cura com «Tentar de
@@ -13109,8 +13296,20 @@
       };
       btnVooAdmitir.addEventListener('click', () => {
         const r = vooAdmitirFiguraTeste('grifo');
-        if (r.ok) say('O <b>Grifo</b> entrou na batalha — é a figura de ensaio do voo.');
-        else say('O Grifo não entrou: ' + r.erro);
+        if (r.ok) {
+          say('O <b>Grifo</b> entrou na batalha — é a figura de ensaio do voo.');
+          /* t-ong-impregnada (R8, forma final): admitir com a
+             batalha ociosa (vez nula) faz nascer a rotação — a
+             abertura nasce AQUI, na porta manual, não em
+             vooAdmitirFiguraTeste (que é porta única de admissão,
+             chamada também pelos restauros). Só com vez nula,
+             fora de restauro e sem batalha fechada. */
+          if (vezAtual === null && !supRestaurando && !batalhaFim) {
+            indiceVez = ordem.indexOf('grifo');
+            if (comandoMestreActivo()) iniciarVezManual('grifo');
+            else iniciarVezIA('grifo', false);
+          }
+        } else say('O Grifo não entrou: ' + r.erro);
         sincVoo();
       });
       btnVooTorcer.addEventListener('click', () => {
