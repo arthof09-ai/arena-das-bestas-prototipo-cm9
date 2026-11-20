@@ -1913,7 +1913,7 @@
              * por compromisso; quem faz os efeitos de mundo (visaoAplicar
              * + transporte) é a casca, ao recebê-lo. A Dinâmica nunca
              * passa por aqui: ela escreve só yaw (§14.9). */
-            const FRENTE_OFFSET = 0;   // §14.3.2: derivado 0 — a PC1 mede antes de contar como verificado
+            const FRENTE_OFFSET = 0;   // §14.3.2: 0 MEDIDO (DIAG 3, 17/11) — o desvio de montagem de cada modelo corrige-se DENTRO do pivot (FRENTE_MODELO, junto a addUnit); frente do pivot = frente do corpo. Não «corrigir» aqui.
             const ACOPL_CARDINAIS = [['S', 0], ['E', 90], ['N', 180], ['W', 270]];
             let acoplId = null, acoplComprometido = null, acoplCandidato = null, acoplCandidatoDesde = 0, acoplPendente = false;
             let acoplAssentadaGraus = 0, acoplCompromissos = 0, acoplRecalculos = 0;
@@ -2323,6 +2323,17 @@
                 }
                 u.pivot.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
             }
+            /* FRENTE DO MODELO — correcção do andar de ré (desenho
+             * t-andar-teleporte/correccao-re; medição DIAG 3): a frente do corpo
+             * é propriedade do FICHEIRO (medida no Blender, pose de repouso) e
+             * inscreve-se aqui, por caminho do modelo, ANTES de o modelo ser
+             * usado. Os zeros do Orc e do Lobo são MEDIDOS, não omissões:
+             * ausência da tabela ≠ 0 — é «por medir», e a guarda de addUnit
+             * grita (frenteMedida=false + console.warn nomeado). O desvio
+             * corrige-se DENTRO do pivot (rotação da cena do GLB na montagem),
+             * por isso o §14 fica com FRENTE_OFFSET = 0: frente do pivot =
+             * frente do corpo para todos os modelos. */
+            const FRENTE_MODELO = { 'modelos/manequim-f-roxa.glb': Math.PI, 'modelos/manequim-m.glb': Math.PI, 'modelos/orc-mutante.glb': 0, 'modelos/lobo-cinzento-051.glb': 0 };
             async function addUnit(data) {
                 for (const key of Object.keys(data))
                     if (!UNIT_KEYS.has(key))
@@ -2345,6 +2356,16 @@
                     if (url.origin !== location.origin || !url.pathname.endsWith('.glb'))
                         throw new TypeError('GLB local obrigatório.');
                 }
+                /* Frente do modelo: resolve-se ANTES da tentativa de carga, para
+                 * a unidade caída no recurso de erro conservar os dois campos.
+                 * .glb inscrita → valor da tabela, frenteMedida=true; .glb
+                 * ausente → 0/false + o warn da guarda (§3.3.4 do desenho);
+                 * sem GLB (marcadores) → 0/true («sem frente por medir»). */
+                const frenteTabela = model.endsWith('.glb') ? FRENTE_MODELO[model] : undefined;
+                const frenteModeloRad = frenteTabela !== undefined ? frenteTabela : 0;
+                const frenteMedida = !model.endsWith('.glb') || frenteTabela !== undefined;
+                if (model.endsWith('.glb') && frenteTabela === undefined)
+                    console.warn('FRENTE_MODELO: modelo sem frente medida inscrita: "' + model + '" (unidade "' + data.id + '") — montado com offset 0 e frenteMedida=false; medir a frente e inscrever na tabela ANTES de usar este modelo.');
                 const root = new T.Group(), pivot = new T.Group();
                 root.add(pivot);
                 scene.add(root);
@@ -2352,7 +2373,7 @@
                 label.className = 'nome';
                 label.textContent = data.nome;
                 labels.appendChild(label);
-                const u = { id: data.id, nome: data.nome, x: data.x, z: data.y, altitude: data.altitude ?? 0, vivo: data.vivo, root, pivot, label, size: data.alturaMetros, queue: [], step: null, shAnc: null, clips: { idle: data.animacoes?.idle, andar: data.animacoes?.andar, ataque:data.animacoes?.ataque, reacao:data.animacoes?.reacao }, animations: [], removed: false, oculto: false, model };
+                const u = { id: data.id, nome: data.nome, x: data.x, z: data.y, altitude: data.altitude ?? 0, vivo: data.vivo, root, pivot, label, size: data.alturaMetros, queue: [], step: null, shAnc: null, clips: { idle: data.animacoes?.idle, andar: data.animacoes?.andar, ataque:data.animacoes?.ataque, reacao:data.animacoes?.reacao }, animations: [], removed: false, oculto: false, model, frenteModeloRad, frenteMedida };
                 const tint = [0x87b4b0, 0xe5bb74, 0xb98b9d, 0xb5c3ce, 0xb7b77c][units.size % 5];
                 u.ring = ring(.56, tint);
                 u.contact = new T.Mesh(new T.CircleGeometry(.5, 24), material(0x080c12, .3));
@@ -2383,6 +2404,8 @@
                             release(gltf.scene);
                             return;
                         }
+                        if (frenteModeloRad !== 0)
+                            gltf.scene.rotateY(frenteModeloRad);
                         gltf.scene.updateMatrixWorld(true);
                         const b = new T.Box3().setFromObject(gltf.scene), s = b.getSize(new T.Vector3()), center = b.getCenter(new T.Vector3());
                         gltf.scene.scale.setScalar(data.alturaMetros / s.y);
@@ -2741,7 +2764,7 @@
                 return { area: JSON.parse(JSON.stringify(area)), selected, camera: mode, zoom: mode === 'livre' ? null : zoom[mode], zoomRange: mode === 'livre' ? null : zoomRange(), livre: mode === 'livre' ? { pos: [livreRound(ctrlLivre.pos.x), livreRound(ctrlLivre.pos.y), livreRound(ctrlLivre.pos.z)], yaw: livreRound(ctrlLivre.yaw), pitch: livreRound(ctrlLivre.pitch) } : null, gridVisible: grid.visible, qualidade: quality, dinamica: { ligada: dinLigada, velocidade: dinVel, estado: dinEstado, yawRad: yaw, alvoYawRad: dinPara, deltaRad: dinDelta, duracaoS: dinDur, decorridoS: dinT, tipoUltimoEvento: dinTipoUltimo, scoreActual: dinScoreActual, scoreEscolhido: dinScoreEscolhido, ganho: dinGanho, candidatosAvaliados: dinCand, fallbackUsado: dinFallback, resgate: dinResgate, resgateFoco: dinResgateFoco, resgateEscolha: dinResgateEscolha, intervencoes60s: dinJanela.length, graus60s: dinGraus60(), arrefecimentoRestanteS: dinFimUltima === -Infinity ? 0 : Math.max(0, 2 - (tCena - dinFimUltima)), imunidadeRestanteS: dinArrT0 === -Infinity ? 0 : Math.max(0, 8 - (tCena - dinArrT0)), ultimoMotivo: dinMotivo }, acoplamento: acoplEstado(), moving: [...units.values()].some(u => u.step || u.queue.length), units: [...units.values()].map(publicUnit) };
             }
             function stats() {
-                return { movementCells:movementCells.map(p=>({...p})), presentation:presentation ? {attacker:presentation.a.id,target:presentation.b.id,phase:!presentation.started?'waiting':presentation.t<.2?'turn':'gesture'} : null, hoverVisible: hover.visible, destinationVisible: destination.visible, reachableCells: (moveLayer.children[0]?.geometry.attributes.position.count ?? 0)/6, fps, triangles: renderer.info.render.triangles, totalTriangles: count(scene), drawCalls: renderer.info.render.calls, ceuCalls: ceuDelta.calls, ceuTriangles: ceuDelta.triangles, dpr: renderer.getPixelRatio(), width, height, visibleWidthMeters: viewWidth, cellPixels: CELL / viewWidth * width, shadowSize: renderer.shadowMap.enabled ? sun.shadow.mapSize.x : 0, qualidadeModo, qualidadePerfil: quality, areaMeters: { width: area.cols * CELL, height: area.rows * CELL }, models: [...units.values()].map(u => ({ id:u.id, frente:((T.MathUtils.radToDeg(u.pivot.rotation.y)%360)+360)%360, drawOffset:{x:u.root.position.x-wx(u.x),y:u.root.position.y-world.height(wx(u.x),wz(u.z))-u.altitude,z:u.root.position.z-wz(u.z)}, modelo:u.model, loadError:u.loadError ?? null, triangles:count(u.pivot), markerTint:u.markerTint ?? null, skins:(()=>{const skins=new Set();u.pivot.traverse(o=>{if(o.isSkinnedMesh)skins.add(o.skeleton.bones.map(b=>b.uuid).join(','))});return skins.size})(), action:u.actionName ?? null, actionTime:u.action?.time ?? null, clips:u.animations.map(a=>a.name), clipDurations:u.animations.map(a=>({name:a.name,duration:a.duration})) })), animations: { idle: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.idle).length, walk: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.andar).length, advancing: [...units.values()].filter(u => u.mixer && u.mixer.time > 0).length } };
+                return { movementCells:movementCells.map(p=>({...p})), presentation:presentation ? {attacker:presentation.a.id,target:presentation.b.id,phase:!presentation.started?'waiting':presentation.t<.2?'turn':'gesture'} : null, hoverVisible: hover.visible, destinationVisible: destination.visible, reachableCells: (moveLayer.children[0]?.geometry.attributes.position.count ?? 0)/6, fps, triangles: renderer.info.render.triangles, totalTriangles: count(scene), drawCalls: renderer.info.render.calls, ceuCalls: ceuDelta.calls, ceuTriangles: ceuDelta.triangles, dpr: renderer.getPixelRatio(), width, height, visibleWidthMeters: viewWidth, cellPixels: CELL / viewWidth * width, shadowSize: renderer.shadowMap.enabled ? sun.shadow.mapSize.x : 0, qualidadeModo, qualidadePerfil: quality, areaMeters: { width: area.cols * CELL, height: area.rows * CELL }, models: [...units.values()].map(u => ({ id:u.id, frente:((T.MathUtils.radToDeg(u.pivot.rotation.y)%360)+360)%360, drawOffset:{x:u.root.position.x-wx(u.x),y:u.root.position.y-world.height(wx(u.x),wz(u.z))-u.altitude,z:u.root.position.z-wz(u.z)}, modelo:u.model, frenteModeloRad:u.frenteModeloRad ?? 0, frenteMedida:u.frenteMedida ?? false, loadError:u.loadError ?? null, triangles:count(u.pivot), markerTint:u.markerTint ?? null, skins:(()=>{const skins=new Set();u.pivot.traverse(o=>{if(o.isSkinnedMesh)skins.add(o.skeleton.bones.map(b=>b.uuid).join(','))});return skins.size})(), action:u.actionName ?? null, actionTime:u.action?.time ?? null, clips:u.animations.map(a=>a.name), clipDurations:u.animations.map(a=>({name:a.name,duration:a.duration})) })), animations: { idle: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.idle).length, walk: [...units.values()].filter(u => u.mixer && u.actionName === u.clips.andar).length, advancing: [...units.values()].filter(u => u.mixer && u.mixer.time > 0).length } };
             }
             /* ============ GUARDA DE ENQUADRAMENTO (t-camera-enquadramento) ============
                Doutrina do Mestre (15/11/2026, 12:34): em nenhum ângulo
