@@ -43,6 +43,23 @@
        pedra/madeira/contacto) e trono (sem elas). O caminho do
        campo chama-a no mesmo ponto e com os mesmos argumentos
        de sempre: comportamento ao bit. */
+    /* ---------- CONTORNO DAS FIGURAS (aba «Testes» das Configurações;
+       palavra do Mestre, 19/11/2026: «Deixa nas configurações aba
+       testes, mas deixa pré setado ligado») ----------
+       O rim quente das figuras ganha um PISO: do lado escuro da
+       figura a máscara já não apaga o brilho de todo (a variante das
+       fotos Q44 que o olho dele aprovou). O piso vive num UNIFORME
+       ÚNICO partilhado por todos os materiais pintados com rim:
+       0,50 = ligado (o valor das fotos aprovadas); 0,0 = desligado —
+       e com 0,0 o max() do shader é a identidade, ou seja, o visual
+       fica exactamente o de sempre. Quem manda no valor é a chave
+       hudt1-contorno, a mesma que a aba «Testes» edita: nasce LIGADO
+       (pré-setado) e só o literal 'desligado' o apaga — a leitura é
+       a da casa, igual à das outras definições que nascem ligadas. */
+    const uniformePisoContorno = { value: 0.5 };
+    try {
+        if (localStorage.getItem('hudt1-contorno') === 'desligado') uniformePisoContorno.value = 0.0;
+    } catch (_) { /* sem armazenamento, vale o pré-setado: ligado */ }
     const instalarPintura = (T, scene, mundoTex) => {
         /* ---------- PINTURA DOS MATERIAIS (Visual 3, PESQUISA-A §2) ----------
          * Sem trocar materiais nem tocar nos sagrados: injecta-se no fim do
@@ -67,9 +84,13 @@
                 + (dessat ? ' corP = mix(corP, vec3(dot(corP, vec3(0.299, 0.587, 0.114))), ' + dessat + ');' : '')
                 + ' corP = mix(gl_FragColor.rgb, corP, ' + mistura + ');'
                 + (comRim ? ' float frP = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 3.0);'
-                          + ' corP += vec3(1.0, 0.72, 0.42) * frP * 0.62 * smoothstep(0.04, 0.42, yqP);' : '')
+                          + ' corP += vec3(1.0, 0.72, 0.42) * frP * 0.62 * max(smoothstep(0.04, 0.42, yqP), uPisoContorno);' : '')
                 + ' gl_FragColor.rgb = corP; }'
                 + '\n#include <tonemapping_fragment>';
+            if (comRim) {
+                shader.uniforms.uPisoContorno = uniformePisoContorno;
+                shader.fragmentShader = 'uniform float uPisoContorno;\n' + shader.fragmentShader;
+            }
             shader.fragmentShader = shader.fragmentShader.replace('#include <tonemapping_fragment>', inj);
         };
         /* VOLTA 3: as figuras dessaturam 0,22 (o cabelo laranja da Ong era

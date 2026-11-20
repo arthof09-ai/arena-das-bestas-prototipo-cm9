@@ -635,3 +635,33 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   padding: 10px max(3%, calc(50% - 300px)) calc(26px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid rgba(201, 162, 39, .45);
 }
+
+/* ---------- pesquisa + duas colunas nas Configurações da entrada
+   (t-configuracoes-ux, pedido do Mestre 19/11/2026 19:53) ----------
+   A lupa: barra fixa sob o cabeçalho, com o campo e o ✕ de limpar.
+   As duas colunas: com o telefone DEITADO (ecrã baixo e largo), as
+   listas de definições (.ent-linhas) põem-se em duas colunas lado
+   a lado — cabe o dobro sem rolar; a nota do som e as linhas de
+   segmentos ocupam a largura toda. Em pé fica uma coluna, como
+   hoje. Nesse mesmo regime o painel aproveita a altura do ecrã. */
+.ent-pesquisa { flex: none; display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
+.ent-pesquisa-lupa { font-size: 15px; line-height: 1; }
+.ent-pesquisa-campo {
+  flex: 1; min-width: 0; height: 40px; box-sizing: border-box;
+  background: rgba(10, 8, 5, .9); color: #fff8e5;
+  border: 1px solid rgba(201, 162, 39, .8); border-radius: 8px;
+  font-size: 15px; padding: 0 12px;
+}
+.ent-pesquisa-campo:focus-visible { outline: 2px solid var(--ouro-vivo); outline-offset: -2px; }
+.ent-pesquisa-limpar {
+  flex: none; width: 32px; height: 32px; cursor: pointer;
+  border: 1px solid rgba(201, 162, 39, .8); border-radius: 8px;
+  background: rgba(28, 21, 12, .85); color: var(--ouro-claro, #e8c877);
+  font-size: 13px; font-weight: 700; line-height: 1;
+}
+.ent-pesquisa-limpar[hidden] { display: none; }
+@media (orientation: landscape) and (max-height: 560px) {
+  .ent-painel.com-abas { top: 4%; height: 92%; max-height: 92%; }
+  .ent-linhas { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; }
+  .ent-linhas > .ent-nota, .ent-linhas > .cfgrow:has(.seg) { grid-column: 1 / -1; }
+}

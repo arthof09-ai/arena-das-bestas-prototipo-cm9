@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_119';
+  var VERSAO_JOGO = 'REF_120';
 
   var SCRIPTS_JOGO = [
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
@@ -332,7 +332,24 @@
       padrao: 'ligado', ligado: 'Ligado', desligado: 'Desligado' },
     { chave: 'hudt1-mostrar-fps', rotulo: 'Mostrar FPS', tipo: 'tog',
       padrao: 'desligado', ligado: 'Ligado', desligado: 'Desligado',
-      sub: 'quadros por segundo, no canto superior direito do ecrã de jogo' }
+      sub: 'quadros por segundo, no canto superior direito do ecrã de jogo' },
+    /* Aba «Testes» — o primeiro inquilino (19/11/2026): o Contorno
+       das figuras. Nasce LIGADO (pré-setado, palavra dele); quem o
+       consome é a pintura de visual.js, que lê esta mesma chave ao
+       arrancar. Os próximos inquilinos entram aqui, com aba:'testes'. */
+    { chave: 'hudt1-contorno', rotulo: 'Contorno das figuras', tipo: 'tog',
+      padrao: 'ligado', ligado: 'Ligado', desligado: 'Desligado', aba: 'testes',
+      sub: 'brilho mínimo nas bordas das figuras, para não se perderem do lado escuro' },
+    /* Aba «Testes» — o segundo inquilino (19/11/2026, ordem directa
+       dele: «bota aí na aba de teste uma versão de movimento livre
+       com joystick e eu vou mexendo»): o Movimento livre. Nasce
+       LIGADO (pré-setado, regra do dia); quem o consome é a casca de
+       jogo.js, que lê esta mesma chave ao arrancar e mostra o
+       manípulo em batalha. É ferramenta de teste: fora da grelha,
+       dos turnos e do PA. */
+    { chave: 'hudt1-movimento-livre', rotulo: 'Movimento livre (joystick)', tipo: 'tog',
+      padrao: 'ligado', ligado: 'Ligado', desligado: 'Desligado', aba: 'testes',
+      sub: 'manípulo no ecrã para conduzir a figura seleccionada e ver o andar de perto' }
   ];
   function lerDefinicao(def) {
     try {
@@ -777,6 +794,13 @@
   function activarAbaEnt(id) {
     if (!paineisEnt[id]) id = 'graficos';
     entAbaActual = id;
+    /* Tocar numa aba sai da pesquisa (a lista volta a ser a da aba). */
+    if (pesquisaEntActual) {
+      pesquisaEntActual = '';
+      if (campoPesquisaEnt) campoPesquisaEnt.value = '';
+      if (btnLimparPesquisaEnt) btnLimparPesquisaEnt.hidden = true;
+      if (secPesquisaEnt) secPesquisaEnt.classList.remove('activa');
+    }
     for (var k in paineisEnt) paineisEnt[k].classList.toggle('activa', k === id);
     for (var k2 in celulasEnt) celulasEnt[k2].classList.toggle('on', k2 === id);
     conteudoEnt.scrollTop = 0;
@@ -793,7 +817,13 @@
     ['graficos', 'Gráficos', 'Qualidade, números e tela vermelha'],
     ['som', 'Som', 'Volumes, música, efeitos e mudo'],
     ['controles', 'Controles', 'As teclas para jogar no computador'],
-    ['conta', 'Conta', 'Conta guardada, senha e aparelho']
+    ['conta', 'Conta', 'Conta guardada, senha e aparelho'],
+    /* Aba «Testes» (palavra do Mestre, 19/11/2026): a casa das
+       mecânicas em teste — entram NO JOGO por esta aba, cada uma
+       com o seu interruptor, antes de serem definitivas. Nasce com
+       o primeiro inquilino (o Contorno das figuras); os próximos
+       acrescentam a sua definição à lista, sem refazer a aba. */
+    ['testes', 'Testes', 'Mecânicas em teste, para experimentar antes de entrarem no jogo']
   ];
   ABAS_ENT.forEach(function (def) {
     var sec = el('section', 'entab-aba');
@@ -814,7 +844,7 @@
   });
   /* Aba Gráficos: grupo «O seu ecrã» + Restaurar no fundo. */
   paineisEnt.graficos.appendChild(el('h3', 'ent-subtitulo', 'A sua tela'));
-  var linhasDefG = el('div');
+  var linhasDefG = el('div', 'ent-linhas');
   paineisEnt.graficos.appendChild(linhasDefG);
   var zonaRestG = el('div', 'ent-restaurar-zona');
   zonaRestG.appendChild(el('p', 'ent-frase', 'Repõe só as definições de Gráficos e Som.'));
@@ -823,8 +853,13 @@
   /* Aba Som: as linhas do som + a nota + Restaurar no fundo (o MESMO
      item nas duas abas, sentença J4: o gémeo dispara o clique do
      botão histórico — um só caminho, uma só lista branca). */
-  var linhasDefS = el('div');
+  var linhasDefS = el('div', 'ent-linhas');
   paineisEnt.som.appendChild(linhasDefS);
+  /* Aba Testes: o contentor das definições com aba:'testes' — quem
+     o enche é pintarConfig, como nas outras abas. Novos inquilinos
+     não precisam de tocar aqui: basta a definição marcada. */
+  var linhasDefT = el('div', 'ent-linhas');
+  paineisEnt.testes.appendChild(linhasDefT);
   var zonaRestS = el('div', 'ent-restaurar-zona');
   zonaRestS.appendChild(el('p', 'ent-frase', 'Repõe só as definições de Gráficos e Som.'));
   var btnRestaurarSom = el('button', 'ent-esquecer', 'Restaurar o padrão');
@@ -896,6 +931,84 @@
      liam-se vazias: só o esqueleto (subtítulo, Restaurar, Conta).
      pintarConfig continua a correr a cada abertura, como sempre. */
   pintarConfig();
+
+  /* ---------- PESQUISA NAS CONFIGURAÇÕES (pedido do Mestre,
+   * 19/11/2026 19:53: «uma lupa para você pesquisar qual
+   * configuração você quer e já ir direto e achar»): escreve-se o
+   * nome e as configurações que batem — de TODAS as abas — aparecem
+   * logo, agrupadas pela aba, sem rolar. Limpar o campo (ou tocar
+   * numa aba) volta às abas. A lista pesquisada é a das DEFINICOES
+   * (as definições que persistem: Gráficos, Som e Testes); a tabela
+   * de teclas da aba Controles é esquema fixo e não entra. */
+  var pesquisaEntActual = '';
+  var barraPesquisaEnt = el('div', 'ent-pesquisa');
+  barraPesquisaEnt.appendChild(el('span', 'ent-pesquisa-lupa', '🔍'));
+  var campoPesquisaEnt = document.createElement('input');
+  campoPesquisaEnt.type = 'text';
+  campoPesquisaEnt.className = 'ent-pesquisa-campo';
+  campoPesquisaEnt.placeholder = 'Pesquisar configuração…';
+  campoPesquisaEnt.setAttribute('aria-label', 'Pesquisar configuração');
+  barraPesquisaEnt.appendChild(campoPesquisaEnt);
+  var btnLimparPesquisaEnt = el('button', 'ent-pesquisa-limpar', '✕');
+  btnLimparPesquisaEnt.type = 'button';
+  btnLimparPesquisaEnt.hidden = true;
+  btnLimparPesquisaEnt.setAttribute('aria-label', 'Limpar pesquisa');
+  barraPesquisaEnt.appendChild(btnLimparPesquisaEnt);
+  vistaConfig.insertBefore(barraPesquisaEnt, corpoEnt);
+  var secPesquisaEnt = el('section', 'entab-aba');
+  secPesquisaEnt.dataset.aba = 'pesquisa';
+  secPesquisaEnt.setAttribute('aria-label', 'Resultados da pesquisa');
+  conteudoEnt.appendChild(secPesquisaEnt);
+  function normalizarPesquisaEnt(s) {
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+  function abaDeDefEnt(def) {
+    if (def.aba === 'testes') return 'testes';
+    if (def.tipo === 'nota' || (def.chave || '').indexOf('hudt1-som-') === 0) return 'som';
+    return 'graficos';
+  }
+  var NOMES_ABA_ENT = { graficos: 'Gráficos', som: 'Som', testes: 'Testes' };
+  function pintarPesquisaEnt() {
+    var q = normalizarPesquisaEnt(pesquisaEntActual).trim();
+    secPesquisaEnt.textContent = '';
+    if (!q) { secPesquisaEnt.classList.remove('activa'); return; }
+    var termos = q.split(/\s+/);
+    var grupos = { graficos: [], som: [], testes: [] };
+    DEFINICOES.forEach(function (def) {
+      if (def.tipo === 'nota') return;
+      var alvo = normalizarPesquisaEnt(def.rotulo + ' ' + (def.sub || '') + ' ' + NOMES_ABA_ENT[abaDeDefEnt(def)]);
+      for (var i = 0; i < termos.length; i++) if (alvo.indexOf(termos[i]) < 0) return;
+      grupos[abaDeDefEnt(def)].push(def);
+    });
+    var algum = false;
+    ['graficos', 'som', 'testes'].forEach(function (aba) {
+      if (!grupos[aba].length) return;
+      algum = true;
+      secPesquisaEnt.appendChild(el('h3', 'ent-subtitulo', NOMES_ABA_ENT[aba]));
+      var lista = el('div', 'ent-linhas');
+      grupos[aba].forEach(function (def) { lista.appendChild(linhaDeDef(def)); });
+      secPesquisaEnt.appendChild(lista);
+    });
+    if (!algum) secPesquisaEnt.appendChild(el('p', 'ent-frase', 'Nenhuma configuração com esse nome.'));
+    for (var k in paineisEnt) paineisEnt[k].classList.remove('activa');
+    secPesquisaEnt.classList.add('activa');
+  }
+  function sairPesquisaEnt(manterFoco) {
+    pesquisaEntActual = '';
+    campoPesquisaEnt.value = '';
+    btnLimparPesquisaEnt.hidden = true;
+    secPesquisaEnt.classList.remove('activa');
+    activarAbaEnt(entAbaActual);
+    if (manterFoco) campoPesquisaEnt.focus();
+  }
+  campoPesquisaEnt.addEventListener('input', function () {
+    pesquisaEntActual = campoPesquisaEnt.value;
+    btnLimparPesquisaEnt.hidden = !pesquisaEntActual;
+    if (!normalizarPesquisaEnt(pesquisaEntActual).trim()) { sairPesquisaEnt(true); return; }
+    pintarPesquisaEnt();
+    conteudoEnt.scrollTop = 0;
+  });
+  btnLimparPesquisaEnt.addEventListener('click', function () { sairPesquisaEnt(true); });
 
   /* ---------- RESTAURAR O PADRÃO (sentença J4) ----------
    * Lista branca EXPLÍCITA, chave a chave — as mesmas chaves do ⚙
@@ -983,6 +1096,64 @@
     else return;
     if (typeof aplicarVolumeTrilha === 'function') aplicarVolumeTrilha();
   }
+  /* Uma linha de definição (rótulo + controlo), construída num só
+     sítio: pintarConfig pinta-a nas abas e a pesquisa pinta-a nos
+     resultados — o mesmo elemento, os mesmos ouvintes. */
+  function linhaDeDef(def) {
+    var linha = el('div', 'cfgrow');
+    var rot = el('span', 'cl');
+    rot.appendChild(document.createTextNode(def.rotulo));
+    if (def.sub) {
+      var pequeno = el('small', null, def.sub);
+      rot.appendChild(pequeno);
+    }
+    linha.appendChild(rot);
+    var valor = lerDefinicao(def);
+    if (def.tipo === 'seg') {
+      var seg = el('div', 'seg');
+      seg.setAttribute('role', 'group');
+      seg.setAttribute('aria-label', def.rotulo);
+      def.opcoes.forEach(function (op) {
+        var b = el('button', op[0] === valor ? 'on' : '', op[1]);
+        b.type = 'button';
+        b.addEventListener('click', function () {
+          gravarDefinicao(def, op[0]);
+          pintarConfig();
+        });
+        seg.appendChild(b);
+      });
+      linha.appendChild(seg);
+    } else if (def.tipo === 'vol') {
+      var volctl = el('div', 'volctl');
+      var reg = document.createElement('input');
+      reg.type = 'range';
+      reg.className = 'vol-range';
+      reg.min = '0'; reg.max = '100'; reg.step = '1';
+      reg.value = valor;
+      reg.setAttribute('aria-label', def.rotulo);
+      var saida = el('span', 'vol-valor', valor + '%');
+      reg.addEventListener('input', function () {
+        saida.textContent = reg.value + '%';
+        gravarDefinicao(def, reg.value);
+        sincronizarEstadoSom(def);
+      });
+      volctl.appendChild(reg);
+      volctl.appendChild(saida);
+      linha.appendChild(volctl);
+    } else {
+      var tog = el('button', 'tog' + (valor === 'ligado' ? ' on' : ''),
+        valor === 'ligado' ? def.ligado : def.desligado);
+      tog.type = 'button';
+      tog.setAttribute('aria-pressed', valor === 'ligado' ? 'true' : 'false');
+      tog.addEventListener('click', function () {
+        gravarDefinicao(def, valor === 'ligado' ? 'desligado' : 'ligado');
+        sincronizarEstadoSom(def);
+        pintarConfig();
+      });
+      linha.appendChild(tog);
+    }
+    return linha;
+  }
   function pintarConfig() {
     /* Abas (SPEC §3): cada definição pinta-se na SUA aba — as do som
        (chaves hudt1-som-*) e a nota na aba Som; as outras na aba
@@ -990,66 +1161,16 @@
        abas/grupos. */
     linhasDefG.textContent = '';
     linhasDefS.textContent = '';
+    linhasDefT.textContent = '';
     DEFINICOES.forEach(function (def) {
-      var destino = (def.tipo === 'nota' || (def.chave || '').indexOf('hudt1-som-') === 0)
+      var destino = def.aba === 'testes' ? linhasDefT
+        : (def.tipo === 'nota' || (def.chave || '').indexOf('hudt1-som-') === 0)
         ? linhasDefS : linhasDefG;
       if (def.tipo === 'nota') {
         destino.appendChild(el('p', 'ent-nota som-nota', def.texto));
         return;
       }
-      var linha = el('div', 'cfgrow');
-      var rot = el('span', 'cl');
-      rot.appendChild(document.createTextNode(def.rotulo));
-      if (def.sub) {
-        var pequeno = el('small', null, def.sub);
-        rot.appendChild(pequeno);
-      }
-      linha.appendChild(rot);
-      var valor = lerDefinicao(def);
-      if (def.tipo === 'seg') {
-        var seg = el('div', 'seg');
-        seg.setAttribute('role', 'group');
-        seg.setAttribute('aria-label', def.rotulo);
-        def.opcoes.forEach(function (op) {
-          var b = el('button', op[0] === valor ? 'on' : '', op[1]);
-          b.type = 'button';
-          b.addEventListener('click', function () {
-            gravarDefinicao(def, op[0]);
-            pintarConfig();
-          });
-          seg.appendChild(b);
-        });
-        linha.appendChild(seg);
-      } else if (def.tipo === 'vol') {
-        var volctl = el('div', 'volctl');
-        var reg = document.createElement('input');
-        reg.type = 'range';
-        reg.className = 'vol-range';
-        reg.min = '0'; reg.max = '100'; reg.step = '1';
-        reg.value = valor;
-        reg.setAttribute('aria-label', def.rotulo);
-        var saida = el('span', 'vol-valor', valor + '%');
-        reg.addEventListener('input', function () {
-          saida.textContent = reg.value + '%';
-          gravarDefinicao(def, reg.value);
-          sincronizarEstadoSom(def);
-        });
-        volctl.appendChild(reg);
-        volctl.appendChild(saida);
-        linha.appendChild(volctl);
-      } else {
-        var tog = el('button', 'tog' + (valor === 'ligado' ? ' on' : ''),
-          valor === 'ligado' ? def.ligado : def.desligado);
-        tog.type = 'button';
-        tog.setAttribute('aria-pressed', valor === 'ligado' ? 'true' : 'false');
-        tog.addEventListener('click', function () {
-          gravarDefinicao(def, valor === 'ligado' ? 'desligado' : 'ligado');
-          sincronizarEstadoSom(def);
-          pintarConfig();
-        });
-        linha.appendChild(tog);
-      }
-      destino.appendChild(linha);
+      destino.appendChild(linhaDeDef(def));
     });
     var p = perfilGuardado();
     var notas = [];
@@ -1064,6 +1185,9 @@
      * nenhum estado do aparelho fica inalcançável pela interface. */
     var temSenhaGuardada = typeof temOverride === 'function' && temOverride();
     btnEsquecer.hidden = !(p || mestreLembrado() || temSenhaGuardada);
+    /* Com uma pesquisa activa, os resultados repintam-se também —
+       o controlo que se acabou de mexer lê o valor novo. */
+    if (pesquisaEntActual) pintarPesquisaEnt();
   }
 
   /* ---------- navegação entre vistas ---------- */

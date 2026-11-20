@@ -1986,6 +1986,18 @@
              * camaraActiva() — o único ponto de troca. Sair é voltar à
              * ortográfica congelada: exacto por construção. */
             const ctrlLivre = { pos: new T.Vector3(0, 1.6, 4.9), yaw: 0, pitch: 0, joyX: 0, joyY: 0, sobe: 0, teclas: {} };
+            /* ---------- MOVIMENTO LIVRE COM JOYSTICK (aba «Testes»,
+               t-movimento-livre-joystick, 19/11/2026) ----------
+               Ferramenta de teste pedida pelo Mestre: conduzir a
+               figura seleccionada com um manípulo no ecrã para ver o
+               andar com as próprias mãos. O estado contínuo do
+               manípulo vive aqui (molde do ctrlLivre); o passo corre
+               em animate (passoMovLivre). Não é mecânica de jogo:
+               fora da grelha, dos turnos e do PA — a casa lógica só
+               muda ao assentar (largar o manípulo), por snap para a
+               casa mais próxima. */
+            const ctrlMovLivre = { joyX: 0, joyY: 0 };
+            let movLivreUnidade = null;   // a unidade em condução, ou null
             let velLivre = 1;
             const camaraActiva = () => mode === 'livre' ? cameraLivre : camera;
             const livreRound = v => Math.round(v * 100) / 100;
@@ -2574,6 +2586,87 @@
                 const alturaSolo = world.alturaVisivel ? world.alturaVisivel(ctrlLivre.pos.x, ctrlLivre.pos.z) : world.height(ctrlLivre.pos.x, ctrlLivre.pos.z);
                 ctrlLivre.pos.y = clamp(ctrlLivre.pos.y, alturaSolo + .4, 45);
             }
+            /* Assentar a condução do movimento livre: a casa lógica
+               passa a ser a casa mais próxima da posição contínua,
+               pose() põe o root exactamente nela e volta o repouso.
+               'moveend' só se a condução interrompeu um movimento da
+               casca a meio — para a casca não ficar pendurada em
+               «movendo»; sem interrupção, nenhum evento nasce daqui
+               (nenhum despacho da casca existiu, logo nenhum custo
+               pode ser descontado por esta ferramenta). */
+            function assentarMovLivre(u) {
+                if (!u.movLivrePos) return;
+                const px = u.movLivrePos.x, pz = u.movLivrePos.z;
+                u.movLivrePos = null;
+                if (movLivreUnidade === u) movLivreUnidade = null;
+                const interrompeu = !!u.movLivreInterrompeu;
+                u.movLivreInterrompeu = false;
+                if (u.vivo && units.get(u.id) === u) {
+                    u.x = clamp(Math.round(px / CELL + area.origin.x + (area.cols - 1) / 2), area.origin.x, area.origin.x + area.cols - 1);
+                    u.z = clamp(Math.round(pz / CELL + area.origin.y + (area.rows - 1) / 2), area.origin.y, area.origin.y + area.rows - 1);
+                    u.pivot.rotation.y = Math.atan2(Math.sin(u.pivot.rotation.y), Math.cos(u.pivot.rotation.y));
+                    pose(u);
+                    if (interrompeu) emit('moveend', publicUnit(u));
+                }
+            }
+            /* O passo da condução (movimento livre), chamado em
+               animate antes do ciclo das unidades. Velocidade: a do
+               andar de hoje — 140 ms por casa de 1,5 m (≈10,7 m/s)
+               no empurrão máximo, escalada pelo módulo analógico do
+               manípulo (empurrar de leve = andar devagar). Direcção
+               relativa à câmera: empurrar para cima afasta da
+               câmera. Virar suave, tecto de 10 rad/s, para o rumo
+               pedido. Colisão simples por eixo (desliza ao longo):
+               borda da área · círculos de world.obstaculos + 0,35 m
+               · outras figuras vivas a 0,8 m · degrau > 0,55 m. */
+            function passoMovLivre(dt) {
+                const alvo = (mode !== 'livre' && selected) ? units.get(selected) : null;
+                if (movLivreUnidade && (movLivreUnidade !== alvo || !movLivreUnidade.vivo || units.get(movLivreUnidade.id) !== movLivreUnidade))
+                    assentarMovLivre(movLivreUnidade);
+                if (!alvo || !alvo.vivo) return;
+                const jx = ctrlMovLivre.joyX, jy = ctrlMovLivre.joyY;
+                if (Math.hypot(jx, jy) <= .12) {
+                    if (movLivreUnidade === alvo) assentarMovLivre(alvo);
+                    return;
+                }
+                const u = alvo;
+                if (movLivreUnidade !== u) {
+                    cancelFor(u);
+                    u.movLivreInterrompeu = !!(u.step || u.queue.length);
+                    u.queue = []; u.step = null;
+                    destination.visible = false;
+                    u.movLivrePos = u.root.position.clone();
+                    movLivreUnidade = u;
+                    animation(u, true);
+                }
+                let fx = u.root.position.x - camera.position.x, fz = u.root.position.z - camera.position.z;
+                const fm = Math.hypot(fx, fz);
+                if (fm < .01) { fx = Math.sin(u.pivot.rotation.y); fz = Math.cos(u.pivot.rotation.y); }
+                else { fx /= fm; fz /= fm; }
+                const dx = -fz * jx - fx * jy, dz = fx * jx - fz * jy;
+                const vel = CELL / .140 * dt;
+                let nx = u.movLivrePos.x + dx * vel, nz = u.movLivrePos.z + dz * vel;
+                const livreEm = (px, pz) => {
+                    if (world.height(px, pz) - world.height(u.movLivrePos.x, u.movLivrePos.z) > .55) return false;
+                    for (const o of world.obstaculos ?? []) {
+                        const ox = px - o.x, oz = pz - o.z;
+                        if (ox * ox + oz * oz < (o.r + .35) * (o.r + .35)) return false;
+                    }
+                    for (const v of units.values()) {
+                        if (v === u || !v.vivo) continue;
+                        const ox = px - v.root.position.x, oz = pz - v.root.position.z;
+                        if (ox * ox + oz * oz < .64) return false;
+                    }
+                    return true;
+                };
+                nx = clamp(nx, wx(area.origin.x), wx(area.origin.x + area.cols - 1));
+                nz = clamp(nz, wz(area.origin.y), wz(area.origin.y + area.rows - 1));
+                if (livreEm(nx, u.movLivrePos.z)) u.movLivrePos.x = nx;
+                if (livreEm(u.movLivrePos.x, nz)) u.movLivrePos.z = nz;
+                const dYaw = angleDelta(u.pivot.rotation.y, Math.atan2(dx, dz)), tectoYaw = 10 * dt;
+                u.pivot.rotation.y += clamp(dYaw, -tectoYaw, tectoYaw);
+                u.root.position.set(u.movLivrePos.x, world.height(u.movLivrePos.x, u.movLivrePos.z) + u.altitude, u.movLivrePos.z);
+            }
             function baseWidth() {
                 if (mode === 'fixa' && width < height)
                     return Math.max(area.rows * CELL * 1.44, area.cols * CELL * Math.sin(.72) * 1.44 * width / Math.max(150, height - 110));
@@ -3129,6 +3222,7 @@
                 dinTick(dt);   // a viragem aplica-se aqui: depois da apresentação, antes de calcular a = yaw (§5.4)
                 acoplTick();   // compromisso do acoplamento (§14.3.3): candidato estável há 150 ms
                 raioActualizar(now);
+                passoMovLivre(dt);
                 units.forEach(u => {
                     if (!u.step && u.queue.length) {
                         u.step = { ...u.queue.shift(), t: 0, from: u.root.position.clone() };
@@ -3165,7 +3259,7 @@
                        nem ocultas. O nível entra devagar (0,5 s) e sai
                        depressa (0,3 s); a escala nasce nos pés. */
                     {
-                        const elegivel = u.vivo && !u.temIdleRepouso && !moving(u) && !u.oculto
+                        const elegivel = u.vivo && !u.temIdleRepouso && !moving(u) && !u.oculto && !u.movLivrePos
                             && !(presentation && (presentation.a === u || presentation.b === u));
                         u.respNivel = clamp((u.respNivel || 0) + (elegivel ? dt / .5 : -dt / .3), 0, 1);
                         if (u.respNivel > 0) {
@@ -3725,6 +3819,14 @@
                             if (entrada.teclas[k]) ok[k] = true;
                         ctrlLivre.teclas = ok;
                     }
+                }, movLivreEntrada(entrada) {
+                    /* A casca entrega o estado contínuo do manípulo
+                       do movimento livre sempre que ele muda; a cena
+                       guarda-o em ctrlMovLivre. Valores validados:
+                       números finitos presos a [-1, 1]. */
+                    if (!entrada || typeof entrada !== 'object') return;
+                    if (Number.isFinite(entrada.joyX)) ctrlMovLivre.joyX = clamp(entrada.joyX, -1, 1);
+                    if (Number.isFinite(entrada.joyY)) ctrlMovLivre.joyY = clamp(entrada.joyY, -1, 1);
                 }, on, getState: state, getStats: stats, getFrameTimes: () => times.slice(), hitTest: hit, projectUnit: id => unitRect(requireUnit(id), true), setVivo(id, vivo) {
                     if (typeof vivo !== 'boolean')
                         throw new TypeError('vivo booleano');

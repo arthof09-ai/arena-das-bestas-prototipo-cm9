@@ -10312,6 +10312,71 @@
     });
     view.on('camera', camLivreSincronizarHud);
   }
+  /* ---------- Movimento livre com joystick (aba «Testes») ----------
+   * Tranche t-movimento-livre-joystick (19/11/2026), ordem directa
+   * do Mestre: conduzir a figura seleccionada com um manípulo no
+   * ecrã para analisar o andar com as próprias mãos. Ferramenta de
+   * teste: fora da grelha, dos turnos e do PA. Nasce LIGADO
+   * (pré-setado): a chave hudt1-movimento-livre, a mesma da aba
+   * «Testes» das Configurações (entrada.js), lida ao arrancar — só
+   * o literal 'desligado' o apaga, e nesse caso NADA disto é criado
+   * e o ecrã fica exactamente como hoje. Vive nas DUAS vistas (fora
+   * do if MODO_MESTRE): na do Mestre conduz a seleccionada dele; na
+   * da jogadora, a figura activa dela. O manípulo é o da câmera
+   * livre, com os mesmos números (círculo de 132 px, botão central
+   * de 56 px que segue o dedo até 34 px, analógico de módulo preso
+   * a 1), mas mora acima da faixa de batalha (ver jogo.css) e só
+   * aparece em batalha: chave ligada, câmera do jogo (a livre tem o
+   * seu próprio manípulo) e pelo menos uma figura em cena. */
+  let movLivreLigado = true;
+  try { movLivreLigado = localStorage.getItem('hudt1-movimento-livre') !== 'desligado'; } catch (_) {}
+  if (movLivreLigado && view && typeof view.movLivreEntrada === 'function' && typeof view.on === 'function' && typeof view.getState === 'function') {
+    const joyMovLivre = document.createElement('div');
+    joyMovLivre.id = 'mov-livre-joy';
+    joyMovLivre.hidden = true;
+    joyMovLivre.setAttribute('role', 'button');
+    joyMovLivre.setAttribute('aria-label', 'Movimento livre: conduzir a figura seleccionada');
+    const nubMovLivre = document.createElement('div');
+    nubMovLivre.id = 'mov-livre-nub';
+    joyMovLivre.appendChild(nubMovLivre);
+    document.body.appendChild(joyMovLivre);
+    let movLivrePointerId = null;
+    const movLivreCentro = () => { const r = joyMovLivre.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2, r.width / 2]; };
+    const movLivreMexer = e => {
+      const [cx, cy, rad] = movLivreCentro();
+      let dx = (e.clientX - cx) / rad, dy = (e.clientY - cy) / rad;
+      const m = Math.hypot(dx, dy); if (m > 1) { dx /= m; dy /= m; }
+      view.movLivreEntrada({ joyX: dx, joyY: dy });
+      nubMovLivre.style.transform = `translate(calc(-50% + ${dx * 34}px), calc(-50% + ${dy * 34}px))`;
+    };
+    const movLivreLargar = e => {
+      if (e.pointerId !== movLivrePointerId) return;
+      movLivrePointerId = null;
+      view.movLivreEntrada({ joyX: 0, joyY: 0 });
+      nubMovLivre.style.transform = 'translate(-50%,-50%)';
+    };
+    joyMovLivre.addEventListener('pointerdown', e => { movLivrePointerId = e.pointerId; try { joyMovLivre.setPointerCapture(movLivrePointerId); } catch (_) {} movLivreMexer(e); });
+    joyMovLivre.addEventListener('pointermove', e => { if (e.pointerId === movLivrePointerId) movLivreMexer(e); });
+    ['pointerup', 'pointercancel'].forEach(ev => joyMovLivre.addEventListener(ev, movLivreLargar));
+    /* Visibilidade: sincroniza nos eventos da cena e num acerto de
+       1 s (montar/desmontar a batalha nem sempre emite evento). Ao
+       esconder a meio de uma condução, manda zeros — ninguém fica a
+       andar sozinho. */
+    function movLivreSincronizar() {
+      let visivel = false;
+      try {
+        const st = view.getState();
+        visivel = st.camera !== 'livre' && st.units.length > 0;
+      } catch (_) {}
+      if (!visivel && movLivrePointerId !== null) movLivreLargar({ pointerId: movLivrePointerId });
+      joyMovLivre.hidden = !visivel;
+    }
+    view.on('camera', movLivreSincronizar);
+    view.on('select', movLivreSincronizar);
+    view.on('moveend', movLivreSincronizar);
+    setInterval(movLivreSincronizar, 1000);
+    movLivreSincronizar();
+  }
   /* Ouvintes da vista (as duas vistas): 'ambiente' ao assentar
    * refresca painel e som; 'raio' agenda o trovão com atraso
    * variável sorteado AQUI (0,3–2,5 s) e variante ao acaso — sem
