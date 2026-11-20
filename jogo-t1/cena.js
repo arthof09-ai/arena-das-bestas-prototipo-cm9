@@ -2151,12 +2151,22 @@
                 const clip = T.AnimationClip.findByName(u.animations, name);
                 if (!clip)
                     return;
+                /* B2-R (bancada das correccoes da Ong, sentenca S4.3): o fade
+                   escolhe-se POR PAR (origem, destino) aqui dentro do
+                   playClip - o par idle-andar funde em 0,06 s nos dois
+                   sentidos; entradas de gesto (ataque/reaccao), saidas de
+                   gesto para idle e todos os outros pares mantem 0,15 s.
+                   NAO parametrizar via animation(): apanharia escondido as
+                   saidas de gesto (animation(u,false) em fim de gesto). */
+                const parIdleAndar = (u.actionName === u.clips.idle && name === u.clips.andar)
+                    || (u.actionName === u.clips.andar && name === u.clips.idle);
+                const fade = parIdleAndar ? .06 : .15;
                 const next = u.mixer.clipAction(clip);
                 next.reset().setLoop(duration ? T.LoopOnce : T.LoopRepeat, duration ? 1 : Infinity);
                 next.clampWhenFinished = !!duration;
-                next.setEffectiveTimeScale(duration ? clip.duration / duration : 1).fadeIn(.15).play();
+                next.setEffectiveTimeScale(duration ? clip.duration / duration : 1).fadeIn(fade).play();
                 if (u.action)
-                    u.action.fadeOut(.15);
+                    u.action.fadeOut(fade);
                 u.action = next;
                 u.actionName = name;
             }
