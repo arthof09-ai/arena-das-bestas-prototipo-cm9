@@ -16,6 +16,7 @@
  * peça do cenário do campo nasce aqui. A interface devolvida é
  * a mesma que a cena consome do CampoWorld. */
 window.TronoWorld = function (T, scene, area) {
+    if (!window.DADOS_APRESENTACAO) throw new Error('DADOS_APRESENTACAO em falta');
     const C = h => new T.Color(h).convertSRGBToLinear();
     const grupo = new T.Group();
     grupo.position.set(0, 0, 22);
@@ -753,7 +754,7 @@ window.CampoWorld = function (T, scene, area) {
        mortas no retrato e nunca ressuscitam, e o relevo dy dele
        fica). Casa por contenção no rectângulo da arena (inversa de
        wx/wz com CELL=1,5); fora = sem casa = sempre viva. */
-    const loteFantasmaPedras = new T.InstancedMesh(ico, new T.MeshBasicMaterial({ color: 0x9aa7b4, transparent: true, opacity: .45, depthWrite: false }), stones.length);
+    const loteFantasmaPedras = new T.InstancedMesh(ico, new T.MeshBasicMaterial({ color: parseInt(window.DADOS_APRESENTACAO.marcadores.fantasmaPedras.cor.slice(1), 16), transparent: true, opacity: window.DADOS_APRESENTACAO.marcadores.fantasmaPedras.opacidade, depthWrite: false }), stones.length);
     loteFantasmaPedras.count = 0;
     loteFantasmaPedras.castShadow = false;
     loteFantasmaPedras.receiveShadow = false;

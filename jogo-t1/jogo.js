@@ -31,6 +31,7 @@
  * secção "Tranche VLAB". */
 (() => {
   'use strict';
+  if (!window.DADOS_APRESENTACAO) throw new Error('DADOS_APRESENTACAO em falta');
 
   /* ---------- Trinco de arranque único + bandeira consumida ----------
    * (Volta S-001, V-03 — sentença §2 do JULGAMENTO-S001) Esta guarda é
@@ -146,10 +147,10 @@
      * declarar, sem invenção. Troca-se cada um pelo modelo certo
      * quando ele existir. ---------- */
   const ELENCO_BASE = [
-    { id: 'orc',     nome: 'Orc',             modelo: 'modelos/orc-mutante.glb', x: 3, y: 3, alturaMetros: 3.6,  vivo: true, animacoes: { idle: 'parado', andar: 'andar', ataque: 'ataque', reacao: 'reacao' } },
-    { id: 'ong',     nome: 'Ong',             modelo: 'modelos/manequim-f-roxa.glb', x: 6, y: 2, alturaMetros: 2.625, vivo: true, animacoes: { idle: 'parado_v3_fase2', andar: 'andar_v3_fase2', ataque: 'ataque_v3_f_fase2', reacao: 'reacao_v3_f_fase2' } },
-    { id: 'capanga', nome: 'Capanga 1',       modelo: 'modelos/manequim-m.glb', x: 7, y: 4, alturaMetros: 2.7,  vivo: true, animacoes: { idle: 'parado_v3_m_fase2', andar: 'andar_v3_m_fase2', ataque: 'ataque_v3_m_fase2', reacao: 'Hit_Chest_Capanga' } },
-    { id: 'lobo',    nome: 'Lobo da Caverna', modelo: 'modelos/lobo-cinzento-051.glb', x: 2, y: 5, alturaMetros: 1.35,  vivo: true, animacoes: { idle: 'Idle', andar: 'Walk', ataque: 'Bite', reacao: 'Hit' } }
+    { id: 'orc',     nome: 'Orc',             modelo: 'modelos/orc-mutante.glb', x: 3, y: 3, alturaMetros: window.DADOS_APRESENTACAO.figuras.orc.altura,  vivo: true, animacoes: { idle: 'parado', andar: 'andar', ataque: 'ataque', reacao: 'reacao' } },
+    { id: 'ong',     nome: 'Ong',             modelo: 'modelos/manequim-f-roxa.glb', x: 6, y: 2, alturaMetros: window.DADOS_APRESENTACAO.figuras.ong.altura, vivo: true, animacoes: { idle: 'parado_v3_fase2', andar: 'andar_v3_fase2', ataque: 'ataque_v3_f_fase2', reacao: 'reacao_v3_f_fase2' } },
+    { id: 'capanga', nome: 'Capanga 1',       modelo: 'modelos/manequim-m.glb', x: 7, y: 4, alturaMetros: window.DADOS_APRESENTACAO.figuras.capanga.altura,  vivo: true, animacoes: { idle: 'parado_v3_m_fase2', andar: 'andar_v3_m_fase2', ataque: 'ataque_v3_m_fase2', reacao: 'Hit_Chest_Capanga' } },
+    { id: 'lobo',    nome: 'Lobo da Caverna', modelo: 'modelos/lobo-cinzento-051.glb', x: 2, y: 5, alturaMetros: window.DADOS_APRESENTACAO.figuras.lobo.altura,  vivo: true, animacoes: { idle: 'Idle', andar: 'Walk', ataque: 'Bite', reacao: 'Hit' } }
   ];
   /* ---------- PREPARAÇÃO DA BATALHA (t-escolha-mapa, palavra do
    * Mestre 14/11/2026 20:31 + acrescentos 20:40 e 20:43) ----------
@@ -400,7 +401,7 @@
   const VOO_METROS_CAMADA = 1.5;
   const FIGURAS_TESTE = {
     grifo: {
-      nome: 'Grifo-Matriarca de Sílica', modelo: 'marcador', alturaMetros: 3.8,
+      nome: 'Grifo-Matriarca de Sílica', modelo: 'marcador', alturaMetros: window.DADOS_APRESENTACAO.figuras.grifo.altura,
       voo: 'asas', vida: 110,
       combate: { ca: 30, atkQtd: 1, atkFaces: 6, atkBonus: 10, arma: 'Garras',
         dano: { qtd: 2, faces: 6, bonus: 3 }, alcance: 1.5 },
@@ -12727,7 +12728,7 @@
     const visaoEstiloSensor = document.createElement('style');
     visaoEstiloSensor.textContent =
       '#sensor-visao{position:fixed;z-index:30;width:26px;height:26px;display:flex;align-items:center;justify-content:center;' +
-      'color:#ffb52e;font-size:19px;text-shadow:0 0 6px rgba(255,160,20,.8);animation:sensorPisca 1.6s ease-in-out infinite;pointer-events:none}' +
+      'color:' + window.DADOS_APRESENTACAO.sensor.cor + ';font-size:19px;text-shadow:0 0 6px ' + window.DADOS_APRESENTACAO.sensor.brilho + ';animation:sensorPisca 1.6s ease-in-out infinite;pointer-events:none}' +
       '#sensor-visao[hidden]{display:none}' +
       '@keyframes sensorPisca{0%,100%{opacity:.25}50%{opacity:1}}';
     document.head.appendChild(visaoEstiloSensor);
@@ -13076,15 +13077,15 @@
       view.setCamadas(null);
       view.limparFantasmas();
     } else if (modo === 'total') {
-      view.setCamadas({ total: { cells: naoVistas, cor: 0x0b0e14, opacidade: 0.55 } });
+      view.setCamadas({ total: { ...window.DADOS_APRESENTACAO.veu.total, cells: naoVistas } });
       view.limparFantasmas();
     } else { /* ultra */
       for (const k of campoVisto) visaoMemoria.jaVisto.add(k);
       const nunca = naoVistas.filter(c => !visaoMemoria.jaVisto.has(c.x + ',' + c.z));
       const lembradas = naoVistas.filter(c => visaoMemoria.jaVisto.has(c.x + ',' + c.z));
       view.setCamadas({
-        nunca: { cells: nunca, cor: 0x05070a, opacidade: 0.92 },
-        memoria: { cells: lembradas, cor: 0x8b93a1, opacidade: 0.30 }
+        nunca: { ...window.DADOS_APRESENTACAO.veu.nunca, cells: nunca },
+        memoria: { ...window.DADOS_APRESENTACAO.veu.memoria, cells: lembradas }
       });
       visaoLembrancasActualizar(campoVisto);
     }
@@ -13223,15 +13224,15 @@
       view.setCamadas(null);
       view.limparFantasmas();
     } else if (modo === 'total') {
-      view.setCamadas({ total: { cells: naoVistas, cor: 0x0b0e14, opacidade: 0.55 } });
+      view.setCamadas({ total: { ...window.DADOS_APRESENTACAO.veu.total, cells: naoVistas } });
       view.limparFantasmas();
     } else { /* ultra */
       for (const k of campoVisto) visaoPrevMemoria.jaVisto.add(k);
       const nunca = naoVistas.filter(c => !visaoPrevMemoria.jaVisto.has(c.x + ',' + c.z));
       const lembradas = naoVistas.filter(c => visaoPrevMemoria.jaVisto.has(c.x + ',' + c.z));
       view.setCamadas({
-        nunca: { cells: nunca, cor: 0x05070a, opacidade: 0.92 },
-        memoria: { cells: lembradas, cor: 0x8b93a1, opacidade: 0.30 }
+        nunca: { ...window.DADOS_APRESENTACAO.veu.nunca, cells: nunca },
+        memoria: { ...window.DADOS_APRESENTACAO.veu.memoria, cells: lembradas }
       });
       visaoPreviaLembrancasActualizar(campoVisto);
     }

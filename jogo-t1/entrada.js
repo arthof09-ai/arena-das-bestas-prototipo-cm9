@@ -69,9 +69,10 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_125';
+  var VERSAO_JOGO = 'REF_126';
 
   var SCRIPTS_JOGO = [
+    'dados-apresentacao.js',
     'vendor/three.min.js', 'vendor/GLTFLoader.js', 'mundo.js', 'cena.js',
     'visao.js', 'visual.js', 'levelup.js', 'vlab-completo.js', 'jogo.js'
   ];
@@ -261,6 +262,7 @@
       var s = document.createElement('script');
       s.src = SCRIPTS_JOGO[i];
       s.async = false;
+      s.onerror = function () { throw new Error('falha ao carregar ' + SCRIPTS_JOGO[i]); };
       document.body.appendChild(s);
     }
   }

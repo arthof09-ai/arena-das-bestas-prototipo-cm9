@@ -25,6 +25,7 @@
  * em vez de ovais carimbados; grão de filme fora. */
 (() => {
     'use strict';
+    if (!window.DADOS_APRESENTACAO) throw new Error('DADOS_APRESENTACAO em falta');
     const baseWorld = window.CampoWorld;
     if (typeof baseWorld !== 'function' || window.__visual2Aplicado) return;
     window.__visual2Aplicado = true;
@@ -158,7 +159,7 @@
          * (mesma tinta, feitio de pincel) e alarga-se um pouco o apoio. */
         const arrumarContactos = () => { if (!mundoTex.texContacto) return; scene.traverse(o => {
             if (o.isMesh && o.geometry && o.geometry.type === 'CircleGeometry' && o.material && o.material.isMeshBasicMaterial
-                && o.material.color && o.material.color.getHex() === 0x080c12 && !o.userData.__contactoPintado) {
+                && o.material.color && o.material.color.getHex() === parseInt(window.DADOS_APRESENTACAO.marcadores.contacto.slice(1), 16) && !o.userData.__contactoPintado) {
                 o.userData.__contactoPintado = true;
                 o.material = new T.MeshBasicMaterial({ map: mundoTex.texContacto, transparent: true, opacity: 0.95, depthWrite: false, side: T.DoubleSide, fog: true });
                 o.scale.set(1.45, 1.45, 1);
@@ -198,15 +199,15 @@
          * T-LUZ): hemisférica 0,40 e sombras 512; sem luz ambiente. */
         scene.traverse(o => {
             if (o.isDirectionalLight) {
-                o.color.set(0xffe3c0).convertSRGBToLinear();
-                o.intensity = 0.98;
-                o.position.set(-18, 27, -13.5); // elevação ~50° (original: 21,8°)
-                o.shadow.mapSize.set(512, 512);
+                o.color.set(window.DADOS_APRESENTACAO.ambiente.ancoras[4].solCor).convertSRGBToLinear();
+                o.intensity = window.DADOS_APRESENTACAO.ambiente.ancoras[4].solInt;
+                o.position.set(...window.DADOS_APRESENTACAO.ambiente.ancoras[4].solPos); // elevação ~50° (original: 21,8°)
+                o.shadow.mapSize.set(window.DADOS_APRESENTACAO.ambiente.base.sombraMapa, window.DADOS_APRESENTACAO.ambiente.base.sombraMapa);
                 if (o.shadow.map) { o.shadow.map.dispose(); o.shadow.map = null; }
             } else if (o.isHemisphereLight) {
-                o.color.set(0x7d9ab8).convertSRGBToLinear();       // céu petróleo vivo
-                o.groundColor.set(0x2e2a24).convertSRGBToLinear(); // chão quase neutro
-                o.intensity = 0.40;
+                o.color.set(window.DADOS_APRESENTACAO.ambiente.ancoras[4].hemiCeu).convertSRGBToLinear();       // céu petróleo vivo
+                o.groundColor.set(window.DADOS_APRESENTACAO.ambiente.ancoras[4].hemiChao).convertSRGBToLinear(); // chão quase neutro
+                o.intensity = window.DADOS_APRESENTACAO.ambiente.ancoras[4].hemiInt;
             }
         });
 
@@ -218,12 +219,10 @@
          * O céu deixa de ser um gradiente liso de computador: canvas
          * 1024×512 com faixas horizontais de pincel seco e massas de nuvem
          * escuras pintadas — matte painting, não plástico. */
-        const COR_HORIZONTE = 0x35485e;
+        const COR_HORIZONTE = parseInt(window.DADOS_APRESENTACAO.ambiente.ancoras[4].horizonte.slice(1), 16);
         const ceu = document.createElement('canvas'); ceu.width = 1024; ceu.height = 512;
         const cx = ceu.getContext('2d'), grad = cx.createLinearGradient(0, 0, 0, 512);
-        grad.addColorStop(0, '#0b1220'); grad.addColorStop(0.5, '#182636');
-        grad.addColorStop(0.78, '#27394c'); grad.addColorStop(0.93, '#4a4438');
-        grad.addColorStop(1, '#35485e');
+        for (const [p, cor] of window.DADOS_APRESENTACAO.ambiente.ceus[4].paradas) grad.addColorStop(p, cor);
         cx.fillStyle = grad; cx.fillRect(0, 0, 1024, 512);
         // pincel seco horizontal: traços largos, alpha baixo, matiz a oscilar
         for (let i = 0; i < 170; i++) {

@@ -1,6 +1,7 @@
 /* Campo3D r3: apresentação pública; não importar regras ou fichas. */
 (() => {
     'use strict';
+    if (!window.DADOS_APRESENTACAO) throw new Error('DADOS_APRESENTACAO em falta');
     const T = THREE, C = h => new T.Color(h).convertSRGBToLinear(), clamp = (v, a, b) => Math.max(a, Math.min(b, v)), CELL = 1.5;
     const UNIT_KEYS = new Set(['id', 'nome', 'modelo', 'x', 'y', 'alturaMetros', 'vivo', 'altitude', 'animacoes']);
     function release(root) {
@@ -46,7 +47,7 @@
             }
             const renderer = new T.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
             renderer.info.autoReset = false;
-            renderer.setClearColor(new T.Color(0x353b48), 1);
+            renderer.setClearColor(new T.Color(window.DADOS_APRESENTACAO.ambiente.base.fundo), 1);
             renderer.outputEncoding = T.sRGBEncoding;
             renderer.toneMapping = T.ACESFilmicToneMapping;
             renderer.toneMappingExposure = 0.92;
@@ -59,13 +60,13 @@
             labels.className = 'etiquetas';
             container.appendChild(labels);
             const scene = new T.Scene();
-            scene.background = C(0x353b48);
-            scene.fog = new T.Fog(C(0x353b48), 130, 270);
-            const hemi = new T.HemisphereLight(0x96b4df, 0x222632, .40); scene.add(hemi);
-            const sun = new T.DirectionalLight(0xffb16b, 1.35);
-            sun.position.set(-24, 12, -18);
+            scene.background = C(window.DADOS_APRESENTACAO.ambiente.base.fundo);
+            scene.fog = new T.Fog(C(window.DADOS_APRESENTACAO.ambiente.base.fundo), window.DADOS_APRESENTACAO.ambiente.base.fogPerto, window.DADOS_APRESENTACAO.ambiente.base.fogLonge);
+            const hemi = new T.HemisphereLight(window.DADOS_APRESENTACAO.ambiente.base.hemiCeu, window.DADOS_APRESENTACAO.ambiente.base.hemiChao, window.DADOS_APRESENTACAO.ambiente.base.hemiInt); scene.add(hemi);
+            const sun = new T.DirectionalLight(window.DADOS_APRESENTACAO.ambiente.base.solCor, window.DADOS_APRESENTACAO.ambiente.base.solInt);
+            sun.position.set(...window.DADOS_APRESENTACAO.ambiente.base.solPos);
             sun.castShadow = true;
-            sun.shadow.mapSize.set(512, 512);
+            sun.shadow.mapSize.set(window.DADOS_APRESENTACAO.ambiente.base.sombraMapa, window.DADOS_APRESENTACAO.ambiente.base.sombraMapa);
             const extent = Math.max(area.cols, area.rows) * CELL * .8 + 8;
             Object.assign(sun.shadow.camera, { left: -extent, right: extent, top: extent, bottom: -extent, near: 1, far: extent * 5 });
             sun.shadow.bias = -.0005;
@@ -84,21 +85,9 @@
              * camada pintada fixaram (medidos na REF_23) e, assentada e
              * seca, o MESMO objecto de fundo original. A densidade da
              * névoa nunca é tocada por esta tranche. */
-            const AMB_ANCORAS = [
-                { hora: 3.5, exp: .88, hemiInt: .34, hemiCeu: 0x5f7896, hemiChao: 0x23211e, solInt: .50, solCor: 0xcfd8e8, solPos: [-18, 27, -13.5], horizonte: 0x2c3a4c, fogueira: 4.5, tochas: 7.5, chamas: 1 },
-                { hora: 6.5, exp: .98, hemiInt: .52, hemiCeu: 0x9db3c4, hemiChao: 0x33302a, solInt: .82, solCor: 0xf5e0c8, solPos: [24, 13, -10], horizonte: 0x8fa3b5, fogueira: 3, tochas: 3.5, chamas: .55 },
-                { hora: 12.5, exp: 1.02, hemiInt: .85, hemiCeu: 0xbfd4e6, hemiChao: 0x59544a, solInt: 1.32, solCor: 0xfff2dd, solPos: [6, 34, 8], horizonte: 0xa8bfd2, fogueira: 0, tochas: 0, chamas: 0 },
-                { hora: 18, exp: .97, hemiInt: .50, hemiCeu: 0x8d90a8, hemiChao: 0x35302a, solInt: .98, solCor: 0xf3c298, solPos: [-25, 14, 6], horizonte: 0xb98a63, fogueira: 5, tochas: 6.5, chamas: .8 },
-                { hora: 23, exp: .92, hemiInt: .40, hemiCeu: 0x7d9ab8, hemiChao: 0x2e2a24, solInt: .98, solCor: 0xffe3c0, solPos: [-18, 27, -13.5], horizonte: 0x35485e, fogueira: 6, tochas: 7.5, chamas: 1 }
-            ];
-            const AMB_CEUS = [
-                { paradas: [[0, '#070d16'], [.5, '#14202f'], [.78, '#22334a'], [1, '#2c3a4c']], claro: false },
-                { paradas: [[0, '#2c4258'], [.45, '#5d768c'], [.75, '#87a0b4'], [1, '#8fa3b5']], claro: false },
-                { paradas: [[0, '#5b97d6'], [.5, '#8ab6e0'], [.8, '#a5c2dc'], [1, '#a8bfd2']], claro: true },
-                { paradas: [[0, '#232c4c'], [.5, '#5c5570'], [.78, '#96796b'], [1, '#b98a63']], claro: false },
-                { paradas: [[0, '#0b1220'], [.5, '#182636'], [.78, '#27394c'], [.93, '#4a4438'], [1, '#35485e']], claro: false }
-            ];
-            const AMB_CHUVA = { cinzento: [0, .35, .6], molhado: [1, .97, .94], tochas: [1, 1, .8], gotas: [0, 1200, 3000], gotasBaixa: [0, 800, 800], opacidade: [0, .55, .85] };
+            const AMB_ANCORAS = window.DADOS_APRESENTACAO.ambiente.ancoras;
+            const AMB_CEUS = window.DADOS_APRESENTACAO.ambiente.ceus;
+            const AMB_CHUVA = window.DADOS_APRESENTACAO.ambiente.chuva;
             const ambCor = h => C(h);
             const ambNivel = (tab, cf) => { const i = Math.min(1, Math.floor(cf)), f = cf - i; return tab[i] + (tab[i + 1] - tab[i]) * f; };
             function ambAmostra(hora) {
@@ -124,7 +113,7 @@
              * a LUZ: os derivados não são tocados; o céu lê a amostra
              * publicada por ambEscrever/ambAplicarPulso e escreve só
              * nos seus objectos. */
-            const CEU_SOLIDO = C(0x353b48);
+            const CEU_SOLIDO = C(window.DADOS_APRESENTACAO.ambiente.ceuSolido);
             const ceuCena = new T.Scene();
             const ceuCam = new T.PerspectiveCamera(50, 1, .1, 20);
             let ceuEstado = 'normal', ceuVerificado = false, ceuPublicado = null, ceuUltimoNow = -1;
@@ -135,8 +124,8 @@
                MEDIDO nesta VM: factor 1,0 rende mediana 0,593 e pico
                0,749 (a resposta nao e linear) - o factor que pousa a
                mediana no alvo e 0,75 (volta 3, analise-v3). */
-            const CEU_LUA_ESC = .75;
-            const CEU_POSICOES = [0, .45, .5, .75, .78, .8, .93, 1];
+            const CEU_LUA_ESC = window.DADOS_APRESENTACAO.ambiente.ceuLuaEsc;
+            const CEU_POSICOES = window.DADOS_APRESENTACAO.ambiente.ceuPosicoes;
             function ceuPaletaCor(pal, p) {
                 const ps = pal.paradas;
                 if (p <= ps[0][0]) return C(ps[0][1]);
@@ -768,7 +757,7 @@
                         let opDec = d.base * amostra.chamas;
                         if (estDec === 'memoria') {
                             opDec *= .45;
-                            if (d.tipo === 'halo' && d.o.material.color) d.o.material.color.setHex(0x9aa7b4);
+                            if (d.tipo === 'halo' && d.o.material.color) d.o.material.color.setHex(parseInt(window.DADOS_APRESENTACAO.marcadores.fantasmaPedras.cor.slice(1), 16));
                         } else if (d.tipo === 'halo' && d.o.material.color) d.o.material.color.setHex(d.corBase);
                         d.o.material.opacity = opDec;
                     }
@@ -2003,7 +1992,7 @@
                 scene.add(m);
                 return m;
             }
-            const destination = ring(.65, 0xffd28b), hover = ring(.64, 0xfff0bf);
+            const destination = ring(.65, parseInt(window.DADOS_APRESENTACAO.marcadoresCena.destino.slice(1), 16)), hover = ring(.64, parseInt(window.DADOS_APRESENTACAO.marcadoresCena.hover.slice(1), 16));
             destination.visible = hover.visible = false;
             const moveLayer = new T.Group();
             let movementCells = [];
@@ -2017,7 +2006,7 @@
                 const z = (j - area.rows / 2) * CELL;
                 gridPoints.push(-area.cols * CELL / 2, .025, z, area.cols * CELL / 2, .025, z);
             }
-            const grid = new T.LineSegments(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(gridPoints, 3)), new T.LineBasicMaterial({ color: 0xc9c2a7, transparent: true, opacity: .3 }));
+            const grid = new T.LineSegments(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(gridPoints, 3)), new T.LineBasicMaterial({ color: parseInt(window.DADOS_APRESENTACAO.marcadoresCena.grelha.slice(1), 16), transparent: true, opacity: .3 }));
             grid.visible = false;
             scene.add(grid);
             function mark(mesh, p) {
@@ -2040,8 +2029,8 @@
                     vertices.push(...a, ...d, ...b, ...b, ...d, ...c);
                     lines.push(...a, ...b, ...b, ...c, ...c, ...d, ...d, ...a);
                 }
-                moveLayer.add(new T.Mesh(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(vertices, 3)), material(0xcab577, .5)));
-                moveLayer.add(new T.LineSegments(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(lines, 3)), new T.LineBasicMaterial({ color: 0xf5d59b, transparent: true, opacity: .85 })));
+                moveLayer.add(new T.Mesh(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(vertices, 3)), material(parseInt(window.DADOS_APRESENTACAO.marcadoresCena.camadaMovimento.slice(1), 16), .5)));
+                moveLayer.add(new T.LineSegments(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(lines, 3)), new T.LineBasicMaterial({ color: parseInt(window.DADOS_APRESENTACAO.marcadoresCena.camadaContorno.slice(1), 16), transparent: true, opacity: .85 })));
             }
             /* ═══ Tranche PRÉVIA v2, passo ④: a primitiva mínima da
                prévia. NECESSIDADE MEDIDA: showMovement pinta todas as
@@ -2080,18 +2069,18 @@
                 };
                 const vertices = [], linhasCaminho = [];
                 for (const p of spec.caminho || []) { const q = quad(p, .04); vertices.push(...q.v); linhasCaminho.push(...q.l); }
-                if (vertices.length) previaLayer.add(new T.Mesh(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(vertices, 3)), material(0x2e7fb8, .30)));
-                if (linhasCaminho.length) previaLayer.add(new T.LineSegments(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(linhasCaminho, 3)), new T.LineBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: .9 })));
+                if (vertices.length) previaLayer.add(new T.Mesh(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(vertices, 3)), material(parseInt(window.DADOS_APRESENTACAO.marcadores.previa.slice(1), 16), .30)));
+                if (linhasCaminho.length) previaLayer.add(new T.LineSegments(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(linhasCaminho, 3)), new T.LineBasicMaterial({ color: parseInt(window.DADOS_APRESENTACAO.marcadoresCena.caminho.slice(1), 16), transparent: true, opacity: .9 })));
                 const linhasObst = [];
                 for (const p of spec.obstaculos || []) { const q = quad(p, .055); linhasObst.push(...q.l); }
-                if (linhasObst.length) previaLayer.add(new T.LineSegments(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(linhasObst, 3)), new T.LineBasicMaterial({ color: 0xffb52e, transparent: true, opacity: .95 })));
+                if (linhasObst.length) previaLayer.add(new T.LineSegments(new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(linhasObst, 3)), new T.LineBasicMaterial({ color: parseInt(window.DADOS_APRESENTACAO.marcadoresCena.obstaculos.slice(1), 16), transparent: true, opacity: .95 })));
                 if (spec.de && spec.alvo) {
                     const ax = wx(spec.de.x), az = wz(spec.de.z), bx = wx(spec.alvo.x), bz = wz(spec.alvo.z);
                     const seg = new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(
                         [ax, world.height(ax, az) + .07, az, bx, world.height(bx, bz) + .07, bz], 3));
-                    previaLayer.add(new T.Line(seg, new T.LineBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: .95 })));
+                    previaLayer.add(new T.Line(seg, new T.LineBasicMaterial({ color: parseInt(window.DADOS_APRESENTACAO.marcadoresCena.caminho.slice(1), 16), transparent: true, opacity: .95 })));
                     for (const r of [.60, .44]) {
-                        const anel = ring(r, 0xff4747);
+                        const anel = ring(r, parseInt(window.DADOS_APRESENTACAO.marcadores.anel.slice(1), 16));
                         anel.position.set(bx, world.height(bx, bz) + .05, bz);
                         previaLayer.add(anel);
                     }
@@ -2238,7 +2227,7 @@
             // Recurso visual: preserva a unidade e usa os mesmos marcadores locais.
             function addMarker(u) {
                 // Pedra mate, independente da cor de identificação do anel.
-                u.markerTint = u.model === 'marcador-lobo' ? 0x777b79 : 0x817c73;
+                u.markerTint = u.model === 'marcador-lobo' ? parseInt(window.DADOS_APRESENTACAO.marcadoresCena.marcadorLobo.slice(1), 16) : parseInt(window.DADOS_APRESENTACAO.marcadoresCena.marcadorOutro.slice(1), 16);
                 const m = new T.MeshLambertMaterial({ color: C(u.markerTint) });
                 if (u.model === 'marcador-lobo') {
                     const body = new T.Mesh(new T.IcosahedronGeometry(1, 1), m);
@@ -2286,12 +2275,12 @@
                 label.textContent = data.nome;
                 labels.appendChild(label);
                 const u = { id: data.id, nome: data.nome, x: data.x, z: data.y, altitude: data.altitude ?? 0, vivo: data.vivo, root, pivot, label, size: data.alturaMetros, queue: [], step: null, clips: { idle: data.animacoes?.idle, andar: data.animacoes?.andar, ataque:data.animacoes?.ataque, reacao:data.animacoes?.reacao }, animations: [], removed: false, oculto: false, model };
-                const tint = [0x87b4b0, 0xe5bb74, 0xb98b9d, 0xb5c3ce, 0xb7b77c][units.size % 5];
+                const tint = window.DADOS_APRESENTACAO.marcadoresCena.tints.map(h => parseInt(h.slice(1), 16))[units.size % 5];
                 u.ring = ring(.56, tint);
-                u.contact = new T.Mesh(new T.CircleGeometry(.5, 24), material(0x080c12, .3));
+                u.contact = new T.Mesh(new T.CircleGeometry(.5, 24), material(parseInt(window.DADOS_APRESENTACAO.marcadores.contacto.slice(1), 16), .3));
                 u.contact.rotation.x = -Math.PI / 2;
                 scene.add(u.contact);
-                u.tether = new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(), new T.Vector3(0, 1, 0)]), new T.LineDashedMaterial({ color: 0xffdc94, dashSize: .22, gapSize: .08, transparent: true, opacity: 1, depthTest: false }));
+                u.tether = new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(), new T.Vector3(0, 1, 0)]), new T.LineDashedMaterial({ color: parseInt(window.DADOS_APRESENTACAO.marcadoresCena.tether.slice(1), 16), dashSize: .22, gapSize: .08, transparent: true, opacity: 1, depthTest: false }));
                 u.tether.computeLineDistances();
                 scene.add(u.tether);
                 units.set(u.id, u);
@@ -2540,10 +2529,10 @@
             }
             function aplicarPerfil(q) {
                 quality = q;
-                renderer.setPixelRatio(dprSessao == null ? Math.min(devicePixelRatio || 1, q === 'alta' ? 2 : q === 'media' ? 1.5 : 1) : dprSessao);
+                renderer.setPixelRatio(dprSessao == null ? Math.min(devicePixelRatio || 1, window.DADOS_APRESENTACAO.perfis[q].dpr) : dprSessao);
                 renderer.shadowMap.enabled = true;
                 sun.castShadow = true;
-                const sombraMapa = q === 'baixa' ? 256 : 512;
+                const sombraMapa = window.DADOS_APRESENTACAO.perfis[q].sombraMapa;
                 if (sun.shadow.mapSize.x !== sombraMapa) {
                     sun.shadow.mapSize.set(sombraMapa, sombraMapa);
                     if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
@@ -3531,7 +3520,7 @@
                 }
                 renderer.shadowMap.needsUpdate = true;
             }
-            const ghostMat = new T.MeshBasicMaterial({ color: 0x9aa7b4, transparent: true, opacity: .45, depthWrite: false });
+            const ghostMat = new T.MeshBasicMaterial({ color: parseInt(window.DADOS_APRESENTACAO.marcadores.fantasmaPedras.cor.slice(1), 16), transparent: true, opacity: window.DADOS_APRESENTACAO.marcadores.fantasmaPedras.opacidade, depthWrite: false });
             if (world.definirFantasmaPedras) world.definirFantasmaPedras(ghostMat);
             const fantasmas = new Map();
             function addFantasma(chaveF, idOrigem, x, z, frenteRad) {
@@ -3816,7 +3805,7 @@
                     if (world && typeof world.setTremulacao === 'function') world.setTremulacao(on);
                 }, setDprSessao(dpr) {
                     dprSessao = dpr == null ? null : dpr;
-                    renderer.setPixelRatio(dprSessao == null ? Math.min(window.devicePixelRatio || 1, quality === 'alta' ? 2 : quality === 'media' ? 1.5 : 1) : dprSessao);
+                    renderer.setPixelRatio(dprSessao == null ? Math.min(window.devicePixelRatio || 1, window.DADOS_APRESENTACAO.perfis[quality].dpr) : dprSessao);
                     resize();
                 }, setGridVisible(v) {
                     grid.visible = !!v;
