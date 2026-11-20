@@ -102,7 +102,7 @@ button:focus-visible{outline:2px solid var(--ouro-vivo);outline-offset:-2px}
   font-size:12px;font-weight:700;padding:0 8px;border-radius:8px;
   border:1px solid rgba(201,162,39,.8);background:rgba(28,21,12,.85);color:var(--pergaminho-fraco)}
 .tog.on{background:var(--ouro);color:#1c1508}
-#stats{position:fixed;top:max(10px, env(safe-area-inset-top, 0px));right:max(10px, env(safe-area-inset-right, 0px));z-index:20;background:var(--painel-denso);border:1px solid var(--linha);border-radius:9px;padding:5px 9px;font-size:13px;line-height:1.2;color:var(--pergaminho);font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none}
+#stats{position:fixed;top:max(10px, env(safe-area-inset-top, 0px));right:max(10px, env(safe-area-inset-right, 0px));z-index:22;background:var(--painel-denso);border:1px solid var(--linha);border-radius:9px;padding:5px 9px;font-size:13px;line-height:1.2;color:var(--pergaminho);font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:none}
 /* ---------- estrutura das abas do ⚙ ----------
    REF_88: a barra de abas é UMA fileira horizontal só com os
    nomes (a explicação de cada aba vive dentro da aba, no topo) —

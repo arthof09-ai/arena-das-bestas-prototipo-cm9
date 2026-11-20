@@ -7268,6 +7268,13 @@
     if (cfgEl.hidden) return;
     if (cfgEl.contains(e.target)) return;
     if ($('btn-config').contains(e.target)) return;
+    /* O botão dos cantos da câmera livre (t-camera-livre-visivel) é
+     * isento como a engrenagem: o toque tem de lhe chegar ao clique —
+     * é ele que fecha o painel, pela porta entrarCamLivre. Na vista
+     * da jogadora o botão não existe, a consulta devolve null e nada
+     * muda. */
+    const cantosLivreCfg = document.getElementById('cam-livre-cantos');
+    if (cantosLivreCfg && cantosLivreCfg.contains(e.target)) return;
     pressaoDeFechoCfg = true;
     fecharCfg();
     e.stopPropagation();
@@ -10391,6 +10398,21 @@
     ajudaCamLivre.appendChild(ajudaTxtCamLivre);
     cfgEl.insertBefore(ajudaCamLivre, null);
 
+    /* A segunda porta da câmera livre (t-camera-livre-visivel,
+     * desenho v2): um botão redondo nos cantos do ecrã de batalha,
+     * abaixo do ecrã inteiro — a mesma entrada sem abrir o ⚙. Nasce
+     * só aqui, neste bloco do Mestre: na vista da jogadora nunca é
+     * criado (sem nó, sem ouvinte). O ouvinte liga-se junto ao da
+     * porta do ⚙, sobre a função partilhada entrarCamLivre. */
+    const btnCamLivreCantos = document.createElement('button');
+    btnCamLivreCantos.type = 'button';
+    btnCamLivreCantos.id = 'cam-livre-cantos';
+    btnCamLivreCantos.className = 'cornerbtn';
+    btnCamLivreCantos.textContent = '⊙';
+    btnCamLivreCantos.setAttribute('aria-label', 'Entrar na câmera livre');
+    btnCamLivreCantos.title = 'Entrar na câmera livre';
+    $('cantos').appendChild(btnCamLivreCantos);
+
     /* ----- a HUD de andar: os elementos da sala, com os tamanhos dela ----- */
     const joyCamLivre = document.createElement('div');
     joyCamLivre.id = 'cam-livre-joy';
@@ -10525,12 +10547,17 @@
       for (const el of hudCamLivre) el.hidden = !livre;
       if (livre) camLivreAcordarDica();
     }
-    btnCamLivre.addEventListener('click', () => {
+    /* A entrada na câmera livre: UM só caminho para as duas portas
+     * (o botão do ⚙ e o botão dos cantos chamam esta função). Vive
+     * dentro deste bloco: fecha sobre camLivreModoAnterior. */
+    function entrarCamLivre() {
       camLivreModoAnterior = view.getState().camera;
       if (fichaAberta) fecharFicha();
       fecharCfg();
       view.setCamera('livre');   // o evento 'camera' sincroniza a HUD
-    });
+    }
+    btnCamLivre.addEventListener('click', entrarCamLivre);
+    btnCamLivreCantos.addEventListener('click', entrarCamLivre);
     sairCamLivre.addEventListener('click', () => {
       teclasCamLivre.clear();
       sobeCamLivreVal = 0;
@@ -12793,7 +12820,7 @@
   ];
   const CFG_ABAS_SUAS = [
     { id: 'ceu', nome: 'Céu', subM: 'Hora, chuva e raios' },
-    { id: 'visao', nome: 'Visão', subM: 'O que as jogadoras veem' },
+    { id: 'visao', nome: 'Visão', subM: 'A sua câmera livre e o que as jogadoras veem' },
     { id: 'voltar', nome: 'Voltar atrás', subM: 'Último estado bom, registo e dicas' },
     { id: 'testes', nome: 'Testes', subM: 'Coisas em teste para analisar' }
   ];
@@ -13166,7 +13193,12 @@
     {
       const pane = paineisCfg.visao;
       if (R.visaoEstado) pane.appendChild(R.visaoEstado);
-      cfgFraseAba(pane, 'Aqui manda no que cada jogadora consegue ver no mapa.');
+      cfgFraseAba(pane, 'A câmera livre é a sua vista do mapa todo; o resto manda no que cada jogadora consegue ver.');
+      const g2 = cfgGrupo(pane, 'Câmera livre',
+        'Só na sua tela: andar e voar pelo mapa para o analisar.');
+      if (R.camLivre) g2.appendChild(R.camLivre);
+      if (R.camLivreAjuda) g2.appendChild(R.camLivreAjuda);
+      g2.appendChild(cfgSubTabelaLivre());
       const g1 = cfgGrupo(pane, 'O que as jogadoras veem',
         'Isto manda no que elas veem; o último botão mostra-lhe a si o campo como elas o veem.');
       if (R.visaoModo) g1.appendChild(R.visaoModo);
@@ -13178,11 +13210,6 @@
       if (R.visaoAnel) g1.appendChild(R.visaoAnel);
       if (R.visaoPrazo) g1.appendChild(R.visaoPrazo);
       if (R.visaoPrevia) g1.appendChild(R.visaoPrevia);
-      const g2 = cfgGrupo(pane, 'Ver o mapa todo',
-        'Só na sua tela: andar e voar pelo mapa para o analisar.');
-      if (R.camLivre) g2.appendChild(R.camLivre);
-      if (R.camLivreAjuda) g2.appendChild(R.camLivreAjuda);
-      g2.appendChild(cfgSubTabelaLivre());
     }
     /* ---------- Voltar atrás ---------- */
     {
