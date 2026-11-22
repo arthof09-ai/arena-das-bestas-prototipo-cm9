@@ -2128,9 +2128,28 @@
             }
             function getFrente(id) { return requireUnit(id).pivot.rotation.y; }
             function animation(u, walking) {
-                playClip(u, walking ? u.clips.andar : u.clips.idle);
+                /* CORRECÇÃO t-andar-visibilidade (sobre a REF_118): o
+                   andar tem de se LER dentro da viagem. Medido: o clipe
+                   de andar corria à cadência natural (1,375 s/ciclo na
+                   Ong) com passagens de 0,15 s — num andar de 5 casas
+                   (0,72 s) avançava 46% de um ciclo; em 2 casas, 12%.
+                   Duas emendas, só de animação (o ritmo NÃO muda):
+                   (1) a cadência do andar casa com o chão — um ciclo
+                   completo por cada DUAS casas (um passo por casa), à
+                   duração do passo corrente; se o ritmo mudar um dia,
+                   a cadência segue-o sozinha. (2) a passagem andar↔
+                   repouso faz-se em 0,05 s em vez de 0,15 s. */
+                if (walking) {
+                    const ms = u.step?.ms ?? u.queue[0]?.ms;
+                    const clip = u.animations ? T.AnimationClip.findByName(u.animations, u.clips.andar) : null;
+                    const escala = (ms && clip) ? clip.duration / (2 * ms / 1000) : 1;
+                    if (u.actionName === u.clips.andar && u.action)
+                        u.action.setEffectiveTimeScale(escala);
+                    playClip(u, u.clips.andar, undefined, { fade: .05, escala });
+                }
+                else playClip(u, u.clips.idle, undefined, { fade: .05 });
             }
-            function playClip(u, name, duration) {
+            function playClip(u, name, duration, opts = {}) {
                 if (!u.mixer || !u.vivo)
                     return;
                 if (u.actionName === name)
@@ -2138,12 +2157,13 @@
                 const clip = T.AnimationClip.findByName(u.animations, name);
                 if (!clip)
                     return;
+                const fade = opts.fade ?? .15;
                 const next = u.mixer.clipAction(clip);
                 next.reset().setLoop(duration ? T.LoopOnce : T.LoopRepeat, duration ? 1 : Infinity);
                 next.clampWhenFinished = !!duration;
-                next.setEffectiveTimeScale(duration ? clip.duration / duration : 1).fadeIn(.15).play();
+                next.setEffectiveTimeScale(duration ? clip.duration / duration : (opts.escala ?? 1)).fadeIn(fade).play();
                 if (u.action)
-                    u.action.fadeOut(.15);
+                    u.action.fadeOut(fade);
                 u.action = next;
                 u.actionName = name;
             }
