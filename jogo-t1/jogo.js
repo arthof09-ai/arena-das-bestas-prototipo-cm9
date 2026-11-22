@@ -13948,6 +13948,36 @@
           : 'Comando das figuras <b>desligado</b> — a IA volta a jogar pelos monstros.');
       });
       sincCmd();
+      /* — Câmera de batalha realista (teste): a câmera de batalha
+         em perspectiva inclinada, a abrir perto da figura — */
+      const g4 = cfgGrupo(pane, 'Câmera de batalha realista (teste)',
+        'Ligado: a batalha vê-se em perspectiva inclinada, como na câmera livre, e abre perto da figura da vez. Desligado: a câmera de hoje, de cima. O zoom continua seu, nos dois sentidos.');
+      let testeCamRealistaLigada = false;   // nasce DESLIGADA
+      const linhaTogCam = document.createElement('div'); linhaTogCam.className = 'cfgrow';
+      const rotTogCam = document.createElement('span'); rotTogCam.className = 'cl';
+      rotTogCam.innerHTML = 'Câmera de batalha realista<small>perspectiva inclinada, abre perto da figura</small>';
+      const togCam = document.createElement('button');
+      togCam.type = 'button'; togCam.id = 'teste-camara-realista'; togCam.className = 'tog';
+      linhaTogCam.appendChild(rotTogCam); linhaTogCam.appendChild(togCam);
+      g4.appendChild(linhaTogCam);
+      const sincCam = () => {
+        togCam.classList.toggle('on', testeCamRealistaLigada);
+        togCam.textContent = testeCamRealistaLigada ? 'Ligada' : 'Desligada';
+        togCam.setAttribute('aria-pressed', String(testeCamRealistaLigada));
+      };
+      const aplicarCam = () => {
+        if (view && typeof view.setTesteCamaraRealista === 'function') {
+          try { view.setTesteCamaraRealista(testeCamRealistaLigada); } catch (_) {}
+        }
+      };
+      togCam.addEventListener('click', () => {
+        testeCamRealistaLigada = !testeCamRealistaLigada;
+        sincCam(); aplicarCam();
+        say(testeCamRealistaLigada
+          ? 'Câmera de batalha realista <b>ligada</b> — a batalha abre perto da figura, em perspectiva.'
+          : 'Câmera de batalha realista <b>desligada</b> — volta a câmera de cima de hoje.');
+      });
+      sincCam();
     }
   }
   activarAbaCfg('jogo');

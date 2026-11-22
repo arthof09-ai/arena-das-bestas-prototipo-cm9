@@ -76,7 +76,7 @@
                Sala do Trono (TronoWorld, em mundo.js — chão plano da
                nave, o modelo como cenário); em qualquer outro caso
                é o CampoWorld de sempre, ao bit (diferencial zero). */
-            const world = (options.mapa === 'trono' && typeof window.TronoWorld === 'function') ? window.TronoWorld(T, scene, area) : CampoWorld(T, scene, area), camera = new T.OrthographicCamera(-10, 10, 10, -10, .1, 1600), cameraLivre = new T.PerspectiveCamera(50, 1, .1, 400), target = new T.Vector3(), ray = new T.Raycaster();
+            const world = (options.mapa === 'trono' && typeof window.TronoWorld === 'function') ? window.TronoWorld(T, scene, area) : CampoWorld(T, scene, area), camera = new T.OrthographicCamera(-10, 10, 10, -10, .1, 1600), cameraLivre = new T.PerspectiveCamera(50, 1, .1, 400), cameraBatalha = new T.PerspectiveCamera(48, 1, .5, 1600), target = new T.Vector3(), ray = new T.Raycaster();
             /* ---------- AMBIENTE (tranche AMBIENTE — desenho LIBERA 05/11) ----------
              * aplicarAmbiente(estado) é o ÚNICO escritor de: exposição ·
              * hemisférica · sol · fundo · cor da névoa · bases do mundo
@@ -679,6 +679,17 @@
                comportamento é o da base. Vive só nesta closure e só
                nesta sessão: nada se grava em chave nenhuma. */
             let testeChuva052 = { ligada: false, nivel: 2 };
+            /* TESTE — CÂMERA DE BATALHA REALISTA (REF_129, ordem do
+               Mestre de 22/11 12:08): interruptor da aba «Testes»
+               («Câmera de batalha realista»), nasce DESLIGADO e vive
+               só nesta sessão, como o teste da chuva. Ligado: a
+               câmera de batalha passa a PERSPECTIVA inclinada
+               (cameraBatalha, 48°) sobre a mesma órbita, e a vista
+               abre PERTO da figura seguida (largura ~11 m).
+               Desligado: o comportamento é byte-equivalente ao da
+               REF_128 — a câmera activa é a ortográfica de sempre
+               e nenhum dos blocos novos corre. */
+            let testeCamRealista = false;
             const RESP_MAX = 900, RESP_CICLO = .8, RESP_RAIO = 16;
             const RESP_CONT = [0, 380, 900], RESP_CONT_BAIXA = [0, 240, 480];
             const respGeo = new T.BufferGeometry();
@@ -859,7 +870,7 @@
              * tipo; este desenho NAO a muda - a neve degrada com
              * graca porque os flocos ficam ao tamanho certo. */
             function ambQuadro(now, dt) {
-                const cam = camaraActiva(), orto = mode !== 'livre';
+                const cam = camaraActiva(), orto = mode !== 'livre' && !testeCamRealista;
                 const alturaPx = renderer.domElement.height || 800;
                 const frustumAlt = orto ? Math.max(0.1, cam.top - cam.bottom) : 1;
                 for (const m of [chuvaMat, neveMat]) {
@@ -1976,7 +1987,7 @@
              * ortográfica congelada: exacto por construção. */
             const ctrlLivre = { pos: new T.Vector3(0, 1.6, 4.9), yaw: 0, pitch: 0, joyX: 0, joyY: 0, sobe: 0, teclas: {} };
             let velLivre = 1;
-            const camaraActiva = () => mode === 'livre' ? cameraLivre : camera;
+            const camaraActiva = () => mode === 'livre' ? cameraLivre : (testeCamRealista ? cameraBatalha : camera);
             const livreRound = v => Math.round(v * 100) / 100;
             let presentation = null;
             const emit = (type, detail) => events.dispatchEvent(new CustomEvent(type, { detail })), publicUnit = u => ({ id: u.id, nome: u.nome, posicao: { x: u.x, y: u.z }, altitude: u.altitude, vivo: u.vivo });
@@ -3325,6 +3336,34 @@
                 camera.updateMatrixWorld();
                 scene.fog.near = distance + 90;
                 scene.fog.far = distance + 240;
+                /* TESTE — CÂMERA DE BATALHA REALISTA (REF_129): com o
+                   interruptor ligado, a câmera que desenha é a de
+                   PERSPECTIVA (48°) sobre a MESMA órbita — mesmo alvo,
+                   mesmo azimute `a`, mesma largura ao plano do alvo
+                   (larguraVista); a distância deriva da largura para o
+                   enquadramento ser comparável ao ortográfico, e o
+                   pitch efectivo inclina 0,38 rad para o polar táctico
+                   (45–55° do topo) SEM tocar no estado do jogador nem
+                   na guarda (que continua a julgar o fotograma
+                   ortográfico de referência). O desvio de 36 px do HUD
+                   replica-se com setViewOffset; a névoa mede-se da
+                   distância real da câmera, com a mesma semântica
+                   (+90/+240). Desligado, este bloco não corre e a
+                   vista é a da REF_128 ao byte. */
+                if (testeCamRealista) {
+                    const pReal = clamp(p - .38, .45, 1.15);
+                    const distReal = (larguraVista / 2) / (Math.tan(cameraBatalha.fov * Math.PI / 360) * (width / Math.max(1, height)));
+                    cameraBatalha.aspect = width / Math.max(1, height);
+                    cameraBatalha.position.set(target.x + Math.sin(a) * Math.cos(pReal) * distReal, target.y + Math.sin(pReal) * distReal, target.z + Math.cos(a) * Math.cos(pReal) * distReal);
+                    { const soloReal = world.height(cameraBatalha.position.x, cameraBatalha.position.z) + .5;
+                      if (cameraBatalha.position.y < soloReal) cameraBatalha.position.y = soloReal; }
+                    cameraBatalha.lookAt(target);
+                    cameraBatalha.setViewOffset(width, height, 0, 36, width, height);
+                    cameraBatalha.updateProjectionMatrix();
+                    cameraBatalha.updateMatrixWorld();
+                    scene.fog.near = distReal + 90;
+                    scene.fog.far = distReal + 240;
+                }
                 }
                 ambTick(now);
                 ambQuadro(now, dt);
@@ -3927,6 +3966,23 @@
                     ambReaplicar();
                 }, getTesteChuva052() {
                     return { ...testeChuva052 };
+                }, setTesteCamaraRealista(ligada) {
+                    /* Aba «Testes» (REF_129): o Mestre liga e desliga a
+                       câmera de batalha realista durante a partida.
+                       Nasce desligada; nada se grava. Ao LIGAR, a vista
+                       abre PERTO da figura seguida (largura ~11 m) —
+                       o zoom continua dele, nos dois sentidos, daí
+                       em diante. */
+                    if (typeof ligada !== 'boolean')
+                        throw new TypeError('testeCamaraRealista: ligada booleano obrigatório.');
+                    const estava = testeCamRealista;
+                    testeCamRealista = ligada;
+                    if (ligada && !estava) {
+                        const r = zoomRange(), z = clamp(baseWidth() / 11, r.min, r.max);
+                        zoom['360'] = z; zoom.fixa = z;
+                    }
+                }, getTesteCamaraRealista() {
+                    return testeCamRealista;
                 }, setTremulacao(on) {
                     /* EM-AMB-B1: repassa a opção do Mestre ao mundo. */
                     if (world && typeof world.setTremulacao === 'function') world.setTremulacao(on);
