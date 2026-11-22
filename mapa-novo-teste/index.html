@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="pt-BR" class="entrada-pendente">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#14100a">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="icone-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="icone-512.png">
+  <title>Campo de Batalha · Assimilação</title>
+  <link rel="stylesheet" href="jogo.css">
+  <link rel="stylesheet" href="entrada.css">
+</head>
+<body>
+  <main id="mapa" aria-label="Campo de batalha tridimensional"></main>
+
+  <!-- Camada da casca para os números de dano flutuantes e o efeito de
+       impacto (tranche T1.2): elementos criados por jogo.js, posicionados
+       sobre a figura atacada pela projecção da cena (projectUnit). -->
+  <div id="danos" aria-hidden="true"></div>
+  <!-- A cena (rodada 2) cria a sua própria camada de etiquetas (.etiquetas)
+       dentro de #mapa; a casca só lhe dá o estilo (.nome, em jogo.css). -->
+
+  <!-- Cantos (lei do Mestre, 02/11 23:09): canto superior esquerdo =
+       engrenagem; abaixo dela, tela cheia. O pop-up rápido abre sob a engrenagem. -->
+  <div id="cantos" aria-label="Cantos de apresentação">
+    <button id="btn-config" class="cornerbtn" aria-label="Configurações rápidas" aria-expanded="false" title="Configurações rápidas">⚙</button>
+    <button id="btn-cheia" class="cornerbtn quadrado" aria-label="Tela cheia" title="Tela cheia">⛶</button>
+    <!-- S-001+M-016: o botão de alertas (!) é superfície do Supervisor —
+         vive só na vista do Mestre (mestre.html). Nesta página da
+         jogadora ele não existe. -->
+  </div>
+
+  <!-- Pop-up de configurações rápidas: aperta, aparece; escolhe; aperta, some. -->
+  <section id="cfgpop" hidden aria-label="Configurações rápidas">
+    <h3>Apresentação</h3>
+    <div class="cfgrow">
+      <span class="cl">Câmera</span>
+      <div class="seg" role="group" aria-label="Câmera">
+        <button id="cam-fixa" type="button">▦ Fixa</button>
+        <button id="cam-360" type="button">⟳ 360°</button>
+      </div>
+    </div>
+    <div class="cfgrow">
+      <span class="cl">Dinâmica<small>vira sozinha ao mover e ao atacar — só na câmera 360°</small></span>
+      <button id="cam-dinamica" class="tog on" type="button" aria-pressed="true">Ligada</button>
+    </div>
+    <div class="cfgrow">
+      <span class="cl">Zoom</span>
+      <div class="zoomctl">
+        <button id="zoom-menos" class="zb" type="button" aria-label="Afastar câmera">−</button>
+        <span id="zoom-valor" class="zv">1,0×</span>
+        <button id="zoom-mais" class="zb" type="button" aria-label="Aproximar câmera">+</button>
+      </div>
+    </div>
+    <div class="cfgrow">
+      <span class="cl">Ajuda do grid<small>casas acesas ao mover</small></span>
+      <button id="tog-grid" class="tog on" type="button" aria-pressed="true">Ligada</button>
+    </div>
+    <div class="cfgrow">
+      <span class="cl">Números de dano<small>parcelas ao acertar</small></span>
+      <button id="tog-danos" class="tog on" type="button" aria-pressed="true">Ligados</button>
+    </div>
+    <div class="cfgrow">
+      <span class="cl">Qualidade</span>
+      <div class="seg" role="group" aria-label="Qualidade">
+        <button data-qualidade="auto" type="button">Automática</button>
+        <button data-qualidade="ultraleve" type="button">Ultra Leve</button>
+        <button data-qualidade="baixa" type="button">Leve</button>
+        <button data-qualidade="media" type="button">Média</button>
+        <button data-qualidade="alta" type="button">Alta</button>
+      </div>
+    </div>
+    <!-- D3-P0-7: o «Terminar» mora aqui, dentro do ⚙ — acciona o mesmo
+         fluxo M-014 de sempre ('terminar' → confirmar → terminarBatalha);
+         o ouvinte vive em jogo.js (#cfg-terminar). -->
+    <div class="cfgrow">
+      <span class="cl">Batalha<small>terminar esta batalha</small></span>
+      <button id="cfg-terminar" class="tog" type="button">✕ Terminar</button>
+    </div>
+    <p id="stats" class="stats">— FPS</p>
+  </section>
+
+  <!-- Cartão da desgraça (tranche T-DESGRACA-NADA): a lista completa
+       que abre quando o Mestre recusa a desgraça proposta numa falha
+       crítica — as 6 da tabela dele mais «Não acontece nada», opção
+       só dele que a tabela nunca sorteia. Nasce vazio e escondido;
+       quem o preenche e o mostra é o jogo.js, só no estado próprio. -->
+  <section id="desgraca-cartao" hidden aria-label="Escolher a desgraça">
+    <h3>Falha crítica</h3>
+    <p id="dg-proposta"></p>
+    <div id="dg-opcoes"></div>
+    <p id="dg-nota">A escolha é só sua. «Não acontece nada» deixa a falha sem desgraça — a tabela nunca sorteia esta opção.</p>
+  </section>
+
+  <!-- Ficha fechada: pop-up flutuante da própria personagem (só dados dela).
+       M-015: os valores iniciais já nascem certos (Vida 99/99, Alma livre 91)
+       e jogo.js (atualizarChip) reescreve rótulo e barras a cada mudança. -->
+  <button id="fichachip" type="button" aria-label="Abrir a ficha da Ong">
+    <span class="fh"><span class="fname">ONG</span><span class="fopen">FICHA ▸</span></span>
+    <span class="bl"><span>VIDA</span><span id="chip-alma-rotulo">ALMA · PA 91</span></span>
+    <span class="bar vida"><i style="width:100%"></i></span>
+    <span class="bar alma"><i style="width:100%"></i></span>
+  </button>
+
+  <!-- Ficha aberta: coluna lateral de 25% (conteúdo gerado por jogo.js). -->
+  <aside id="ficha" hidden aria-label="Ficha da figura"></aside>
+
+  <!-- Faixa de baixo: UMA só, 56 px fixos, só acções de batalha +
+       a linha de mensagem VISÍVEL. Apertar troca o miolo, nunca o tamanho. -->
+  <nav id="faixa" aria-label="Acções da rodada de batalha">
+    <div class="turn">
+      <span class="tl" id="vez-rotulo">VEZ DE</span>
+      <span class="tn" id="vez-nome">Ong</span>
+      <span class="rd" id="vez-rodada">R2</span>
+    </div>
+    <p id="mensagem" role="status" aria-live="polite"><span id="mensagem-txt"></span></p>
+    <div id="acoes" class="actions"></div>
+  </nav>
+
+  <!-- PÁGINA DE TESTE «mapa-novo-teste» (troca do mapa, 21/11/2026):
+       nesta página o TESTE DA RELVA nasce LIGADO — a chave grava-se
+       aqui, antes de qualquer script do jogo, mas SÓ se estiver
+       omissa: a escolha feita no interruptor de Configurações →
+       Testes persiste entre visitas. Fora desta página a chave
+       omissa continua a valer «oficial» (a candidata da sede e o
+       jogo vivo não têm este script). -->
+  <script>
+    try {
+      if (localStorage.getItem('hudt1-relva-teste') === null)
+        localStorage.setItem('hudt1-relva-teste', 'ligado');
+    } catch (e) { /* sem armazenamento, vale o omisso da sede */ }
+  </script>
+  <!-- Entrada do protótipo (tranches t-entrada-mestre + t-entrada-google +
+       t-entrada-google-nativa): a página nasce na entrada (três botões do
+       Layout de referência) e os scripts do jogo só são injectados por
+       entrada.js depois de uma entrada com a conta Google — antes disso
+       o jogo não faz boot nem constrói nada, nem da Party nem do Mestre.
+       A ordem de injecção é a mesma das tags que aqui estavam. -->
+  <script src="entrada.js"></script>
+  <!-- Registo do service worker (tranche t-app-instalavel): existe só para
+       o jogo ser instalável como app no celular. O sw.js não guarda nada
+       em cache — cada pedido vai directo à rede (ver o próprio sw.js).
+       updateViaCache 'none': nem o próprio sw.js vem de cache do navegador
+       ao verificar actualizações. Falha de registo nunca parte a entrada. -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      try {
+        navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+          .catch(function () { /* sem service worker, o jogo vive como antes */ });
+      } catch (e) { /* idem */ }
+    }
+  </script>
+</body>
+</html>
