@@ -2245,6 +2245,130 @@
                 }
                 u.pivot.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
             }
+            /* FRENTE DOS MODELOS — MEDIDA NO CARREGAMENTO
+               (t-direcao-unica; palavra do Mestre, 2026-11-21: «faz a
+               correcção única no jogo»). A cena presume o corpo virado
+               para +Z do pivot (a frente do pivot é atan2(dx,dz) —
+               REF_119, provada certa), mas os modelos feitos fora nascem
+               ora para +Z ora para −Z, corpo E clipes. O regime antigo
+               era uma lista manual por nome de ficheiro
+               (MODELOS_FRENTE_INV): rodava π os ficheiros listados. E
+               falhou em silêncio quando o conteúdo de um ficheiro mudou
+               por baixo dela — o manequim-m antigo nascia para −Z; o
+               corpo X Bot que o substituiu (2026-11-21) nasce para +Z,
+               e a entrada da lista passou a virá-lo AO CONTRÁRIO (ele
+               andava de costas na candidata, medido e fotografado em
+               t-direcao-unica/provas/). Agora a frente MEDE-SE em cada
+               carregamento, na pose de repouso, antes da medição da
+               caixa, por três sinais independentes sobre os ossos
+               (posições mundiais tal como o GLB carrega):
+               S1 os dedos dos pés apontam para a frente (dedo − pé);
+               S2 nos bípedes, (anca esquerda − anca direita) × coluna
+                  aponta para a frente;
+               S3 a cabeça fica à frente da anca (decisivo nos
+                  quadrúpedes). Cada sinal vota só quando o seu vector
+               é claramente do eixo Z (|z| ≥ 1,5·|x|); a maioria
+               decide. Frente −Z → roda π em Y dentro do pivot (a
+               centragem sai exacta sobre a caixa já rodada); frente
+               +Z → não se toca. A medição é sobre o modelo tal como
+               carrega: aplicada a uma cena já corrigida, lê +Z e não
+               roda outra vez — idempotente. Se nenhum sinal votar
+               (modelo sem ossos legíveis), cai-se na lista declarada
+               MODELOS_FRENTE_INV como recurso — nunca rotação cega.
+               Calibração dos sinais (fotos + números, os 4 GLB do
+               elenco unânimes): t-direcao-unica/provas/fotos-cru/. */
+            const MODELOS_FRENTE_INV = new Set(['modelos/manequim-f-roxa.glb', 'modelos/manequim-m.glb']);
+            function medirFrenteModelo(raiz) {
+                const todos = [];
+                raiz.updateMatrixWorld(true);
+                raiz.traverse(o => todos.push(o));
+                const pos = o => o.getWorldPosition(new T.Vector3());
+                const votos = [];
+                const votar = v => {
+                    if (!v) return;
+                    if (Math.hypot(v.x, v.z) < 0.002 || Math.abs(v.z) < 1.5 * Math.abs(v.x)) return;
+                    votos.push(Math.sign(v.z));
+                };
+                // S1 — dedos dos pés: dedo − pé (o pai), todos os lados
+                {
+                    const v = new T.Vector3();
+                    let n = 0;
+                    for (const o of todos) {
+                        if (!/toe/i.test(o.name) || !o.parent) continue;
+                        v.add(pos(o).sub(pos(o.parent))); n++;
+                    }
+                    if (n) votar(v);
+                }
+                const BAN = /ik|mch|target|tweak|pole/i;
+                const acha = re => todos.filter(o => re.test(o.name) && !BAN.test(o.name));
+                const anca = acha(/hips|pelvis/i)[0];
+                // S2 — anca × coluna (bípedes)
+                {
+                    const pernas = acha(/upleg|thigh|leg/i);
+                    const e = pernas.find(o => /left|\.L$|_L\b/i.test(o.name));
+                    const d = pernas.find(o => /right|\.R$|_R\b/i.test(o.name));
+                    const colunas = acha(/spine/i).sort((a, b) => pos(a).y - pos(b).y);
+                    if (e && d && anca && colunas.length) {
+                        const A = pos(e).sub(pos(d));
+                        const U = pos(colunas[0]).sub(pos(anca));
+                        votar(new T.Vector3().crossVectors(A, U));
+                    }
+                }
+                // S3 — cabeça − anca
+                {
+                    const cabecas = acha(/head/i).sort((a, b) => pos(b).y - pos(a).y);
+                    if (cabecas.length && anca) votar(pos(cabecas[0]).sub(pos(anca)));
+                }
+                if (!votos.length) return 0;
+                const soma = votos.reduce((a, b) => a + b, 0);
+                return soma > 0 ? 1 : soma < 0 ? -1 : 0;
+            }
+            // Mede a frente na POSE ANIMADA: aplica o clipe de
+            // andar (ou o primeiro clipe) a meio do ciclo num
+            // misturador temporário, mede com os mesmos três
+            // sinais e repõe a pose original. É a pose animada
+            // que o olho vê a andar — a de repouso pode nascer
+            // virada contra o clipe em exportações FBX→glTF, e
+            // foi só nela que a primeira volta desta correcção
+            // mediu. Sem clipes (ou com qualquer erro), cai na
+            // pose de repouso, como antes.
+            function medirFrenteAnimada(raiz, clips) {
+                if (!Array.isArray(clips) || !clips.length) return medirFrenteModelo(raiz);
+                const clipe = clips.find(c => /andar|walk|run/i.test(c.name || '')) || clips[0];
+                if (!clipe || !(clipe.duration > 0)) return medirFrenteModelo(raiz);
+                const guardados = [];
+                raiz.traverse(o => guardados.push([o, o.position.clone(), o.quaternion.clone(), o.scale.clone()]));
+                try {
+                    const misturador = new T.AnimationMixer(raiz);
+                    misturador.clipAction(clipe).play();
+                    misturador.update(clipe.duration / 2);
+                    raiz.updateWorldMatrix(true, true);
+                    return medirFrenteModelo(raiz);
+                } catch (e) {
+                    return medirFrenteModelo(raiz);
+                } finally {
+                    for (const [o, p, q, s] of guardados) { o.position.copy(p); o.quaternion.copy(q); o.scale.copy(s); }
+                    raiz.updateWorldMatrix(true, true);
+                }
+            }
+            /* ANDAR DO CAPANGA — CLIPE DO MIXAMO (t-andar-de-re, volta
+               do Mixamo; palavra do Mestre, 2026-11-21: «pegue o
+               movimento no mixamo»). O andar dele já não é o clipe
+               antigo (andar_v3_m_fase2 partilhava a curva da anca
+               com o andar feminino da Ong: balanço lateral de
+               15,58° e 6,7 cm — «andar feminino», nas palavras
+               dele) nem a atenuação por código que o tentou
+               amansar (volta anterior, reprovada pelo olho dele):
+               o próprio GLB modelos/manequim-m.glb traz agora,
+               com o MESMO nome andar_v3_m_fase2, um ciclo de
+               andar masculino do Mixamo («Walking», personagem
+               adulta completa) convertido para o esqueleto do
+               manequim e SEM movimento de raiz (o jogo move a
+               figura). Medição com a régua da casa: balanço
+               lateral 3,40° · deslocamento lateral da anca
+               4,36 cm · ciclo de 1,033 s. Provas e relatório na
+               sede (provas-mixamo/). Nada a fazer aqui: o código
+               não toca no clipe. */
             async function addUnit(data) {
                 for (const key of Object.keys(data))
                     if (!UNIT_KEYS.has(key))
@@ -2305,6 +2429,9 @@
                             release(gltf.scene);
                             return;
                         }
+                        const frenteMedida = medirFrenteAnimada(gltf.scene, gltf.animations);
+                        if (frenteMedida < 0 || (frenteMedida === 0 && MODELOS_FRENTE_INV.has(model)))
+                            gltf.scene.rotation.y += Math.PI;
                         gltf.scene.updateMatrixWorld(true);
                         const b = new T.Box3().setFromObject(gltf.scene), s = b.getSize(new T.Vector3()), center = b.getCenter(new T.Vector3());
                         gltf.scene.scale.setScalar(data.alturaMetros / s.y);
