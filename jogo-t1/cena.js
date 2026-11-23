@@ -36,9 +36,20 @@
             if (!Array.isArray(options.units ?? []))
                 throw new TypeError('units deve ser array.');
             const area = { cols: options.area?.cols ?? 10, rows: options.area?.rows ?? 7, origin: { x: options.area?.origin?.x ?? 0, y: options.area?.origin?.y ?? 0 } };
-            if (![area.cols, area.rows].every(v => Number.isInteger(v) && v >= 1 && v <= 80) || ![area.origin.x, area.origin.y].every(Number.isInteger))
-                throw new RangeError('Área: 1..80 casas e origem inteira.');
+            /* PASSO 4 DA TROCA DE MAPA: o tecto sobe de 80 para 200 —
+               é guarda de sanidade, não regra de desenho; a grelha
+               do mapa novo precisa de 99x97 casas. */
+            if (![area.cols, area.rows].every(v => Number.isInteger(v) && v >= 1 && v <= 200) || ![area.origin.x, area.origin.y].every(Number.isInteger))
+                throw new RangeError('Área: 1..200 casas e origem inteira.');
             const wx = x => (x - area.origin.x - (area.cols - 1) / 2) * CELL, wz = z => (z - area.origin.y - (area.rows - 1) / 2) * CELL;
+            /* PASSO 4 DA TROCA: a altura de assentamento de figuras
+               (soloFigura) e de marcadores de casa (soloCasa) lê o
+               gancho do mundo quando ele existe — alturaFigura:
+               dentro do lago a figura nada e o marcador flutua no
+               nível da água. Sem gancho (os outros mundos), é
+               world.height ao bit, como sempre foi. */
+            const soloCasa = (x, z) => world.alturaFigura ? world.alturaFigura(x, z, 0) : world.height(x, z);
+            const soloFigura = (u, x, z) => world.alturaFigura ? world.alturaFigura(x, z, u.size) : world.height(x, z);
             function valid(p) {
                 if (!p || !Number.isInteger(p.x) || !Number.isInteger(p.z) || p.x < area.origin.x || p.x >= area.origin.x + area.cols || p.z < area.origin.y || p.z >= area.origin.y + area.rows)
                     throw new RangeError('Casa fora da área.');
@@ -77,6 +88,27 @@
                nave, o modelo como cenário); em qualquer outro caso
                é o CampoWorld de sempre, ao bit (diferencial zero). */
             const world = (options.mapa === 'trono' && typeof window.TronoWorld === 'function') ? window.TronoWorld(T, scene, area) : CampoWorld(T, scene, area), camera = new T.OrthographicCamera(-10, 10, 10, -10, .1, 1600), cameraLivre = new T.PerspectiveCamera(50, 1, .1, 400), cameraBatalha = new T.PerspectiveCamera(48, 1, .5, 1600), target = new T.Vector3(), ray = new T.Raycaster();
+            /* ---------- TROCA DE MAPA — PASSO 5 (cena) ----------
+               Porta da troca: só o mundo da troca expõe o gancho
+               alturaFigura (passo 4); o Trono e o mundo de sempre
+               não — com trocaMapa falso, TODOS os ramos novos
+               abaixo são inertes e o comportamento é o de sempre,
+               ao bit. Com a troca: a sombra cobre o chão inteiro
+               de 272 m (o extent de nascimento deriva da grelha e
+               fica a 126,8 m — o canto longe do chão, a ~212 m do
+               alvo da luz, ficava fora e o texel era 0,50 m). */
+            const trocaMapa = typeof world.alturaFigura === 'function';
+            const TROCA_EXTENT_SOMBRA = 215;
+            if (trocaMapa) {
+                Object.assign(sun.shadow.camera, { left: -TROCA_EXTENT_SOMBRA, right: TROCA_EXTENT_SOMBRA, top: TROCA_EXTENT_SOMBRA, bottom: -TROCA_EXTENT_SOMBRA, near: 1, far: TROCA_EXTENT_SOMBRA * 5 });
+                sun.shadow.camera.updateProjectionMatrix();
+            }
+            /* A névoa e o céu da PROVA (gradiente aprovado): a cor
+               quente da névoa e a paleta do domo. O peso da mistura
+               é o peso do sol do próprio céu (ceuWSol): 1 de dia,
+               0 à noite — a âncora Noite fica ao bit. */
+            const TROCA_FOG_COR = C(0xeccf9a);
+            const CEU_TROCA = { paradas: [[0, '#54719e'], [.3, '#87a1b6'], [.55, '#c2bfa8'], [.8, '#f3cf92'], [1, '#ffc978']], claro: true };
             /* ---------- AMBIENTE (tranche AMBIENTE — desenho LIBERA 05/11) ----------
              * aplicarAmbiente(estado) é o ÚNICO escritor de: exposição ·
              * hemisférica · sol · fundo · cor da névoa · bases do mundo
@@ -415,9 +447,14 @@
             function ceuPublicar(amostra, cf, pulsoE) {
                 const cinz = ambNivel(AMB_CHUVA.cinzento, cf);
                 const pa = AMB_CEUS[amostra.i], pb = AMB_CEUS[(amostra.i + 1) % AMB_CEUS.length];
+                /* TROCA DE MAPA — PASSO 5: com a troca, cada stop
+                   mistura para a paleta da prova com o peso do sol
+                   (1 de dia = céu da prova; 0 à noite = céu do jogo). */
+                const wSolT = trocaMapa ? ceuWSol(ambActual.hora) : 0;
                 for (let k = 0; k < 8; k++) {
                     const p = CEU_POSICOES[k];
                     const c = ceuPaletaCor(pa, p).lerp(ceuPaletaCor(pb, p), amostra.t);
+                    if (wSolT > 0) c.lerp(ceuPaletaCor(CEU_TROCA, p), wSolT);
                     c.lerp(ambCor(0x8a939c), cinz).lerp(ambCor(0xd7dee8), .30 * pulsoE);
                     ceuGradUniforms['uP' + k].value.set(c.r, c.g, c.b, p);
                 }
@@ -824,6 +861,9 @@
                 sun.color.copy(amostra.solCor);
                 sun.position.set(amostra.solPos[0], amostra.solPos[1], amostra.solPos[2]);
                 scene.fog.color.copy(horFinal).lerp(ambCor(0xd7dee8), .55 * pulsoE);
+                /* TROCA DE MAPA — PASSO 5: a cor da névoa mistura
+                   para o quente da prova com o peso do sol do céu. */
+                if (trocaMapa) { const wF = ceuWSol(ambActual.hora); if (wF > 0) scene.fog.color.lerp(TROCA_FOG_COR, wF); }
                 world.ambienteBases.fogueira = amostra.fogueira;
                 /* A base guarda-se CRUA (S2-7); o factor do véu só
                    multiplica a escrita, nunca o valor guardado —
@@ -847,7 +887,10 @@
                     }
                 }
                 ceuPublicar(amostra, cf, pulsoE);
-                const tabela = quality === 'baixa' ? AMB_CHUVA.gotasBaixa : AMB_CHUVA.gotas;
+                /* PASSO 6 (troca-mapa): o ULTRA LEVE cai no ramo da
+                 * Leve em todas as tabelas de clima — o degrau mais
+                 * leve nao paga o clima mais caro. */
+                const tabela = (quality === 'baixa' || quality === 'ultraleve') ? AMB_CHUVA.gotasBaixa : AMB_CHUVA.gotas;
                 /* Chuva e neve nunca juntas (VOLTA 3): o tipo manda
                  * qual dos sistemas desenha; o outro fica a zero.
                  * Os derivados guardam a contagem da CHUVA como
@@ -864,10 +907,10 @@
                 chuvaGeo.setDrawRange(0, gotas);
                 chuvaPts.visible = gotas > 0;
                 chuvaMat.uniforms.uOpacidade.value = ambNivel(AMB_CHUVA.opacidade, cf);
-                chuvaMat.uniforms.uComp.value = quality === 'baixa' ? .42 : quality === 'media' ? .50 : .58;
+                chuvaMat.uniforms.uComp.value = (quality === 'baixa' || quality === 'ultraleve') ? .42 : quality === 'media' ? .50 : .58;
                 { const vm = deNeve ? 0 : ambNivel(CHUVA_VENTO_M, cf); chuvaMat.uniforms.uVento.value.set(DIR_VENTO.x * vm, DIR_VENTO.z * vm); }
                 chuvaMat.uniforms.uAlturaPx.value = renderer.domElement.height || 800;
-                const tabelaNeve = quality === 'baixa' ? NEVE_CONT_BAIXA : quality === 'media' ? NEVE_CONT_MEDIA : NEVE_CONT;
+                const tabelaNeve = (quality === 'baixa' || quality === 'ultraleve') ? NEVE_CONT_BAIXA : quality === 'media' ? NEVE_CONT_MEDIA : NEVE_CONT;
                 let flocos = deNeve ? Math.round(ambNivel(tabelaNeve, cf)) : 0;
                 if (ambCapChuva != null) flocos = Math.min(flocos, ambCapChuva);
                 if (options.mapa === 'trono') flocos = 0;
@@ -887,7 +930,7 @@
                    neve a desligar (a neve não respinga). Os derivados
                    da âncora não contam a camada — ficam byte-iguais. */
                 const cfTeste052 = testeChuva052.nivel;
-                let resp = (testeChuva052.ligada && !deNeve) ? Math.round(ambNivel(quality === 'baixa' ? RESP_CONT_BAIXA : RESP_CONT, cfTeste052)) : 0;
+                let resp = (testeChuva052.ligada && !deNeve) ? Math.round(ambNivel((quality === 'baixa' || quality === 'ultraleve') ? RESP_CONT_BAIXA : RESP_CONT, cfTeste052)) : 0;
                 if (ambCapChuva != null) resp = Math.min(resp, ambCapChuva);
                 if (options.mapa === 'trono') resp = 0;
                 respGeo.setDrawRange(0, resp);
@@ -906,6 +949,7 @@
                    primeiro raio. Só neste mapa. */
                 if (options.mapa === 'trono') hemi.intensity *= .55;
                 if (ambUltimoHor) scene.fog.color.copy(ambUltimoHor).lerp(ambCor(0xd7dee8), .55 * e);
+                if (trocaMapa && ambUltimoHor) { const wF = ceuWSol(ambActual.hora); if (wF > 0) scene.fog.color.lerp(TROCA_FOG_COR, wF); }
                 ceuPublicar(ambUltimaAmostra, ambActual.chuva, e);
             }
             function aplicarAmbiente(estado, opcoes = {}) {
@@ -2157,7 +2201,7 @@
                 }
                 valid(p);
                 mesh.visible = true;
-                mesh.position.set(wx(p.x), world.height(wx(p.x), wz(p.z)) + .045, wz(p.z));
+                mesh.position.set(wx(p.x), soloCasa(wx(p.x), wz(p.z)) + .045, wz(p.z));
             }
             function showMovement(cells = []) {
                 cells = cells.filter(p => { try { valid(p); return true; } catch { return false; } });
@@ -2166,7 +2210,7 @@
                 moveLayer.clear();
                 const vertices = [], lines = [];
                 for (const p of cells) {
-                    const x = wx(p.x), z = wz(p.z), s = CELL * .47, y = world.height(x, z) + (p.altitude || 0) + .035, a = [x - s, y, z - s], b = [x + s, y, z - s], c = [x + s, y, z + s], d = [x - s, y, z + s];
+                    const x = wx(p.x), z = wz(p.z), s = CELL * .47, y = soloCasa(x, z) + (p.altitude || 0) + .035, a = [x - s, y, z - s], b = [x + s, y, z - s], c = [x + s, y, z + s], d = [x - s, y, z + s];
                     vertices.push(...a, ...d, ...b, ...b, ...d, ...c);
                     lines.push(...a, ...b, ...b, ...c, ...c, ...d, ...d, ...a);
                 }
@@ -2204,7 +2248,7 @@
                 previaLayer.clear();
                 if (!spec) return;
                 const quad = (p, dy) => {
-                    const x = wx(p.x), z = wz(p.z), s = CELL * .47, y = world.height(x, z) + dy;
+                    const x = wx(p.x), z = wz(p.z), s = CELL * .47, y = soloCasa(x, z) + dy;
                     return { v: [x - s, y, z - s, x - s, y, z + s, x + s, y, z - s, x + s, y, z - s, x - s, y, z + s, x + s, y, z + s],
                              l: [x - s, y, z - s, x + s, y, z - s, x + s, y, z - s, x + s, y, z + s, x + s, y, z + s, x - s, y, z + s, x - s, y, z + s, x - s, y, z - s] };
                 };
@@ -2218,11 +2262,11 @@
                 if (spec.de && spec.alvo) {
                     const ax = wx(spec.de.x), az = wz(spec.de.z), bx = wx(spec.alvo.x), bz = wz(spec.alvo.z);
                     const seg = new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(
-                        [ax, world.height(ax, az) + .07, az, bx, world.height(bx, bz) + .07, bz], 3));
+                        [ax, soloCasa(ax, az) + .07, az, bx, soloCasa(bx, bz) + .07, bz], 3));
                     previaLayer.add(new T.Line(seg, new T.LineBasicMaterial({ color: parseInt(window.DADOS_APRESENTACAO.marcadoresCena.caminho.slice(1), 16), transparent: true, opacity: .95 })));
                     for (const r of [.60, .44]) {
                         const anel = ring(r, parseInt(window.DADOS_APRESENTACAO.marcadores.anel.slice(1), 16));
-                        anel.position.set(bx, world.height(bx, bz) + .05, bz);
+                        anel.position.set(bx, soloCasa(bx, bz) + .05, bz);
                         previaLayer.add(anel);
                     }
                 }
@@ -2304,7 +2348,7 @@
                 if (!p) return;
                 presentation = null;
                 if (p.started) for (const [u, angle] of [[p.a,p.angleA],[p.b,p.angleB]]) {
-                    u.root.position.set(wx(u.x),world.height(wx(u.x),wz(u.z))+u.altitude,wz(u.z));
+                    u.root.position.set(wx(u.x),soloFigura(u, wx(u.x), wz(u.z))+u.altitude,wz(u.z));
                     u.pivot.rotation.y = angle;
                     animation(u, moving(u));
                 }
@@ -2353,7 +2397,7 @@
                 if (t>=.5) finishPresentation();
             }
             function pose(u) {
-                u.root.position.set(wx(u.x), world.height(wx(u.x), wz(u.z)) + u.altitude, wz(u.z));
+                u.root.position.set(wx(u.x), soloFigura(u, wx(u.x), wz(u.z)) + u.altitude, wz(u.z));
                 /* F-20 (respiração): pose() corre na criação, depois
                    da carga do modelo e no setVivo — é aqui que se sabe
                    se a figura tem clip de repouso próprio (idle
@@ -2753,8 +2797,16 @@
                     const s = Math.sin(ctrlLivre.yaw), c = Math.cos(ctrlLivre.yaw), vel = 4.2 * velLivre * (t['shift'] ? 2.2 : 1);
                     ctrlLivre.pos.x += (c * mx + s * mz) * vel * dt;
                     ctrlLivre.pos.z += (c * mz - s * mx) * vel * dt;
-                    ctrlLivre.pos.x = clamp(ctrlLivre.pos.x, -175, 175);
-                    ctrlLivre.pos.z = clamp(ctrlLivre.pos.z, -175, 175);
+                    /* TROCA DE MAPA — PASSO 5: a câmera livre fica
+                       dentro do chão da troca (272×272 em (6,−19))
+                       + 10 m de margem, em vez dos ±175 da arena. */
+                    if (trocaMapa) {
+                        ctrlLivre.pos.x = clamp(ctrlLivre.pos.x, -140, 152);
+                        ctrlLivre.pos.z = clamp(ctrlLivre.pos.z, -165, 127);
+                    } else {
+                        ctrlLivre.pos.x = clamp(ctrlLivre.pos.x, -175, 175);
+                        ctrlLivre.pos.z = clamp(ctrlLivre.pos.z, -175, 175);
+                    }
                 }
                 const sobe = ctrlLivre.sobe + ((t['e'] || t['pageup']) ? 1 : 0) - ((t['q'] || t['pagedown']) ? 1 : 0);
                 if (sobe) ctrlLivre.pos.y += sobe * 3.0 * velLivre * dt;
@@ -2785,7 +2837,11 @@
                 /* C-360-3 (DIAG-360, Z1): a vista mais fechada passa
                    de 4,5 m para 3,0 m de largura (queixa ao vivo do
                    Mestre, 2026-11-16: «quero chegar mais perto»). */
-                return { min: options.mapa === 'trono' ? .52 : .45, max: baseWidth() / 3 };
+                /* TROCA DE MAPA — PASSO 5: neste mapa o zoom-out pára
+                   onde a largura visível chega a 285 m (o sector de
+                   272 m + uma respiração) — mais aberto, a borda do
+                   chão lia-se sobre o fundo escuro. */
+                return { min: options.mapa === 'trono' ? .52 : trocaMapa ? Math.max(.45, baseWidth() / 285) : .45, max: baseWidth() / 3 };
             }
             function setZoom(v) {
                 if (!Number.isFinite(v))
@@ -2815,18 +2871,38 @@
                 const nucleos = navigator.hardwareConcurrency || 0, memoria = navigator.deviceMemory || 0;
                 return (memoria >= 4 || nucleos >= 8) ? 'alta' : 'media';
             }
+            /* PASSO 6 (troca-mapa): a bandeira do corte de densidade
+               do ULTRA LEVE — a amarração completa do selector ao
+               povoamento é do passo 7; aqui o gancho só serve este
+               degrau (aplica ao entrar, repõe ao sair). */
+            let povoamentoUltraAplicado = false;
             function aplicarPerfil(q) {
                 quality = q;
-                renderer.setPixelRatio(dprSessao == null ? Math.min(devicePixelRatio || 1, window.DADOS_APRESENTACAO.perfis[q].dpr) : dprSessao);
-                renderer.shadowMap.enabled = true;
-                sun.castShadow = true;
-                const sombraMapa = window.DADOS_APRESENTACAO.perfis[q].sombraMapa;
+                renderer.setPixelRatio(dprSessao == null ? Math.min(devicePixelRatio || 1, q === 'ultraleve' ? .75 : window.DADOS_APRESENTACAO.perfis[q].dpr) : dprSessao);
+                /* ULTRA LEVE (passo 6): o único perfil que DESLIGA
+                   as sombras — excepção declarada à doutrina dos
+                   perfis (que desce resolução e custo, nunca o
+                   aspecto), para aparelhos que não aguentam nem a
+                   Leve. Ao virar o interruptor, os materiais levam
+                   needsUpdate: nesta build antiga do three, mudar
+                   shadowMap.enabled não recompila sozinho. */
+                const sombrasLigadas = q !== 'ultraleve';
+                if (renderer.shadowMap.enabled !== sombrasLigadas) {
+                    renderer.shadowMap.enabled = sombrasLigadas;
+                    scene.traverse(o => { const ms = o.material; if (ms) (Array.isArray(ms) ? ms : [ms]).forEach(m => { m.needsUpdate = true; }); });
+                }
+                sun.castShadow = sombrasLigadas;
+                const sombraMapa = trocaMapa ? (q === 'baixa' || q === 'ultraleve' ? 512 : q === 'media' ? 1024 : 2048) : (q === 'ultraleve' ? 256 : window.DADOS_APRESENTACAO.perfis[q].sombraMapa);
                 if (sun.shadow.mapSize.x !== sombraMapa) {
                     sun.shadow.mapSize.set(sombraMapa, sombraMapa);
                     if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
                 }
                 world.quality('alta');
                 if (world.recomputarPedras) world.recomputarPedras(veuNunca, veuMemoria);
+                if (typeof world.definirPovoamento === 'function') {
+                    world.definirPovoamento(q);
+                    povoamentoUltraAplicado = q === 'ultraleve';
+                }
                 ambReaplicar();
                 resize();
                 renderer.shadowMap.needsUpdate = true;
@@ -2839,7 +2915,7 @@
                     benchEstado = 'aguarda'; benchFrames = 0; benchTempo = 0; benchUltimo = 0;
                     return;
                 }
-                if (!['alta', 'media', 'baixa'].includes(q))
+                if (!['alta', 'media', 'baixa', 'ultraleve'].includes(q))
                     throw new RangeError('Qualidade inválida.');
                 qualidadeModo = 'manual';
                 benchEstado = 'off';
@@ -3309,7 +3385,7 @@
                         dirty = true;
                         const s = u.step;
                         s.t = Math.min(1, s.t + dt * 1000 / s.ms);
-                        u.root.position.lerpVectors(s.from, new T.Vector3(wx(s.x), world.height(wx(s.x), wz(s.z)) + s.altitude, wz(s.z)), s.t);
+                        u.root.position.lerpVectors(s.from, new T.Vector3(wx(s.x), soloFigura(u, wx(s.x), wz(s.z)) + s.altitude, wz(s.z)), s.t);
                         if (s.t === 1) {
                             u.x = s.x;
                             u.z = s.z;
@@ -3345,7 +3421,7 @@
                         else if (u.pivot.scale.y !== 1)
                             u.pivot.scale.set(1, 1, 1);
                     }
-                    const x = u.root.position.x, z = u.root.position.z, ground = world.height(x, z), alt = u.root.position.y - ground;
+                    const x = u.root.position.x, z = u.root.position.z, ground = soloFigura(u, x, z), alt = u.root.position.y - ground;
                     u.ring.position.set(x, u.root.position.y + .035, z);
                     u.contact.position.set(x, ground + .018, z);
                     u.contact.scale.setScalar(1 + alt * .12);
@@ -3484,8 +3560,19 @@
                 camera.bottom -= hudShift;
                 camera.updateProjectionMatrix();
                 camera.updateMatrixWorld();
-                scene.fog.near = distance + 90;
-                scene.fog.far = distance + 240;
+                if (trocaMapa) {
+                    /* TROCA DE MAPA — PASSO 5: a névoa mede-se além
+                       do plano do alvo (a câmera ortográfica está a
+                       `distance` do alvo — a gama absoluta 230–850
+                       da prova afogava o mapa inteiro): começa 20 m
+                       antes do alvo e fecha 380 m além — centro
+                       ~5%, borda longe ~35% de quente. */
+                    scene.fog.near = distance - 20;
+                    scene.fog.far = distance + 380;
+                } else {
+                    scene.fog.near = distance + 90;
+                    scene.fog.far = distance + 240;
+                }
                 /* TESTE — CÂMERA DE BATALHA REALISTA (REF_129): com o
                    interruptor ligado, a câmera que desenha é a de
                    PERSPECTIVA (48°) sobre a MESMA órbita — mesmo alvo,
@@ -3552,8 +3639,8 @@
                     if (benchTempo >= 4000 || parede >= 10000) {
                         const fpsBench = benchTempo >= 1000 ? benchFrames * 1000 / benchTempo : benchFrames * 1000 / Math.max(parede, 1);
                         benchEstado = 'off';
-                        if (fpsBench < 42 && quality !== 'baixa')
-                            aplicarPerfil(quality === 'alta' ? 'media' : 'baixa');
+                        if (fpsBench < 42 && quality !== 'ultraleve')
+                            aplicarPerfil(quality === 'alta' ? 'media' : quality === 'media' ? 'baixa' : 'ultraleve');
                     }
                 }
                 times.push(now);
@@ -3679,7 +3766,11 @@
                 const x0 = wx(area.origin.x) - CELL / 2, z0 = wz(area.origin.y) - CELL / 2;
                 for (let iz = 0; iz <= rows; iz++) for (let ix = 0; ix <= cols; ix++) {
                     const X = x0 + ix * CELL, Z = z0 + iz * CELL;
-                    pos.push(X, world.height(X, Z) + .06, Z);
+                    /* TROCA DE MAPA — PASSO 5: a folha assenta pelo
+                       soloCasa — dentro do lago é a SUPERFÍCIE da
+                       água + 0,06 (antes: o leito, e o véu ficava
+                       submerso); fora e sem gancho, é o terreno. */
+                    pos.push(X, soloCasa(X, Z) + .06, Z);
                     uv.push(ix / cols, 1 - iz / rows);
                 }
                 for (let iz = 0; iz < rows; iz++) for (let ix = 0; ix < cols; ix++) {
@@ -3870,7 +3961,10 @@
                     m.applyMatrix4(new T.Matrix4().multiplyMatrices(inv, o.matrixWorld));
                     grupo.add(m);
                 });
-                grupo.position.set(wx(x), world.height(wx(x), wz(z)) + origem.altitude, wz(z));
+                /* TROCA DE MAPA — PASSO 5: o fantasma assenta como
+                   a figura viva (soloFigura) — dentro do lago fica
+                   à altura de nado, não no leito. */
+                grupo.position.set(wx(x), soloFigura(origem, wx(x), wz(z)) + origem.altitude, wz(z));
                 grupo.rotation.y = frenteRad || 0;
                 scene.add(grupo);
                 fantasmas.set(chaveF, { grupo, x, z });

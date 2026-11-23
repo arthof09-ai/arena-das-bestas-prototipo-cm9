@@ -606,9 +606,49 @@ window.CampoWorld = function (T, scene, area) {
     const C = h => new T.Color(h).convertSRGBToLinear();
     let seed = 19847;
     const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296), radius = Math.hypot(area.cols, area.rows) * .75 + 4;
-    const height = (x, z) => {
-        const d = Math.max(0, Math.min(1, (Math.hypot(x, z) - radius) / 18));
-        return d * d * (2 + 2.1 * Math.sin(x * .12) * Math.cos(z * .13));
+    /* TROCA DE MAPA (t-qualidade-grafica/troca-mapa, palavra do Mestre
+     * 20/11/2026 23:40 — «Esse vai substituir ele»): a altura do mundo
+     * passa a ser o TERRENO APROVADO da prova-inercia (relevo aprovado
+     * pelo olho dele, 20/11 18:36 — função `altura` copiada da prova,
+     * com LAGO (36,30) r 30 e AGUA_Y −0.85 nas coordenadas dela). A
+     * origem do jogo cai sobre o centro da Clareira 1 da prova
+     * (−6, 19): ponto da prova = (x − 6, z + 19). Como TODA a cena
+     * assenta em world.height (figuras, grelha, movimento, vista), o
+     * jogo inteiro fica sobre o terreno novo sem tocar na lógica. */
+    const LAGO_M = { x: 36, z: 30, r: 30 }, AGUA_Y_M = -0.85;
+    const RUM = Math.cos(0.6), RVM = Math.sin(0.6);
+    const alturaMapa = (px, pz) => {
+        const u = px * RUM + pz * RVM, v = -px * RVM + pz * RUM;
+        let h = 2.10 * Math.sin(u * 0.050 + 3.1) * Math.cos(v * 0.036 - 0.3)
+              + 1.15 * Math.sin(u * 0.083 - 1.2) * Math.sin(v * 0.091 + 4.0)
+              + 0.35 * Math.sin(px * 0.11 + 0.4) * Math.cos(pz * 0.095 - 0.8);
+        const r = Math.hypot(px, pz);
+        const bs = Math.max(0, Math.min(1, (r - 78) / 50));
+        h += 2.6 * bs * bs * (3 - 2 * bs);
+        const d = Math.hypot(px - LAGO_M.x, pz - LAGO_M.z);
+        const perto = Math.max(0, Math.min(1, (62 - d) / 32));
+        h *= (1 - perto * 0.78);
+        const bacia = -3.1 * (1 - Math.max(0, Math.min(1, (d - 8) / 30)));
+        return h + bacia;
+    };
+    const height = (x, z) => alturaMapa(x - 6, z + 19);
+    /* PASSO 4 DA TROCA (grelha jogável com casas de água): o lago do
+     * jogo é o da prova convertido (centro (42, 11), raio 30, nível
+     * AGUA_Y_M). A cena pergunta por alturaFigura(x, z, size) quando
+     * ela existe (gancho opcional, o mesmo padrão de alturaVisivel):
+     * dentro do lago, com o leito abaixo do nível, a figura NADA —
+     * a base fica com metade do corpo sob o nível, sem nunca descer
+     * abaixo do leito (na margem rasa manda o leito: é vau). Fora
+     * do lago, ou com o leito acima do nível, devolve height ao
+     * bit. Com size=0 devolve o próprio nível (marcadores de casa
+     * sobre a água). */
+    const AGUA_JOGO = { x: LAGO_M.x + 6, z: LAGO_M.z - 19, raio: LAGO_M.r, nivel: AGUA_Y_M };
+    const alturaFigura = (x, z, size = 0) => {
+        const h = height(x, z);
+        if (h >= AGUA_JOGO.nivel) return h;
+        const dx = x - AGUA_JOGO.x, dz = z - AGUA_JOGO.z;
+        if (dx * dx + dz * dz > AGUA_JOGO.raio * AGUA_JOGO.raio) return h;
+        return Math.max(h, AGUA_JOGO.nivel - size * 0.5);
     };
     const mat = c => new T.MeshLambertMaterial({ color: C(c) }), rock = mat(0x55575a), wood = mat(0x292b2d), rust = mat(0x735543), box = new T.BoxGeometry(1, 1, 1), ico = new T.IcosahedronGeometry(1, 0), cyl = new T.CylinderGeometry(1, 1, 1, 6), batches = [], fires = [];
     function part(g, m, p, s, r = [0, 0, 0], parent = scene) {
@@ -839,7 +879,7 @@ window.CampoWorld = function (T, scene, area) {
        estáticas (escala .65, sem rotação) e tochas na base. */
     let ambTremulacao = true;
     const fontes = { fogueira: hearth, tochas: fires.map(f => f.light), chamas: fires.flatMap(f => [f.flame, f.core]) };
-    return { ground, height, radius, obstaculos: Object.freeze(obstaculos), fontes, ambienteBases, brasasFogueira, pecasFogueira, braseiros, recomputarPedras, definirFantasmaPedras, pedrasDiagnostico, setTremulacao(on) {
+    return { ground, height, alturaFigura, agua: AGUA_JOGO, radius, obstaculos: Object.freeze(obstaculos), fontes, ambienteBases, brasasFogueira, pecasFogueira, braseiros, recomputarPedras, definirFantasmaPedras, pedrasDiagnostico, setTremulacao(on) {
             ambTremulacao = !!on;
         }, update(time) {
             fires.forEach(({ flame, light }, i) => {

@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_132';
+  var VERSAO_JOGO = 'REF_133';
 
   var SCRIPTS_JOGO = [
     'dados-apresentacao.js',
@@ -334,7 +334,7 @@
       padrao: 'desligado', ligado: 'Ligado', desligado: 'Desligado',
       sub: 'Nenhum som, sem perder os volumes.' },
     { chave: 'hudt1-qualidade', rotulo: 'Qualidade', tipo: 'seg', padrao: 'auto',
-      opcoes: [['auto', 'Automática'], ['baixa', 'Leve'], ['media', 'Média'], ['alta', 'Alta']] },
+      opcoes: [['auto', 'Automática'], ['ultraleve', 'Ultra Leve'], ['baixa', 'Leve'], ['media', 'Média'], ['alta', 'Alta']] },
     { chave: 'hudt1-numeros-dano', rotulo: 'Números de dano', tipo: 'tog',
       padrao: 'ligado', ligado: 'Ligados', desligado: 'Desligados' },
     { chave: 'hudt1-tela-vermelha', rotulo: 'Tela vermelha', tipo: 'tog',

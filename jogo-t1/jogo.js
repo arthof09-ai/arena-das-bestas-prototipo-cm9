@@ -123,7 +123,15 @@
 
   /* ---------- elenco oficial do jogo (a figura de teste UAL1 fica
      SÓ na demo do Codex — não é personagem do jogo) ---------- */
-  const AREA = { cols: 10, rows: 7, origin: { x: 0, y: 0 } };
+  /* PASSO 4 DA TROCA DE MAPA: a grelha jogável do mapa novo.
+     99x97 casas de 1,5 m centradas no (0,0) do mundo (a cena
+     centra sempre a grelha: mundo x em [-73,5, +73,5], z em
+     [-72, +72]) — cobre a Clareira 1 inteira, o lago inteiro e a
+     Clareira 2 com o caminho entre elas; a origem só renumera as
+     casas para o elenco cair onde sempre caiu (a Ong no (0,0)).
+     O resto do sector (além de ~73 m) é cenário por agora: a
+     grelha cresce por sectores quando o jogo lá chegar. */
+  const AREA = { cols: 99, rows: 97, origin: { x: -43, y: -46 } };
   /* ---------- MODELOS PROVISÓRIOS (t-modelos-provisorios, palavra do
      * Mestre 15/11/2026 10:43): no jogo só entram modelos que possam
      * MESMO ser usados no jogo, no estilo do RPG. Os modelos chibi
@@ -448,7 +456,7 @@
 
   let qualidade = 'auto';
   try { qualidade = localStorage.getItem('hudt1-qualidade') || 'auto'; } catch (_) {}
-  if (!['auto', 'alta', 'media', 'baixa'].includes(qualidade)) qualidade = 'auto';
+  if (!['auto', 'alta', 'media', 'baixa', 'ultraleve'].includes(qualidade)) qualidade = 'auto';
   /* Perfil efectivo quando a escolha é Automática: a vista decide
      e anuncia-o pelo evento 'quality' (até lá vale o arranque). */
   let qualidadeEfectiva = qualidade === 'auto' ? 'alta' : qualidade;
@@ -1933,7 +1941,7 @@
   function vooCasaLivreParaNascer(exceptoId) {
     for (let y = AREA.origin.y; y < AREA.origin.y + AREA.rows; y++)
       for (let x = AREA.origin.x; x < AREA.origin.x + AREA.cols; x++)
-        if (!vooPontoChaoOcupado(x, y, exceptoId)) return { x, y };
+        if (!vooPontoChaoOcupado(x, y, exceptoId) && !casaBloqueadaTroca(x, y, 0)) return { x, y };
     return { x: AREA.origin.x, y: AREA.origin.y };
   }
   function vooAdmitirFiguraTeste(instancia, opts = {}) {
@@ -2124,7 +2132,7 @@
    * sistema (a origem expira ou a Vida chega a 0 — o corpo cai
    * sem dano novo, já está a 0) ou por adjudicação dele. */
   function vooResolverCasaQueda(x, y, exceptoId) {
-    if (!vooPontoChaoOcupado(x, y, exceptoId)) return { x, y };
+    if (!vooPontoChaoOcupado(x, y, exceptoId) && !casaBloqueadaTroca(x, y, 0)) return { x, y };
     const vistos = new Set([chave(x, y)]);
     const fila = [{ x, y }];
     for (let i = 0; i < fila.length; i++) {
@@ -2135,7 +2143,7 @@
           || ny < AREA.origin.y || ny >= AREA.origin.y + AREA.rows
           || vistos.has(k)) continue;
         vistos.add(k);
-        if (!vooPontoChaoOcupado(nx, ny, exceptoId)) return { x: nx, y: ny };
+        if (!vooPontoChaoOcupado(nx, ny, exceptoId) && !casaBloqueadaTroca(nx, ny, 0)) return { x: nx, y: ny };
         fila.push({ x: nx, y: ny });
       }
     }
@@ -4111,6 +4119,26 @@
      (a da Ong e as dos outros monstros): ninguém anda para cima de
      ninguém vivo. (T-J12J13: o cadáver não bloqueia — a casa dele
      é atravessável, mas nunca destino; ver o fim da função.) */
+  /* PASSO 4 DA TROCA — casas bloqueadas por obstáculos oficiais.
+     O povoamento do mapa novo publica as casas tomadas por
+     árvores/pedras grandes em window.__casasBloqueadasTroca
+     (Map 'x,y' -> altura máxima do obstáculo na casa). Sem
+     recibo (mapa antigo, mundos sem povoamento da troca), nada
+     bloqueia: comportamento ao bit como sempre foi. Uma casa
+     bloqueia o chão (camada 0) sempre; em voo, bloqueia as
+     camadas cuja altitude (camada x VOO_METROS_CAMADA) não
+     passa a altura do obstáculo — sobrevoar uma pedra baixa é
+     livre, como sobrevoar uma figura. */
+  function casasBloqueadasTroca() {
+    const m = (typeof window !== 'undefined') ? window.__casasBloqueadasTroca : null;
+    return (m && typeof m.get === 'function' && typeof m.has === 'function') ? m : null;
+  }
+  function casaBloqueadaTroca(x, y, camada) {
+    const m = casasBloqueadasTroca();
+    if (!m) return false;
+    const h = m.get(x + ',' + y);
+    return h !== undefined && camada * VOO_METROS_CAMADA < h;
+  }
   function calcularAlcancePara(id, tetoCasas) {
     const s = view.getState();
     const u = s.units.find(v => v.id === id);
@@ -4153,7 +4181,8 @@
           const x = p.x + dx, y = p.y + dy, z = p.z + dz, k = chave3(x, y, z);
           if (x < AREA.origin.x || x >= AREA.origin.x + AREA.cols
             || y < AREA.origin.y || y >= AREA.origin.y + AREA.rows
-            || vistos.has(k) || ocupadas3.has(k)) continue;
+            || vistos.has(k) || ocupadas3.has(k)
+            || casaBloqueadaTroca(x, y, z)) continue;
           const n = { x, y, z, passos: p.passos + 1, path: [...p.path, { x, y, z }] };
           vistos.set(k, n);
           fila.push(n);
@@ -4194,7 +4223,8 @@
         const x = p.x + dx, y = p.y + dy, k = chave(x, y);
         if (x < AREA.origin.x || x >= AREA.origin.x + AREA.cols
           || y < AREA.origin.y || y >= AREA.origin.y + AREA.rows
-          || vistos.has(k) || ocupadas.has(k)) continue;
+          || vistos.has(k) || ocupadas.has(k)
+          || casaBloqueadaTroca(x, y, 0)) continue;
         const n = { x, y, passos: p.passos + 1, path: [...p.path, { x, y }] };
         vistos.set(k, n);
         fila.push(n);
@@ -4278,6 +4308,13 @@
       .filter(v => v.id !== deId && v.id !== paraId && v.vivo !== false
         && camadaDe(v.id) === zDe)
       .map(v => chave(v.posicao.x, v.posicao.y)));
+    /* PASSO 4 DA TROCA: os obstáculos oficiais que tomam o plano
+       de quem mede entram no conjunto de bloqueadoras desta
+       régua, como uma figura viva nesse plano — a casa do alvo
+       continua a contar como destino (o delete a seguir trata
+       disso, como trata das figuras). */
+    { const mb = casasBloqueadasTroca();
+      if (mb) for (const [k, h] of mb) if (zDe * VOO_METROS_CAMADA < h) bloqueadas.add(k); }
     const destino = chave(ele.posicao.x, ele.posicao.y);
     bloqueadas.delete(destino);   // a casa do alvo conta como destino no plano de quem mede, mesmo que uma terceira figura esteja nesse ponto da camada de quem mede (a descida faz-se na coluna)
     const vistos = new Map([[chave(eu.posicao.x, eu.posicao.y), 0]]);
@@ -4461,6 +4498,10 @@
     const ocupada = view.getState().units.some(v =>
       v.id !== PROPRIA && v.posicao.x === nx && v.posicao.y === ny);
     if (ocupada) { supRegistar('bloqueada', { acao: 'mover', actor: PROPRIA, razao: 'Casa ocupada' }); say('Essa casa está ocupada.'); return; }
+    /* PASSO 4 DA TROCA: a seta não passa pela BFS de alcance —
+       a casa tomada por uma árvore ou pedra recusa-se aqui,
+       com a mesma escrita das outras recusas. */
+    if (casaBloqueadaTroca(nx, ny, camadaDe(PROPRIA))) { supRegistar('bloqueada', { acao: 'mover', actor: PROPRIA, razao: 'Casa bloqueada por obstáculo' }); say('Aí há um obstáculo — essa casa está tomada por uma árvore ou pedra.'); return; }
     passoEmCurso = true;
     passoPreco = CASA_M;   // ESCALA: preço capturado no despacho do passo
     vlabCapturarPartida([{ x: u.posicao.x, y: u.posicao.y }, { x: nx, y: ny }]);   // tranche VLAB: adjacências à partida + meio do caminho
@@ -12517,7 +12558,7 @@
     document.querySelectorAll('[data-qualidade]').forEach(b =>
       b.classList.toggle('on', b.dataset.qualidade === qualidade));
     const bAuto = document.querySelector('[data-qualidade="auto"]');
-    if (bAuto) bAuto.textContent = 'Automática (' + ({ alta: 'Alta', media: 'Média', baixa: 'Leve' })[qualidadeEfectiva] + ')';
+    if (bAuto) bAuto.textContent = 'Automática (' + ({ alta: 'Alta', media: 'Média', baixa: 'Leve', ultraleve: 'Ultra Leve' })[qualidadeEfectiva] + ')';
   }
   document.querySelectorAll('[data-qualidade]').forEach(b => b.addEventListener('click', () => {
     qualidade = b.dataset.qualidade;
@@ -12525,7 +12566,7 @@
     view.setQualidade(qualidade);
     marcarQualidade();
     ambSincronizarPainel();   // AMBIENTE: o rótulo «Forte» em qualidade Leve segue a qualidade actual
-    say('Qualidade: <b>' + ({ auto: 'Automática', alta: 'Alta', media: 'Média', baixa: 'Leve' })[qualidade] + '</b> — aplicada já à vista (resolução e sombra).');
+    say('Qualidade: <b>' + ({ auto: 'Automática', alta: 'Alta', media: 'Média', baixa: 'Leve', ultraleve: 'Ultra Leve' })[qualidade] + '</b> — aplicada já à vista (resolução e sombra).');
   }));
 
   document.addEventListener('keydown', e => {

@@ -206,17 +206,10 @@
         /* ---------- altura nova: a do mundo + relevo contínuo fora da arena ----------
          * A arena jogável (pegada 15×10,5 m) fica exactamente plana como
          * world.height manda. O relevo nasce a partir dos ~9,2 m. */
-        const relevo = (x, z) => {
-            const d = Math.hypot(x, z);
-            const faixa = sstep(9.2, 14.0, d) * (1 - sstep(26, 48, d) * 0.72);
-            if (faixa <= 0) return 0;
-            let b = 1.7 * Math.sin(x * 0.16 + 0.8) * Math.cos(z * 0.14 - 0.5)
-                  + 0.8 * Math.sin(x * 0.055 - 1.2) * Math.sin(z * 0.065 + 2.0)
-                  + 0.5 * Math.sin(x * 0.36 + 2.1) * Math.cos(z * 0.32 - 0.9);
-            // as ruínas do mundo assentam numa faixa a norte (z ≈ −10,5): aí o relevo cala-se
-            const mascRuinas = Math.exp(-Math.pow((z + 10.5) / 1.7, 2)) * (1 - sstep(1.5, 3.5, x));
-            return b * faixa * (1 - mascRuinas * 0.92);
-        };
+        /* TROCA DE MAPA (troca-mapa): o relevo antigo da arena CALA-SE —
+         * o terreno agora é o da prova-inercia, que já vive inteiro em
+         * world.height (mundo.js). alturaNova = world.height, ponto. */
+        const relevo = (x, z) => 0;
         const alturaNova = (x, z) => world.height(x, z) + relevo(x, z);
 
         /* ---------- luz: fim de tarde quente SEM banho vermelho ----------
@@ -608,6 +601,10 @@
          * fundo até a textura chegar; __chaoPintadoPronto é o recibo. */
         window.__chaoPintadoPronto = false;
         new T.TextureLoader().load('textura-chao-pintado.jpg', t => {
+            /* TROCA DE MAPA: a textura pintada da arena (o disco do
+             * ritual) NÃO entra no mapa novo — o bloco do terreno novo
+             * mais abaixo já deu ao chão a pele de relva viva. */
+            if (chao.material.userData.__mapaNovo) { window.__chaoPintadoPronto = true; return; }
             t.encoding = T.sRGBEncoding; t.anisotropy = 8; // a mesma do chão que esta textura substitui
             chao.material.map = t; chao.material.needsUpdate = true;
             window.__chaoPintadoPronto = true;
@@ -1613,9 +1610,1486 @@
          * pousado». Ficam as árvores MORTAS (silhuetas de ramos, que se
          * lêem como forma pintada contra a névoa), mais longe (13–19,5 m),
          * mais rochas e mato baixo — tudo com sombra de contacto. */
-        anel(8, 13, 19.5, (x, z, i) => porPeca('modelos/cenario/arvores-mortas.glb', 'DeadTree_' + [5, 1, 3, 5, 1, 3, 5, 1][i % 8], x, z, 4.5 + rnd() * 2, 0.34, 0.44));
-        anel(10, 9.9, 13.5, (x, z, i) => porPeca('modelos/cenario/rochas.glb', 'Rock_' + (1 + (i % 5)), x, z, 0.9 + rnd() * 1.3, 0.8, 0.12));
-        anel(12, 9.6, 13.5, (x, z, i) => porPeca('modelos/cenario/arbustos.glb', i % 2 ? 'Bush' : 'Plant_1', x, z, 0.55 + rnd() * 0.4, 0.42, 0.38));
+        /* TROCA DE MAPA — SEPARAÇÃO (lei do Mestre, 21/11/2026 00:36:
+         * «Tudo do mapa antigo fica no mapa antigo»): nesta candidata,
+         * as peças GLB dos anéis do mundo antigo (árvores mortas,
+         * rochas, arbustos) NÃO são pedidas — a candidata constrói-se
+         * só com o mapa novo. A guarda é o delta; as três chamadas da
+         * base ficam intactas abaixo dela (o mapa antigo não se toca).
+         * O resto dos herdados sai na LIMPEZA no fim do bloco da troca. */
+        const TROCA_SEM_HERDADOS = true;
+        if (!TROCA_SEM_HERDADOS) {
+            anel(8, 13, 19.5, (x, z, i) => porPeca('modelos/cenario/arvores-mortas.glb', 'DeadTree_' + [5, 1, 3, 5, 1, 3, 5, 1][i % 8], x, z, 4.5 + rnd() * 2, 0.34, 0.44));
+            anel(10, 9.9, 13.5, (x, z, i) => porPeca('modelos/cenario/rochas.glb', 'Rock_' + (1 + (i % 5)), x, z, 0.9 + rnd() * 1.3, 0.8, 0.12));
+            anel(12, 9.6, 13.5, (x, z, i) => porPeca('modelos/cenario/arbustos.glb', i % 2 ? 'Bush' : 'Plant_1', x, z, 0.55 + rnd() * 0.4, 0.42, 0.38));
+        }
+
+        /* ================= TROCA DE MAPA — PASSO 2a: O CHÃO COBRE O SECTOR =================
+         * O chão da base tem 120×120 m e o sector da prova tem 260×260 m
+         * (em coordenadas do jogo: x −124..136, z −149..111) — sem isto,
+         * a maior parte das zonas aprovadas caía FORA do chão visível,
+         * sobre o plano de vazio. A geometria é substituída por um plano
+         * de 272×272 m centrado no centro do sector (6, −19), com o
+         * deslocamento COZIDO nos vértices (a posição local continua a
+         * ser a coordenada do mundo, como o bloco do TERRENO NOVO a
+         * jusante presume), alturas de alturaNova e 192×192 segmentos
+         * (a densidade da prova: 190×190 em 260 m). As cores por vértice
+         * são repintadas pelo bloco do TERRENO NOVO logo abaixo (ele
+         * itera a geometria actual); a geometria antiga é libertada. */
+        {
+            const geoNovaM = new T.PlaneGeometry(272, 272, 192, 192);
+            geoNovaM.rotateX(-Math.PI / 2);
+            geoNovaM.translate(6, 0, -19);
+            const posN = geoNovaM.attributes.position;
+            const corN = new Float32Array(posN.count * 3);
+            for (let i = 0; i < posN.count; i++) {
+                posN.setY(i, alturaNova(posN.getX(i), posN.getZ(i)));
+                corN[i * 3] = 1; corN[i * 3 + 1] = 1; corN[i * 3 + 2] = 1;
+            }
+            geoNovaM.setAttribute('color', new T.BufferAttribute(corN, 3));
+            geoNovaM.computeVertexNormals();
+            chao.geometry.dispose();
+            chao.geometry = geoNovaM;
+        }
+
+        /* ================= TROCA DE MAPA — TERRENO NOVO (troca-mapa) =================
+         * Passo 1 da troca (palavra do Mestre, 20/11/2026 23:40): o chão
+         * visível deixa a pele da arena (textura pintada com o disco do
+         * ritual) e veste a do mapa povoado — relva VIVA procedural da
+         * prova (a receita aprovada: base #4c7527, 24.000 lâminas, palha
+         * 3%), com as cores por vértice da receita da prova (verde vivo
+         * dominante, dourado só no coração das manchas, terra discreta,
+         * tinta do caminho, areia/lama/leito junto à água). O material
+         * continua Lambert — MATE por construção (sem termo especular,
+         * sem IBL): é assim que o item dele «chão muito liso e
+         * brilhante» (23:36) nasce corrigido neste mapa; o grão fino
+         * por coordenadas do mundo (a pele da integração reforçada)
+         * entra no Passo 2 do plano. E o lago ganha a sua água (disco
+         * simples neste passo; o reflexo planar da prova é o Passo 6).
+         * Coordenadas da prova: px = x − 6, pz = z + 19 (a origem do
+         * jogo está sobre a Clareira 1); lago no jogo: centro (42, 11),
+         * raio 30, água a −0,85. RNG privado (rndM): a sequência de
+         * `rnd` da cena não se consome. */
+        {
+            let semM = 20261120;
+            const rndM = () => (semM = (semM * 16807) % 2147483647) / 2147483647;
+            const ruidoM = (x, z, s) => Math.sin(x * s + Math.cos(z * s * 0.83) * 2.1) * Math.cos(z * s - Math.sin(x * s * 0.71) * 1.7);
+            const manchaOuroM = (px, pz) => ruidoM(px, pz, 0.016) * 0.5 + 0.5;
+            const manchaTerraM = (px, pz) => ruidoM(px + 40, pz - 25, 0.030) * 0.5 + 0.5;
+            const caminhoZM = px => -56 + (px + 130) * 0.52 + 15 * Math.sin(px * 0.020 + 0.6);
+            const distCaminhoM = (px, pz) => Math.abs(pz - caminhoZM(px)) + ruidoM(px, pz, 0.11) * 1.6;
+            const AGUA_Y_M2 = -0.85;
+            // textura de relva viva (a receita da prova, via canvas)
+            const cvM = document.createElement('canvas'); cvM.width = cvM.height = 1024;
+            const gM = cvM.getContext('2d');
+            gM.fillStyle = '#4c7527'; gM.fillRect(0, 0, 1024, 1024);
+            const tonsM = ['#5d8a33', '#679638', '#527d2c', '#71a23f', '#48702a', '#7fae47', '#3f6a24', '#86b04c'];
+            for (let i = 0; i < 24000; i++) {
+                const x = rndM() * 1024, y = rndM() * 1024, h = 5 + rndM() * 11;
+                gM.strokeStyle = rndM() < 0.03 ? '#8a7a3a' : tonsM[(rndM() * tonsM.length) | 0];
+                gM.globalAlpha = 0.25 + rndM() * 0.55; gM.lineWidth = 1 + rndM() * 1.6;
+                const inclM = (rndM() - 0.5) * 1.5;
+                gM.beginPath(); gM.moveTo(x, y); gM.lineTo(x + Math.sin(inclM) * h, y - Math.cos(inclM) * h); gM.stroke();
+            }
+            /* PERTO (21/11): a mesma folhagem caida da pele (a textura
+             * base e o grao da pele leem-se juntos ao pe da figura) */
+            for (let i = 0; i < 900; i++) {
+                gM.fillStyle = ['#8a7a3a', '#a8894a', '#6d5c2a'][(rndM() * 3) | 0];
+                gM.globalAlpha = 0.30 + rndM() * 0.45;
+                gM.beginPath(); gM.ellipse(rndM() * 1024, rndM() * 1024, 3 + rndM() * 5, 1.5 + rndM() * 2, rndM() * 3.2, 0, 7); gM.fill();
+            }
+            for (let i = 0; i < 500; i++) {
+                gM.fillStyle = '#2e521c';
+                gM.globalAlpha = 0.18 + rndM() * 0.3;
+                gM.beginPath(); gM.ellipse(rndM() * 1024, rndM() * 1024, 4 + rndM() * 9, 3 + rndM() * 6, rndM() * 3.2, 0, 7); gM.fill();
+            }
+            gM.globalAlpha = 1;
+            const texRelvaM = new T.CanvasTexture(cvM);
+            texRelvaM.wrapS = texRelvaM.wrapT = T.RepeatWrapping;
+            texRelvaM.repeat.set(54, 54);   // baldosa de ~2,2 m, como na prova (118 repetições / 260 m)
+            texRelvaM.encoding = T.sRGBEncoding; texRelvaM.anisotropy = 8;
+            chao.material.map = texRelvaM;
+            chao.material.userData.__mapaNovo = true;
+            chao.material.needsUpdate = true;
+            // cores por vértice: a receita da prova sobre o terreno novo
+            const posM = chao.geometry.attributes.position, corM = chao.geometry.attributes.color;
+            const mistM = (c, alvo, k) => [c[0] + (alvo[0] - c[0]) * k, c[1] + (alvo[1] - c[1]) * k, c[2] + (alvo[2] - c[2]) * k];
+            for (let i = 0; i < posM.count; i++) {
+                const x = posM.getX(i), z = posM.getZ(i), h = posM.getY(i);
+                const px = x - 6, pz = z + 19;
+                const ouro = manchaOuroM(px, pz), terra = manchaTerraM(px, pz);
+                const gO = Math.max(0, Math.min(1, (ouro - 0.60) / 0.40)), ouroF = gO * gO * (3 - 2 * gO);
+                let c = [0.70 + ouroF * 0.38, 1.00 + ouroF * 0.02, 0.50 - ouroF * 0.04];
+                if (terra > 0.80) c = mistM(c, [0.68, 0.58, 0.44], Math.min(0.30, (terra - 0.80) * 1.6));
+                const dp = distCaminhoM(px, pz);
+                const mC = Math.max(0, Math.min(1, (3.3 - dp) / 1.5)), mSuave = mC * mC * (3 - 2 * mC);
+                if (dp < 3.4) c = mistM(c, [0.86, 0.70, 0.50], mSuave * 0.30);
+                const rel = h - AGUA_Y_M2;
+                const quebra = ruidoM(px + 70, pz - 40, 0.045) * 0.5 + 0.5;
+                const faixaK = quebra > 0.58 ? 0.10 : (0.50 + 0.50 * (ruidoM(px, pz, 0.09) * 0.5 + 0.5));
+                if (rel < 0.42) c = mistM(c, [1.00, 0.93, 0.70], Math.min(1, Math.max(0, (0.42 - rel) / 0.34)) * faixaK);
+                if (rel < 0.15) c = mistM(c, [0.52, 0.45, 0.36], Math.min(1, Math.max(0, (0.15 - rel) / 0.24)) * (0.35 + 0.65 * faixaK));
+                /* os dois factores levam tecto 1 (correcção medida nos
+                 * passos 2–3): sem tecto, nas bacias fundas do terreno
+                 * (fundo até −2,3 m, fora do lago) o factor chegava a
+                 * 8–10 e a mistura EXTRAPOLAVA para cores negativas
+                 * (−1,41/0,18/−0,88 medidos por raycast), que a pintura
+                 * lia como magenta/verde puro — os «poços» das vistas
+                 * largas. Com o tecto, a bacia satura em areia/leito,
+                 * como na prova. */
+                if (rel < 0.0) c = mistM(c, [0.42, 0.48, 0.38], 0.75);
+                corM.setXYZ(i, c[0], c[1], c[2]);
+            }
+            corM.needsUpdate = true;
+            // a água do lago — VOLTA 2 DAS CORES (21/11): REFLEXO
+            // PLANAR VERDADEIRO, portado da prova aprovada (a técnica é
+            // a dela, linha a linha). A volta 1 só tinha trazido o
+            // núcleo de cor (profunda + fresnel para uma tinta lisa):
+            // medido na caixa do lago, a água da candidata tinha std
+            // de luminância 2,0 e 0,000 de píxeis escuros contra 24,2
+            // e 0,142 da prova — sem as silhuetas das árvores nem as
+            // manchas de céu, lia-se lisa e clara, e foi o que o olho
+            // do Mestre reprovou. Agora a cena renderiza espelhada
+            // para um alvo de 1024 com a câmera virtual de frustum
+            // oblíquo da prova, e a água amostra-o com a perturbação
+            // das ondas (textura de normais de ruído SUAVE da prova —
+            // a da volta 1 era ruído branco por píxel). Entram também
+            // as 9 manchas de brilho aditivas e a orla irregular do
+            // disco (raio+4 com tremido). PORTA DE QUALIDADE: o passe
+            // do reflexo só corre em alta/ultra (world.__nivelReflexo
+            // posto por definirPovoamento); em média/baixa, uReflA=0
+            // e a água fica com o núcleo de cor da volta 1 — declarado.
+            // A direcção do brilho do sol continua a seguir a luz da
+            // cena (na prova é uma constante igual à luz dela; na
+            // sonda as duas coincidem).
+            const cvNormA = document.createElement('canvas'); cvNormA.width = cvNormA.height = 256;
+            { const gA = cvNormA.getContext('2d'); const imgA = gA.createImageData(256, 256);
+              for (let yA = 0; yA < 256; yA++) for (let xA = 0; xA < 256; xA++) {
+                  const nA = ruidoM(xA * 0.9, yA * 0.9, 0.055) * 0.5 + ruidoM(xA * 0.9, yA * 0.9, 0.16) * 0.5;
+                  const iA = (yA * 256 + xA) * 4;
+                  imgA.data[iA] = 128 + nA * 60; imgA.data[iA + 1] = 128 + nA * 40; imgA.data[iA + 2] = 255; imgA.data[iA + 3] = 255;
+              }
+              gA.putImageData(imgA, 0, 0); }
+            const texNormA = new T.CanvasTexture(cvNormA);
+            texNormA.wrapS = texNormA.wrapT = T.RepeatWrapping;
+            const rtReflA = new T.WebGLRenderTarget(1024, 1024);
+            const texMatReflA = new T.Matrix4();
+            const camVirtA = new T.PerspectiveCamera();
+            const uniAguaM = {
+                uTempoA: { value: 0 },
+                uTexNormalA: { value: texNormA },
+                uTexReflA: { value: rtReflA.texture },
+                uMatReflA: { value: texMatReflA },
+                uReflA: { value: 0 },
+                uDirSolA: { value: new T.Vector3(0.17, 0.95, 0.23) },
+                uCorProfundaA: { value: new T.Color(0x0e3742) },
+                uCorReflexoA: { value: new T.Color(0.66, 0.90, 0.88) },
+                uCorSolA: { value: new T.Color(1.0, 0.72, 0.42) },
+                fogColor: { value: new T.Color(0xeccf9a) }, fogNear: { value: 230 }, fogFar: { value: 850 }
+            };
+            const matAguaM = new T.ShaderMaterial({
+                uniforms: uniAguaM, transparent: true, fog: true,
+                vertexShader: [
+                    'uniform mat4 uMatReflA;',
+                    'varying vec4 vReflA; varying vec3 vMundoA;',
+                    '#include <fog_pars_vertex>',
+                    'void main() {',
+                    '  vec4 wp = modelMatrix * vec4(position, 1.0);',
+                    '  vMundoA = wp.xyz;',
+                    '  vReflA = uMatReflA * vec4(position, 1.0);',
+                    '  vec4 mvPosition = viewMatrix * wp;',
+                    '  gl_Position = projectionMatrix * mvPosition;',
+                    '  #include <fog_vertex>',
+                    '}'
+                ].join('\n'),
+                fragmentShader: [
+                    'uniform sampler2D uTexReflA; uniform sampler2D uTexNormalA;',
+                    'uniform float uTempoA; uniform float uReflA;',
+                    'uniform vec3 uCorProfundaA; uniform vec3 uDirSolA; uniform vec3 uCorSolA; uniform vec3 uCorReflexoA;',
+                    'varying vec4 vReflA; varying vec3 vMundoA;',
+                    '#include <fog_pars_fragment>',
+                    'void main() {',
+                    '  vec3 n1 = texture2D(uTexNormalA, vMundoA.xz * 0.055 + vec2(uTempoA * 0.014, uTempoA * 0.009)).rgb * 2.0 - 1.0;',
+                    '  vec3 n2 = texture2D(uTexNormalA, vMundoA.xz * 0.17 - vec2(uTempoA * 0.011, -uTempoA * 0.013)).rgb * 2.0 - 1.0;',
+                    '  vec2 pert = n1.xy * 0.55 + n2.xy * 0.40;',
+                    '  vec3 N = normalize(vec3(pert.x * 0.28, 1.0, pert.y * 0.28));',
+                    '  vec3 V = normalize(cameraPosition - vMundoA);',
+                    '  float fres = pow(1.0 - max(dot(V, vec3(0.0, 1.0, 0.0)), 0.0), 3.0);',
+                    '  fres = mix(0.15, 0.82, fres);',
+                    '  vec2 puv = (vReflA.xy + pert * 0.09 * vReflA.w) / max(vReflA.w, 0.0001);',
+                    '  vec3 reflTex = texture2D(uTexReflA, puv).rgb * uCorReflexoA * 0.50;',
+                    '  vec3 refl = mix(uCorReflexoA * 0.40, reflTex, uReflA);',
+                    '  vec3 cor = mix(uCorProfundaA, refl, clamp(fres * 0.95, 0.0, 1.0));',
+                    '  vec3 R = reflect(-V, N);',
+                    '  float sd = max(dot(R, normalize(uDirSolA)), 0.0);',
+                    '  cor += uCorSolA * (pow(sd, 260.0) * 1.5 + pow(sd, 36.0) * 0.07);',
+                    '  gl_FragColor = vec4(cor, 0.94);',
+                    '  #include <tonemapping_fragment>',
+                    '  #include <encodings_fragment>',
+                    '  #include <fog_fragment>',
+                    '}'
+                ].join('\n')
+            });
+            matAguaM.userData.__pintado = true;   // a água guarda o seu brilho próprio: a pintura da casa salta-a
+            const geoAguaM = new T.CircleGeometry(34, 56);
+            { const pA = geoAguaM.attributes.position;
+              for (let iA = 1; iA < pA.count; iA++) {
+                  const xA = pA.getX(iA), yA = pA.getY(iA), dA = Math.hypot(xA, yA);
+                  if (dA > 1) { const kA = 1 + ruidoM(xA, yA, 0.06) * 0.16; pA.setXY(iA, xA * kA, yA * kA); }
+              }
+              pA.needsUpdate = true; }
+            const aguaM = new T.Mesh(geoAguaM, matAguaM);
+            aguaM.rotation.x = -Math.PI / 2;
+            aguaM.position.set(42, AGUA_Y_M2, 11);
+            aguaM.name = 'mapa-novo-agua';
+            scene.add(aguaM);
+            // manchas de brilho aditivas da prova (o brilho que se lê
+            // nos fotogramas dela; opacidade animada no onBeforeRender)
+            const cvBrilhoA = document.createElement('canvas'); cvBrilhoA.width = cvBrilhoA.height = 128;
+            { const gB = cvBrilhoA.getContext('2d');
+              const grB = gB.createRadialGradient(64, 64, 2, 64, 64, 64);
+              grB.addColorStop(0, 'rgba(255,236,190,0.85)'); grB.addColorStop(1, 'rgba(255,236,190,0)');
+              gB.fillStyle = grB; gB.fillRect(0, 0, 128, 128); }
+            const matBrilhoA = new T.MeshBasicMaterial({ map: new T.CanvasTexture(cvBrilhoA), transparent: true, blending: T.AdditiveBlending, depthWrite: false, opacity: 0.07, fog: false });
+            matBrilhoA.userData.__pintado = true;
+            for (let iB = 0; iB < 9; iB++) {
+                const brilho = new T.Mesh(new T.PlaneGeometry(5 + rndM() * 10, 3 + rndM() * 5), matBrilhoA);
+                const anB = rndM() * Math.PI * 2, rrB = rndM() * 30 * 0.72;
+                brilho.rotation.x = -Math.PI / 2; brilho.rotation.z = rndM() * 3;
+                brilho.position.set(42 + Math.cos(anB) * rrB, AGUA_Y_M2 + 0.03, 11 + Math.sin(anB) * rrB);
+                brilho.name = 'mapa-novo-brilho';
+                scene.add(brilho);
+            }
+            let solAguaM = null, reflEmCursoA = false;
+            const normReflA = new T.Vector3(0, 1, 0), posAguaA = new T.Vector3(42, AGUA_Y_M2, 11);
+            aguaM.onBeforeRender = (renderer, scene, camera) => {
+                uniAguaM.uTempoA.value = performance.now() / 1000;
+                if (!solAguaM) scene.traverse(o => { if (!solAguaM && o.isDirectionalLight) solAguaM = o; });
+                if (solAguaM) uniAguaM.uDirSolA.value.copy(solAguaM.position).normalize();
+                matBrilhoA.opacity = 0.10 + 0.05 * (0.5 + 0.5 * Math.sin(uniAguaM.uTempoA.value * 0.9));
+                uniAguaM.uReflA.value = 0;
+                if (reflEmCursoA || world.__nivelReflexoAgua === false) return;
+                /* o passe do reflexo: a receita da prova, com a
+                 * câmera corrente — espelho no plano da água, frustum
+                 * oblíquo a cortar tudo abaixo do plano, alvo 1024 */
+                const posCamA = new T.Vector3().setFromMatrixPosition(camera.matrixWorld);
+                const rotA = new T.Matrix4().extractRotation(camera.matrixWorld);
+                const olharA = new T.Vector3(0, 0, -1).applyMatrix4(rotA).add(posCamA);
+                const vistaA = new T.Vector3().subVectors(posAguaA, posCamA);
+                if (vistaA.dot(normReflA) > 0) return;
+                vistaA.reflect(normReflA).negate().add(posAguaA);
+                const alvoA = new T.Vector3().subVectors(posAguaA, olharA).reflect(normReflA).negate().add(posAguaA);
+                camVirtA.position.copy(vistaA);
+                camVirtA.up.copy(new T.Vector3(0, 1, 0).applyMatrix4(rotA).reflect(normReflA));
+                camVirtA.lookAt(alvoA);
+                camVirtA.near = camera.near; camVirtA.far = camera.far;
+                camVirtA.updateMatrixWorld();
+                camVirtA.projectionMatrix.copy(camera.projectionMatrix);
+                texMatReflA.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
+                texMatReflA.multiply(camVirtA.projectionMatrix);
+                texMatReflA.multiply(camVirtA.matrixWorldInverse);
+                texMatReflA.multiply(aguaM.matrixWorld);
+                const planoReflA = new T.Plane().setFromNormalAndCoplanarPoint(normReflA, posAguaA);
+                planoReflA.applyMatrix4(camVirtA.matrixWorldInverse);
+                const clipA = new T.Vector4(planoReflA.normal.x, planoReflA.normal.y, planoReflA.normal.z, planoReflA.constant);
+                const pmA = camVirtA.projectionMatrix;
+                const qqA = new T.Vector4(
+                    (Math.sign(clipA.x) + pmA.elements[8]) / pmA.elements[0],
+                    (Math.sign(clipA.y) + pmA.elements[9]) / pmA.elements[5],
+                    -1.0, (1.0 + pmA.elements[10]) / pmA.elements[14]);
+                clipA.multiplyScalar(2.0 / clipA.dot(qqA));
+                pmA.elements[2] = clipA.x; pmA.elements[6] = clipA.y;
+                pmA.elements[10] = clipA.z + 1.0 - 0.003; pmA.elements[14] = clipA.w;
+                aguaM.visible = false; reflEmCursoA = true;
+                const rtAntesA = renderer.getRenderTarget();
+                renderer.setRenderTarget(rtReflA);
+                renderer.state.buffers.depth.setMask(true);
+                if (renderer.autoClear) renderer.clear();
+                renderer.render(scene, camVirtA);
+                renderer.setRenderTarget(rtAntesA);
+                reflEmCursoA = false; aguaM.visible = true;
+                uniAguaM.uReflA.value = 1;
+            };
+            // lirios da prova (16 discos sobre a agua, 0x2c5d33)
+            const matLirioM = new T.MeshLambertMaterial({ color: 0x2c5d33 });
+            matLirioM.userData.__pintado = true;
+            /* PASSO 6 (21/11): os lirios liam o ambiente a intensidade
+             * 1 (por omissao) — residuo (3) do passo 5. A familia da
+             * vegetacao le a 0,55 (world.iblTroca.tufo, definido mais
+             * abaixo na pele); os lirios nascem ANTES desse recibo
+             * existir, por isso o mesmo valor entra aqui a nascenca. */
+            matLirioM.envMapIntensity = 0.55;
+            for (let i = 0; i < 16; i++) {
+                const aL = rndM() * Math.PI * 2, rL = 6 + rndM() * 20;
+                const lirio = new T.Mesh(new T.CircleGeometry(0.5 + rndM() * 0.7, 10), matLirioM);
+                lirio.rotation.x = -Math.PI / 2;
+                lirio.position.set(42 + Math.cos(aL) * rL, AGUA_Y_M2 + 0.03, 11 + Math.sin(aL) * rL);
+                lirio.name = 'mapa-novo-lirio';
+                scene.add(lirio);
+            }
+            world.mapaNovo = { lago: { x: 42, z: 11, r: 30, aguaY: AGUA_Y_M2 }, origemProva: { x: -6, z: 19 } };
+        }
+
+        /* ================= TROCA DE MAPA — LIMPEZA DOS HERDADOS =================
+         * Lei do Mestre (21/11/2026 00:36): «Tudo do mapa antigo fica
+         * no mapa antigo». A candidata constrói-se SÓ com o mapa novo
+         * (terreno + água; o povoamento entra no Passo 3). Tudo o que
+         * a base pôs na cena e pertence ao mundo antigo sai AQUI, no
+         * delta da troca — os ficheiros da base ficam intactos e o
+         * mapa antigo (o vivo) não é tocado. Inventário do que sai:
+         *  · a fogueira central do mundo (mundo.js): as 58 peças de
+         *    world.pecasFogueira (anel de pedras a r≈1,35 + brasas e
+         *    carvão no interior) e a luz dela (world.fontes.fogueira);
+         *  · os 3 braseiros do mundo (mundo.js): os grupos (pais das
+         *    chamas de world.fontes.chamas), as luzes deles
+         *    (world.fontes.tochas) e a decoração que este visual lhes
+         *    juntou (sprites de brilho/fumo e as PointLight 0xff8f3f
+         *    de distância 6,5);
+         *  · as pedras espalhadas e as ruínas do mundo (mundo.js):
+         *    os lotes instanciados de icosaedros (Lambert) — TODAS as
+         *    instâncias a escala 0, para o retrato do véu as capturar
+         *    mortas e nunca ressuscitarem; o lote fantasma gémeo
+         *    (Basic) fica com count 0 e invisível;
+         *  · as peças deste visual da arena: menires, pedaços e
+         *    contactos ('visual2-menir*', 'visual2-contacto*'), os
+         *    anéis pintados do horizonte ('visual2-anel-*') e o
+         *    círculo do ritual (disco, halo, cunhas, motes de brasas
+         *    e as duas luzes do ritual);
+         *  · as peças GLB dos anéis nem são pedidas (guarda
+         *    TROCA_SEM_HERDADOS, acima).
+         * Fica: o terreno novo e a água (mapa novo), a grelha e as
+         * figuras (o jogo). Fica também, invisível, a infra da base:
+         * o chão do mundo (já escondido pela base), o plano de vazio
+         * a −8 m e os dados world.obstaculos/braseiros (não se vêem;
+         * os obstáculos oficiais do mapa novo nascem no Passo 3).
+         * Reversível: basta apagar este bloco e a guarda para a cena
+         * voltar a ser a da base ao bit. */
+        {
+            const remover = new Set();
+            const tirar = o => { if (o) remover.add(o); };
+            (world.pecasFogueira || []).forEach(tirar);
+            if (world.fontes) {
+                tirar(world.fontes.fogueira);
+                (world.fontes.tochas || []).forEach(tirar);
+                (world.fontes.chamas || []).forEach(f => tirar(f.parent));
+            }
+            const mZero = new T.Matrix4().makeScale(0, 0, 0);
+            let lotesZerados = 0, instanciasZeradas = 0;
+            scene.traverse(o => {
+                const nome = o.name || '';
+                if (nome.indexOf('visual2-menir') === 0 || nome.indexOf('visual2-contacto') === 0
+                    || nome.indexOf('visual2-anel-') === 0 || nome === 'visual2-circulo-runas'
+                    || nome === 'visual2-halo-ritual' || nome.indexOf('visual2-cunha-ritual') === 0
+                    || nome === 'visual2-brasas-ritual' || nome === 'visual2-luz-ritual'
+                    || nome === 'visual2-luz-chao-ritual') tirar(o);
+                else if (o.isSprite && o.material && (o.material.map === texBrilho || o.material.map === texFumo)) tirar(o);
+                else if (o.isPointLight && o.color && o.color.getHex() === 0xff8f3f && Math.abs(o.distance - 6.5) < 0.01) tirar(o);
+                else if (o.isInstancedMesh && o.geometry && o.geometry.type === 'IcosahedronGeometry') {
+                    if (o.material && o.material.isMeshBasicMaterial) { o.count = 0; o.visible = false; }
+                    else { for (let i = 0; i < o.count; i++) o.setMatrixAt(i, mZero); lotesZerados++; instanciasZeradas += o.count; }
+                    o.instanceMatrix.needsUpdate = true;
+                }
+            });
+            remover.forEach(o => { if (o.parent) o.parent.remove(o); });
+            world.limpezaTroca = { objectosRemovidos: remover.size, lotesZerados, instanciasZeradas };
+            /* O recibo de carga (stats.pronto) esperava as 30 peças
+             * GLB dos anéis; sem herdados, não resta nenhuma carga
+             * assíncrona de cenário — a carga declara-se completa. */
+            stats.pronto = true;
+        }
+
+        /* PASSO 5 — AMBIENTE DO CÉU NOS LAMBERT DA TROCA (compensação
+         * medida e declarada): a prova aprovada tira o equilíbrio de cor
+         * do pipeline Standard+IBL/PMREM (irradiação do céu, azul
+         * incluído). Medido neste passo: o scene.environment no Lambert
+         * desta versão do three é quase inerte nas medianas (com/sem =
+         * idêntico; só a 3,0 mexe, e empurra o G para cima). O termo
+         * entra por isso DENTRO dos shaders da pele e dos tufos, como
+         * irradiação celeste aditiva no termo indirecto, com o albedo
+         * dessaturado a 80% (senão o B, quase ausente do albedo verde,
+         * nunca chega). Espectro = zénite da prova em linear. A força
+         * afina-se pela sonda das cores (world.ambTroca). */
+        const uniAmbTroca = { uAmbCeuT: { value: new T.Vector3(0.10, 0.18, 0.38) }, uAmbForcaT: { value: 0.38 } };
+        world.ambTroca = uniAmbTroca;
+
+        /* ================= TROCA DE MAPA — PASSO 2: PELE DO CHÃO REFORÇADA =================
+         * Item nomeado do Mestre (20/11/2026 23:36, sobre o vídeo do
+         * povoamento): «Só achei o chão muito liso e brilhante». O chão
+         * deste mapa já nasce MATE (Lambert: sem termo especular e sem
+         * IBL — o brilho da prova vinha do Standard+ARM+IBL dela); o
+         * que faltava era CORPO. Entra a pele da integração aprovada
+         * (o bloco INTEGRAÇÃO INÉRCIA (1) da candidata dadora): grão de
+         * relva viva e grão de terra amostrados por COORDENADAS DO
+         * MUNDO, com a MESMA receita de texturas da prova (relva viva
+         * com palha contida; terra com grãos e pedrinhas) — reforçada
+         * e RE-MASCARADA para este mapa: na arena a máscara poupava o
+         * disco do ritual e os anéis do horizonte, que aqui NÃO existem
+         * (lei: tudo do mapa antigo fica no mapa antigo); aqui o prado
+         * leva o grão em todo o lado e a TERRA manda no caminho (a
+         * mesma curva distCaminhoM do bloco do terreno, com o mesmo
+         * ruído) e nas margens do lago (pela altura sobre a água,
+         * vinda do vértice — o declive até à água é terra/lama, nunca
+         * relva até à linha de água). O material marca-se __pintado
+         * (a pintura da casa salta-o) e compõe ELE a fórmula exacta da
+         * pintura Lambert da casa (posterização suave de 4 patamares
+         * + split toning, mistura 0,6) — o aspecto pintado fica
+         * uniforme com o resto da cena. A baldosa da textura base
+         * alinha pela do grão (2,2 m, como os 118 reps/260 m da prova). */
+        {
+            const cvG = document.createElement('canvas'); cvG.width = cvG.height = 1024;
+            const gG = cvG.getContext('2d');
+            let semG = 20261121;
+            const rndG = () => (semG = (semG * 16807) % 2147483647) / 2147483647;
+            gG.fillStyle = '#4c7527'; gG.fillRect(0, 0, 1024, 1024);
+            const tonsG = ['#5d8a33', '#679638', '#527d2c', '#71a23f', '#48702a', '#7fae47', '#3f6a24', '#86b04c'];
+            for (let i = 0; i < 24000; i++) {
+                const x = rndG() * 1024, y = rndG() * 1024, h = 5 + rndG() * 11;
+                gG.strokeStyle = rndG() < 0.03 ? '#8a7a3a' : tonsG[(rndG() * tonsG.length) | 0];
+                gG.globalAlpha = 0.25 + rndG() * 0.55; gG.lineWidth = 1 + rndG() * 1.6;
+                const inclG = (rndG() - 0.5) * 1.5;
+                gG.beginPath(); gG.moveTo(x, y); gG.lineTo(x + Math.sin(inclG) * h, y - Math.cos(inclG) * h); gG.stroke();
+            }
+            /* PERTO (21/11): folhas secas e palha caida ENTRE as laminas
+             * e manchas escuras de humidade — ao pe, o chao le-se materia
+             * (folhagem caida, terra humida), nao impressao lisa. */
+            for (let i = 0; i < 900; i++) {
+                gG.fillStyle = ['#8a7a3a', '#a8894a', '#6d5c2a'][(rndG() * 3) | 0];
+                gG.globalAlpha = 0.30 + rndG() * 0.45;
+                gG.beginPath(); gG.ellipse(rndG() * 1024, rndG() * 1024, 3 + rndG() * 5, 1.5 + rndG() * 2, rndG() * 3.2, 0, 7); gG.fill();
+            }
+            for (let i = 0; i < 500; i++) {
+                gG.fillStyle = '#2e521c';
+                gG.globalAlpha = 0.18 + rndG() * 0.3;
+                gG.beginPath(); gG.ellipse(rndG() * 1024, rndG() * 1024, 4 + rndG() * 9, 3 + rndG() * 6, rndG() * 3.2, 0, 7); gG.fill();
+            }
+            gG.globalAlpha = 1;
+            const texRelvaG = new T.CanvasTexture(cvG);
+            texRelvaG.wrapS = texRelvaG.wrapT = T.RepeatWrapping; texRelvaG.encoding = T.sRGBEncoding; texRelvaG.anisotropy = 4;
+            const cvT = document.createElement('canvas'); cvT.width = cvT.height = 512;
+            const gT = cvT.getContext('2d');
+            gT.fillStyle = '#86643f'; gT.fillRect(0, 0, 512, 512);
+            const tonsT = ['#77572f', '#93703f', '#6d4f2c', '#9c7c4b', '#82653e'];
+            for (let i = 0; i < 11000; i++) {
+                gT.fillStyle = tonsT[(rndG() * tonsT.length) | 0];
+                gT.globalAlpha = 0.16 + rndG() * 0.4;
+                gT.fillRect(rndG() * 512, rndG() * 512, 1 + rndG() * 3, 1 + rndG() * 3);
+            }
+            for (let i = 0; i < 240; i++) {
+                gT.fillStyle = rndG() < 0.5 ? '#a08b62' : '#5f4630';
+                gT.globalAlpha = 0.5 + rndG() * 0.5;
+                gT.beginPath(); gT.arc(rndG() * 512, rndG() * 512, 0.8 + rndG() * 2.2, 0, 7); gT.fill();
+            }
+            /* PERTO (21/11): granulo com contraste — manchas escuras
+             * fundas e pontos claros de areia; folhas secas caidas na
+             * terra (elipses curtas de palha). De perto, a terra le-se
+             * materia com granulo, nao ruido impresso liso. */
+            for (let i = 0; i < 2600; i++) {
+                gT.fillStyle = rndG() < 0.55 ? '#4e3820' : '#b89a68';
+                gT.globalAlpha = 0.20 + rndG() * 0.35;
+                gT.fillRect(rndG() * 512, rndG() * 512, 1 + rndG() * 2, 1 + rndG() * 2);
+            }
+            for (let i = 0; i < 130; i++) {
+                gT.fillStyle = ['#a8894a', '#8a6f3a', '#c0a05e'][(rndG() * 3) | 0];
+                gT.globalAlpha = 0.35 + rndG() * 0.4;
+                gT.beginPath(); gT.ellipse(rndG() * 512, rndG() * 512, 2.5 + rndG() * 3.5, 1.2 + rndG() * 1.6, rndG() * 3.2, 0, 7); gT.fill();
+            }
+            gT.globalAlpha = 0.16; gT.strokeStyle = '#5f4630'; gT.lineWidth = 5;
+            for (const px of [150, 350]) { gT.beginPath(); gT.moveTo(px, 0); gT.lineTo(px + 14, 512); gT.stroke(); }
+            gT.globalAlpha = 1;
+            const texTerraG = new T.CanvasTexture(cvT);
+            texTerraG.wrapS = texTerraG.wrapT = T.RepeatWrapping; texTerraG.encoding = T.sRGBEncoding; texTerraG.anisotropy = 4;
+            if (chao.material.map) chao.material.map.repeat.set(124, 124);
+            const matChaoG = chao.material;
+            /* PASSO 5 (21/11): IBL DA PROVA — a prova aprovada lê-se
+             * com IBL/PMREM (o env dela, forest_slope_env, via PMREM
+             * para scene.environment); a candidata era Lambert sem
+             * ambiente: daí o resíduo verde-lima (G +22, B −12..−20)
+             * da volta 2. Porte fiel: o MESMO ficheiro de ambiente
+             * (cópia declarada na candidata), PMREM gerado com o
+             * renderer real no primeiro fotograma do chão (o visual
+             * não recebe o renderer na construção — o onBeforeRender
+             * do chão é a porta e corre uma vez). Forças por classe
+             * em world.iblTroca, afinadas por medição nas caixas da
+             * volta 1/2. */
+            const IBLT = { chao: 0.6, tufo: 0.55, glb: 0.75, feito: false, erro: null, texPronta: null };
+            world.iblTroca = IBLT;
+            new T.TextureLoader().load('forest_slope_env.png', (texEnvT) => {
+                texEnvT.mapping = T.EquirectangularReflectionMapping;
+                texEnvT.encoding = T.sRGBEncoding;
+                IBLT.texPronta = texEnvT;
+            }, undefined, () => { IBLT.erro = 'env falhou a carregar'; });
+            chao.onBeforeRender = (renderer) => {
+                if (IBLT.feito || !IBLT.texPronta) return;
+                IBLT.feito = true;
+                try {
+                    const pm = new T.PMREMGenerator(renderer);
+                    pm.compileEquirectangularShader();
+                    scene.environment = pm.fromEquirectangular(IBLT.texPronta).texture;
+                    pm.dispose();
+                } catch (e) { IBLT.erro = String((e && e.message) || e); }
+            };
+            matChaoG.envMapIntensity = IBLT.chao;
+            matChaoG.userData.__pintado = true;
+            /* VOLTA 2 DAS CORES (21/11): MAPA DE NORMAIS da prova no
+             * chão — é ele que dá à relva da prova o grão direccional
+             * (micro-sombra das lâminas, legível sobretudo ao ângulo
+             * rasante da vista 1); sem ele, o Lambert liso lia-se
+             * plano por mais grão de cor que a pele tivesse. Textura
+             * da própria prova (asset CC0 dela), baldosa de 2,2 m
+             * como a do difuso. */
+            const texNorG = new T.TextureLoader().load('textura-relva-nor.jpg');
+            texNorG.wrapS = texNorG.wrapT = T.RepeatWrapping; texNorG.repeat.set(124, 124); texNorG.anisotropy = 4;
+            matChaoG.normalMap = texNorG;
+            matChaoG.normalScale = new T.Vector2(0.9, 0.9);
+            /* PASSO 5 (21/11): AO da prova — o mapa ARM dela (canal
+             * R = oclusão ambiente), baldosa de 2,2 m como o difuso:
+             * a micro-sombra entre lâminas que faltava à cauda
+             * escura das amostras (fracEsc 0,003–0,076 contra
+             * 0,145–0,226 da prova). O aoMap lê o canal uv2, que
+             * partilha o uv do difuso. Cópia declarada do asset. */
+            const texArmG = new T.TextureLoader().load('textura-relva-arm.jpg');
+            texArmG.wrapS = texArmG.wrapT = T.RepeatWrapping; texArmG.repeat.set(124, 124); texArmG.anisotropy = 4;
+            chao.geometry.setAttribute('uv2', chao.geometry.attributes.uv);
+            matChaoG.aoMap = texArmG;
+            matChaoG.aoMapIntensity = 1.0;
+            const uniChaoG = { uRelvaG: { value: texRelvaG }, uTerraG: { value: texTerraG } };
+            Object.assign(uniChaoG, uniAmbTroca);
+            matChaoG.onBeforeCompile = (sh) => {
+                Object.assign(sh.uniforms, uniChaoG);
+                sh.vertexShader = sh.vertexShader
+                    .replace('#include <common>', '#include <common>\nvarying vec2 vMundoG; varying float vAltG; varying vec3 vNormG;')
+                    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMundoG = position.xz; vAltG = position.y; vNormG = normal;');
+                sh.fragmentShader = sh.fragmentShader
+                    .replace('#include <common>', `#include <common>
+                        varying vec2 vMundoG;
+                        varying float vAltG;
+                        varying vec3 vNormG;
+                        uniform sampler2D uRelvaG;
+                        uniform sampler2D uTerraG;
+                        uniform vec3 uAmbCeuT;
+                        uniform float uAmbForcaT;
+                        float ruidoGLG(vec2 p) { return sin(p.x + cos(p.y * 0.83) * 2.1) * cos(p.y - sin(p.x * 0.71) * 1.7); }
+                        float caminhoZG(vec2 pp) { return -56.0 + (pp.x + 130.0) * 0.52 + 15.0 * sin(pp.x * 0.020 + 0.6); }`)
+                    .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+                        /* PASSO 5: irradiação celeste (ver uniAmbTroca).
+                         * Nesta build do three o Lambert é por vértice:
+                         * o fragmento compõe em aomap_fragment (não há
+                         * lights_fragment_end) — medido: a âncora antiga
+                         * era um no-op silencioso e o B não mexia. */
+                        reflectedLight.indirectDiffuse += mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), 0.8) * uAmbCeuT * (uAmbForcaT * (0.35 + 0.65 * clamp(vNormG.y, 0.0, 1.0)));`)
+                    .replace('#include <map_fragment>', `#include <map_fragment>
+                        {
+                            vec2 ppG = vMundoG - vec2(6.0, -19.0);
+                            float dpG = abs(ppG.y - caminhoZG(ppG)) + ruidoGLG(ppG * 0.11) * 1.6;
+                            float terraCaminhoG = 1.0 - smoothstep(1.8, 3.4, dpG);
+                            /* VOLTA 2 DAS CORES (21/11): a terra de
+                             * margem é SÓ a do lago. A regra antiga
+                             * (altura absoluta) pintava areia em todos
+                             * os fundos de vale e o declive a 0,85
+                             * fazia o resto: na vista 1 lia-se uma
+                             * «praia» no meio do prado onde a prova
+                             * tem relva escura. Porta = distância ao
+                             * lago; declive desce para 0,35. */
+                            float dLagoG = length(vMundoG - vec2(42.0, 11.0));
+                            float terraMargemG = (1.0 - smoothstep(0.18, 0.55, vAltG + 0.85)) * smoothstep(46.0, 37.0, dLagoG);
+                            float terraDeclG = smoothstep(0.05, 0.20, 1.0 - vNormG.y) * 0.35;
+                            float terraG = max(max(terraCaminhoG * 0.92, terraMargemG * 0.85), terraDeclG);
+                            vec3 graoTerraG = mix(texture2D(uTerraG, vMundoG * 0.16).rgb, texture2D(uTerraG, vMundoG * 0.83).rgb, 0.35);
+                            float nTG = dot(texture2D(uTerraG, vMundoG * 2.9).rgb, vec3(0.299, 0.587, 0.114)) / 0.10;
+                            graoTerraG *= mix(1.0, clamp(0.55 + 0.45 * nTG, 0.60, 1.45), 0.6);
+                            vec3 baseG = diffuseColor.rgb;
+                            /* CORES (21/11): o difuso que entra JA e o produto
+                             * da prova (textura de relva viva x cor de vertice
+                             * da receita aprovada, no bloco do terreno). A pele
+                             * antiga SUBSTITUIA-o por um segundo produto
+                             * (grao x paleta x 1,78) — a paleta contada duas
+                             * vezes lavava o prado para lima e apagava as
+                             * manchas. Agora o grao entra NORMALIZADO
+                             * (multiplicador de media 1): contraste de perto
+                             * sem mexer na paleta aprovada. */
+                            vec3 graoRelvaG = texture2D(uRelvaG, vMundoG * 0.4545).rgb;
+                            float nG = dot(graoRelvaG, vec3(0.299, 0.587, 0.114)) / 0.1417;
+                            baseG *= mix(1.0, clamp(0.40 + 0.60 * nG, 0.45, 1.60), 0.95);
+                            /* MULTI-ESCALA (volta 3): duas amostras mais
+                             * finas do mesmo grao — a de 0,8 m RODADA 37
+                             * graus (quebra os tracos alinhados da baldosa,
+                             * que de longe se liam como riscos regulares
+                             * sobre a tela) e a de 0,25 m (micro-textura
+                             * ao pe da figura). De longe, fundem-se na
+                             * media; de perto, dao materia ao chao. */
+                            vec2 uvFinaG = mat2(0.80, 0.60, -0.60, 0.80) * (vMundoG * 1.25);
+                            float nFG = dot(texture2D(uRelvaG, uvFinaG).rgb, vec3(0.299, 0.587, 0.114)) / 0.1417;
+                            baseG *= mix(1.0, clamp(0.55 + 0.45 * nFG, 0.60, 1.40), 0.45);
+                            float nMG = dot(texture2D(uRelvaG, vMundoG * 4.05).rgb, vec3(0.299, 0.587, 0.114)) / 0.1417;
+                            baseG *= mix(1.0, clamp(0.62 + 0.38 * nMG, 0.70, 1.30), 0.40);
+                            /* FECHO DE COPA + tinta fria: na prova, vista
+                             * de cima, a massa de vegetacao fecha e o
+                             * prado escurece (micro-sombra das laminas,
+                             * que o Lambert liso nao tem); de esguelha,
+                             * quase nada muda. E o azul que falta e o do
+                             * ceu/IBL da prova. */
+                            vec3 vistaG = normalize(cameraPosition - vec3(vMundoG.x, vAltG, vMundoG.y));
+                            /* UNIFICACAO (21/11, noite): a faixa do
+                             * fecho desceu de (0,45..0,95) para
+                             * (0,03..0,30) — da camera de batalha
+                             * (vistaG.y ~0,87) o factor fica o mesmo
+                             * (s=1 nos dois mundos: 0,879 contra
+                             * 0,888, ~1%); da camera livre, o chao a
+                             * 5-30 m (vistaG.y 0,05-0,25) recebia
+                             * factor 1,0 e lia-se PALIDO contra os
+                             * tufos escuros — era metade do fosso
+                             * «dois mapas». Agora fecha tambem de
+                             * esguelha, na mesma familia. */
+                            baseG *= mix(1.0, 0.78, smoothstep(0.03, 0.30, vistaG.y) * 0.55);
+                            baseG *= vec3(0.84, 0.78, 1.05);
+                            /* manchas LARGAS: verde escuro e cheio nos
+                             * frescos (a mesma mascara da prova); o ouro
+                             * vem da cor de vertice, nao daqui */
+                            float ouroG = 0.5 + 0.5 * ruidoGLG(ppG * 0.016);
+                            /* o OURO nao entra aqui: a cor de vertice do
+                             * bloco do terreno ja o traz (a receita da
+                             * prova) — conta-lo outra vez deu o amarelo
+                             * lavado da volta 1 (medido: prado +73/+69
+                             * sobre a prova). Fica o verde escuro e cheio
+                             * dos frescos, que a receita de vertice nao tem. */
+                            baseG *= mix(vec3(1.0), vec3(0.55, 0.80, 0.45), smoothstep(0.45, 0.15, ouroG) * 0.38);
+                            /* RELEVO NA COR: vale mais escuro e humido,
+                             * cimo mais claro e seco */
+                            float altNG = clamp((vAltG + 2.3) / 8.8, 0.0, 1.0);
+                            baseG *= mix(vec3(1.0), vec3(0.62, 0.72, 0.58), smoothstep(0.45, 0.15, altNG) * mix(0.35, 1.0, smoothstep(34.0, 44.0, dLagoG)) * 0.75);
+                            baseG *= mix(vec3(1.0), vec3(1.05, 1.04, 0.96), smoothstep(0.60, 0.95, altNG) * 0.35);
+                            /* manchas de USO (0,3-1 m) e desgaste das
+                             * clareiras (centros gastos, terra a mostra) */
+                            float usoG = 0.5 + 0.5 * ruidoGLG(ppG * 2.6 + vec2(31.7, -12.3));
+                            float fUsoG = smoothstep(0.72, 0.90, usoG);
+                            baseG = mix(baseG, graoTerraG * 1.02, fUsoG * (1.0 - terraG) * 0.24);
+                            float dC1G = length(vMundoG);
+                            float dC2G = length(vMundoG - vec2(36.0, -49.0));
+                            float fClG = max(pow(max(0.0, 1.0 - dC1G / 26.0), 1.5), pow(max(0.0, 1.0 - dC2G / 22.0), 1.5));
+                            /* VOLTA 2: desgaste das clareiras 0,55 ->
+                             * 0,20 — na prova, clareira é relva sem
+                             * tufos, não areia */
+                            baseG = mix(baseG, graoTerraG * 1.05, fClG * 0.20 * (1.0 - terraG));
+                            diffuseColor.rgb = mix(baseG, graoTerraG, terraG);
+                            diffuseColor.rgb = mix(diffuseColor.rgb, graoTerraG * 0.82, fUsoG * terraG * 0.35);
+                        }`)
+                    ;
+            };
+            /* CORES (21/11): a pintura composta (posterização + split
+             * toning) SAIU da pele — arrefecia as sombras e esmagava os
+             * tufos; a prova aprovada não a tem. O chão lê-se cru, como
+             * na prova. */
+            matChaoG.customProgramCacheKey = () => 'troca-chao-pele-10';
+            matChaoG.needsUpdate = true;
+            world.peleTroca = { grao: 'coordenadas-do-mundo', baldosaM: 2.2, terra: ['caminho', 'margem-do-lago'] };
+        }
+
+        /* ================= TROCA DE MAPA — PASSO 3: POVOAMENTO NA CENA =================
+         * A distribuição APROVADA pelo Mestre (20/11/2026 23:36) e
+         * NATURALIZADA por ordem dele (23:44 — «tem umas bolas de matos
+         * do nada — não está natural»), executada na prova-inercia,
+         * entra na cena do jogo. Porte FIEL da prova: mesmas zonas,
+         * mesmas restrições (lago, caminho, clareiras), mesmos pesos,
+         * mesmas contagens-alvo, mesmos GLB (cópias byte-idênticas em
+         * modelos/cenario/). As posições constroem-se em coordenadas
+         * DA PROVA e convertem-se ao pousar (ponto do jogo = prova +
+         * (6, −19); a altura lê-se de world.height, que É a altura da
+         * prova convertida) — a composição aprovada não muda; a
+         * semente é própria desta cena, por isso os pés individuais
+         * diferem dos da prova, como em qualquer amostragem.
+         * Duas adaptações declaradas, ambas da candidata de integração
+         * (a dadora aprovada DESTE jogo, não da prova): (1) cada camada
+         * de tufos leva a ROSETA companheira — da câmera do jogo (alta,
+         * quase de cima) os planos verticais lêem-se como riscos e a
+         * roseta é o que dá o tufo redondo e cheio; (2) a camada
+         * «perto» da prova (11.000 tufos) NÃO entra: era um artefacto
+         * das câmeras baixas da prova — a densidade por anéis/qualidade
+         * é o passo 6, que parte desta base.
+         * Os GLB carregam assíncronos (o CampoWorld é síncrono): o
+         * recibo world.povoamentoTroca marca pronto=true quando tudo
+         * pousou, com as contagens por balde e os erros. Os OBSTÁCULOS
+         * oficiais substituem a lista antiga por inteiro no fim da
+         * carga (árvores r 0,5; pedras conforme a escala — regras no
+         * fim do bloco); as duas clareiras de combate ficam livres por
+         * construção (todas as amostragens as excluem). Os cortes por
+         * qualidade vivem em world.definirPovoamento(q) — frações no
+         * espírito da escada aprovada da prova; a amarração ao
+         * selector do jogo (cena.js) é item de integração do passo 7,
+         * como a amarração obstáculos↔visível. */
+        {
+            const LAGOPV = { x: 36, z: 30, r: 30 };   // centro do lago em coordenadas DA PROVA
+            const AGUA_Y_V = -0.85;
+            const alturaV = (px, pz) => world.height(px + 6, pz - 19);
+            const ruidoV = (x, z, s) => Math.sin(x * s + Math.cos(z * s * 0.83) * 2.1) * Math.cos(z * s - Math.sin(x * s * 0.71) * 1.7);
+            const caminhoZV = px => -56 + (px + 130) * 0.52 + 15 * Math.sin(px * 0.020 + 0.6);
+            const distCaminhoV = (px, pz) => Math.abs(pz - caminhoZV(px)) + ruidoV(px, pz, 0.11) * 1.6;
+            const manchaOuroV = (px, pz) => ruidoV(px, pz, 0.016) * 0.5 + 0.5;
+            const manchaTerraV = (px, pz) => ruidoV(px + 40, pz - 25, 0.030) * 0.5 + 0.5;
+            let semV = 917631;
+            const rndV = () => ((semV = (Math.imul(semV, 1664525) + 1013904223) >>> 0) / 4294967296);
+            const embaralharV = arr => { for (let i = arr.length - 1; i > 0; i--) { const j = (rndV() * (i + 1)) | 0; const t = arr[i]; arr[i] = arr[j]; arr[j] = t; } return arr; };
+            const CLAREIRAS_V = [[-6, 19, 26], [30, -30, 22]];
+            const naClareiraV = (x, z, folga) => CLAREIRAS_V.some(([cx, cz, r]) => Math.hypot(x - cx, z - cz) < r + (folga || 0));
+            const MANCHAS_V = [[-98, 40, 13], [58, -92, 12], [112, 8, 11], [34, -58, 12]];
+            const naManchaV = (x, z) => MANCHAS_V.some(([cx, cz, r]) => Math.hypot(x - cx, z - cz) < r);
+            function amostrarV(n, peso) {
+                const pts = []; let iter = 0;
+                while (pts.length < n && iter++ < n * 30) {
+                    const x = -128 + rndV() * 256, z = -128 + rndV() * 256;
+                    if (rndV() < peso(x, z)) pts.push([x, z]);
+                }
+                return pts;
+            }
+            function pontosZonaV(cx, cz, r, n, op) {
+                const pts = []; let iter = 0;
+                while (pts.length < n && iter++ < n * 60) {
+                    const a = rndV() * Math.PI * 2, rr = r * Math.sqrt(rndV());
+                    const x = cx + Math.cos(a) * rr, z = cz + Math.sin(a) * rr;
+                    if (Math.hypot(x - LAGOPV.x, z - LAGOPV.z) < (op.lagoMin || 33)) continue;
+                    if (distCaminhoV(x, z) < (op.camMin || 4.5)) continue;
+                    if (naClareiraV(x, z, 0)) continue;
+                    pts.push([x, z]);
+                }
+                return pts;
+            }
+            /* matrizes de um conjunto de pontos (coords da prova →
+             * do jogo ao pousar); a MESMA lista serve todas as
+             * sub-malhas de um GLB (tronco e folhas nunca se separam) */
+            const EUV = new T.Euler(), QTV = new T.Quaternion(), SCV = new T.Vector3(), PVV = new T.Vector3();
+            function matrizesV(pts, escMin, escMax, afundar) {
+                const mats = [], regs = [];
+                pts.forEach(([px, pz]) => {
+                    EUV.set(0, rndV() * Math.PI * 2, 0); QTV.setFromEuler(EUV);
+                    const e = escMin + rndV() * (escMax - escMin);
+                    SCV.set(e, e * (0.85 + rndV() * 0.4), e);
+                    PVV.set(px + 6, alturaV(px, pz) - (afundar || 0), pz - 19);
+                    mats.push(new T.Matrix4().compose(PVV.clone(), QTV.clone(), SCV.clone()));
+                    regs.push({ px, pz, e });
+                });
+                return { mats, regs };
+            }
+            function preencherV(im, pts, escMin, escMax, afundar) {
+                const pacote = matrizesV(pts, escMin, escMax, afundar);
+                pacote.mats.forEach((m, i) => im.setMatrixAt(i, m));
+                im.frustumCulled = false; scene.add(im);
+                return pacote.regs;
+            }
+            function texturaCanvasV(size, desenhar) {
+                const cv = document.createElement('canvas'); cv.width = cv.height = size;
+                desenhar(cv.getContext('2d'), size);
+                const t = new T.CanvasTexture(cv); t.encoding = T.sRGBEncoding; t.anisotropy = 4;
+                return t;
+            }
+            function cruzarV(larg, alt) {
+                const g = new T.BufferGeometry();
+                const pos = [], uv = [], idx = [];
+                for (let p = 0; p < 2; p++) {
+                    const a = p * Math.PI / 2, dx = Math.cos(a) * larg / 2, dz = Math.sin(a) * larg / 2, b = p * 4;
+                    pos.push(-dx, 0, -dz, dx, 0, dz, dx, alt, dz, -dx, alt, -dz);
+                    uv.push(0, 0, 1, 0, 1, 1, 0, 1);
+                    idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+                }
+                g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+                g.setAttribute('uv', new T.Float32BufferAttribute(uv, 2));
+                g.setIndex(idx); g.computeVertexNormals();
+                return g;
+            }
+            /* UNIFICACAO DAS CAMERAS (21/11, noite): a roseta deixou de
+             * ser um disco PLANO — era ele que dividia o mapa em dois
+             * estilos (de cima, o tapete «desenhado»; da camera livre,
+             * o disco lia-se de perfil e sumia, ficando so os planos
+             * verticais escuros sobre o chao claro). A roseta passa a
+             * um CONE baixo de 6 lados com a MESMA textura radial e UV
+             * planar (x,z -> uv): de cima le-se o mesmo disco de
+             * laminas no mesmo sitio; de lado, cada tufo ganha corpo —
+             * um montinho de relva com a textura e as cores do tapete —
+             * em vez de desaparecer. Custo: 6 tri/instancia (eram 2).
+             * Altura do cone: 0,5x o raio (~0,17 m na camada base). */
+            function geoRosetaV(raio) {
+                const seg = 6, R = raio * 1.05, alt = raio * 0.5, sobe = 0.01;
+                const pos = [0, alt + sobe, 0], uv = [0.5, 0.5], idx = [];
+                for (let i = 0; i < seg; i++) {
+                    const a = i / seg * Math.PI * 2, cx = Math.cos(a), sz = Math.sin(a);
+                    pos.push(cx * R, sobe, sz * R);
+                    uv.push(0.5 + cx * 0.5, 0.5 + sz * 0.5);
+                }
+                for (let i = 0; i < seg; i++) idx.push(0, ((i + 1) % seg) + 1, i + 1);
+                const g = new T.BufferGeometry();
+                g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+                g.setAttribute('uv', new T.Float32BufferAttribute(uv, 2));
+                g.setIndex(idx); g.computeVertexNormals();
+                return g;
+            }
+            /* vento (o material marca-se __pintado: a pintura da casa
+             * salta-o). CORES (21/11): a pintura composta que aqui vivia
+             * (posterização + split toning, mistura 0,6) SAIU — esmagava
+             * os tufos para pontos pretos ao longe e arrefecia a cena;
+             * a prova aprovada não a tem. No lugar dela entra o VEU DE
+             * DISTANCIA (extensão do Mestre, 21/11 08:18): a cor final
+             * das laminas mistura-se para a cor media do prado da prova
+             * (linear ~(0,10/0,20/0,03)) entre 40 e 150 m (x0,68) — ao longe os
+             * tufos FUNDEM-SE com o chao em vez de ficarem pontos sobre
+             * a tela; e a BASE de cada lamina escurece (uv.y 0 -> 0,35)
+             * para o tufo ASSENTAR no chao em vez de pousar sobre ele
+             * (extensão 08:22, o pintado de perto). */
+            const uTempoV = { value: 1.35 };
+            /* UNIFICACAO (21/11, noite): o escurecimento da base da
+             * lamina desceu de 0,55 para 0,74 e a faixa encurtou
+             * (0,35 -> 0,30) — de cima quase nao se ve a base das
+             * laminas (manda a roseta), mas da camera livre era este
+             * factor que lia cada tufo como uma mancha escura sobre o
+             * chao claro. O tufo continua a assentar (0,74 != 1,0). */
+            const VEU_LAM_V = `{
+                    gl_FragColor.rgb *= 0.92;
+                    gl_FragColor.rgb *= mix(0.74, 1.0, smoothstep(0.0, 0.30, vAltFrV));
+                    float fVeuV = smoothstep(40.0, 150.0, vDistV) * 0.68;
+                    gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.10, 0.20, 0.03), fVeuV);
+                }
+                #include <tonemapping_fragment>`;
+            const VEU_SO_V = `{
+                    gl_FragColor.rgb *= 0.92;
+                    float fVeuV = smoothstep(40.0, 150.0, vDistV) * 0.68;
+                    gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.10, 0.20, 0.03), fVeuV);
+                }
+                #include <tonemapping_fragment>`;
+            function aplicarVentoV(mat, amp, fase, altRef) {
+                mat.userData.__pintado = true;
+                mat.onBeforeCompile = (sh) => {
+                    sh.uniforms.uTempoV = uTempoV;
+                    Object.assign(sh.uniforms, uniAmbTroca);
+                    sh.vertexShader = sh.vertexShader
+                        .replace('#include <common>', '#include <common>\nuniform float uTempoV;\nvarying float vDistV;\nvarying float vAltFrV;\nvarying float vNyV;')
+                        .replace('#include <begin_vertex>', `#include <begin_vertex>
+                            {
+                                vec4 wpVento = modelMatrix * instanceMatrix * vec4(position, 1.0);
+                                float faseV = wpVento.x * 0.35 + wpVento.z * 0.41 + ${fase.toFixed(2)};
+                                float altV = clamp(position.y / ${altRef.toFixed(2)}, 0.0, 1.0);
+                                float balancoV = (sin(uTempoV * 1.9 + faseV) + 0.55 * sin(uTempoV * 3.7 + faseV * 1.7)) * ${amp.toFixed(3)} * altV * altV;
+                                transformed.x += balancoV;
+                                transformed.z += balancoV * 0.6;
+                                vec4 mvVento = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+                                vDistV = length(mvVento.xyz);
+                                vAltFrV = altV;
+                                vNyV = abs(normal.y);
+                            }`);
+                    sh.fragmentShader = sh.fragmentShader
+                        .replace('#include <common>', '#include <common>\nvarying float vDistV;\nvarying float vAltFrV;\nvarying float vNyV;\nuniform vec3 uAmbCeuT;\nuniform float uAmbForcaT;')
+                        .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+                            reflectedLight.indirectDiffuse += mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), 0.8) * uAmbCeuT * (uAmbForcaT * 0.8 * (0.5 + 0.5 * vNyV));`)
+                        .replace('#include <tonemapping_fragment>', VEU_LAM_V);
+                };
+                mat.customProgramCacheKey = () => 'troca-vento3-' + fase.toFixed(2) + '-' + amp.toFixed(3);
+            }
+            /* so o veu de distancia (sem vento, sem base): as rosetas,
+             * que vivem deitadas no chao — ao longe fundem-se com ele */
+            function aplicarSoVeuV(mat) {
+                mat.userData.__pintado = true;
+                mat.onBeforeCompile = (sh) => {
+                    Object.assign(sh.uniforms, uniAmbTroca);
+                    sh.vertexShader = sh.vertexShader
+                        .replace('#include <common>', '#include <common>\nvarying float vDistV;\nvarying float vAltFrV;\nvarying float vNyV;')
+                        .replace('#include <begin_vertex>', `#include <begin_vertex>
+                            {
+                                vec4 mvVeu = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+                                vDistV = length(mvVeu.xyz);
+                                vAltFrV = 1.0;
+                                vNyV = 1.0;
+                            }`);
+                    sh.fragmentShader = sh.fragmentShader
+                        .replace('#include <common>', '#include <common>\nvarying float vDistV;\nvarying float vAltFrV;\nvarying float vNyV;\nuniform vec3 uAmbCeuT;\nuniform float uAmbForcaT;')
+                        .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+                            reflectedLight.indirectDiffuse += mix(diffuseColor.rgb, vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), 0.8) * uAmbCeuT * (uAmbForcaT * 0.8);`)
+                        .replace('#include <tonemapping_fragment>', VEU_SO_V);
+                };
+                mat.customProgramCacheKey = () => 'troca-veu-roseta3';
+            }
+            /* — texturas dos tufos (receitas da prova) — */
+            const texTufoV = texturaCanvasV(256, (g, S) => {
+                let s2 = 777;
+                const rr = () => (s2 = (s2 * 16807) % 2147483647) / 2147483647;
+                g.clearRect(0, 0, S, S);
+                for (let i = 0; i < 46; i++) {
+                    const x0 = S * 0.5 + (rr() - 0.5) * S * 0.55, incl = (rr() - 0.5) * S * 0.5, h = S * (0.45 + rr() * 0.5);
+                    const gr = g.createLinearGradient(0, S, 0, S - h);
+                    gr.addColorStop(0, '#3c5c1c'); gr.addColorStop(1, rr() < 0.22 ? '#b39b4a' : '#79a843');
+                    g.strokeStyle = gr; g.lineWidth = 3.2 + rr() * 3.4; g.lineCap = 'round';
+                    g.beginPath(); g.moveTo(x0, S); g.quadraticCurveTo(x0 + incl * 0.3, S - h * 0.6, x0 + incl, S - h); g.stroke();
+                }
+            });
+            const texJuncoV = texturaCanvasV(256, (g, S) => {
+                let s2 = 4242;
+                const rr = () => (s2 = (s2 * 16807) % 2147483647) / 2147483647;
+                g.clearRect(0, 0, S, S);
+                for (let i = 0; i < 26; i++) {
+                    const x0 = S * 0.5 + (rr() - 0.5) * S * 0.6, incl = (rr() - 0.5) * S * 0.22, h = S * (0.7 + rr() * 0.3);
+                    g.strokeStyle = rr() < 0.3 ? '#7d8f3f' : '#5d7a2e'; g.lineWidth = 4.5 + rr() * 3; g.lineCap = 'round';
+                    g.beginPath(); g.moveTo(x0, S); g.quadraticCurveTo(x0 + incl * 0.3, S - h * 0.6, x0 + incl, S - h); g.stroke();
+                    if (rr() < 0.45) { g.fillStyle = '#6d4c2a'; g.beginPath(); g.ellipse(x0 + incl, S - h + 12, 4.5, 13, incl * 0.02, 0, 7); g.fill(); }
+                }
+            });
+            const texFlorV = texturaCanvasV(128, (g, S) => {
+                let s2 = 99;
+                const rr = () => (s2 = (s2 * 16807) % 2147483647) / 2147483647;
+                g.clearRect(0, 0, S, S);
+                g.strokeStyle = '#4d7030'; g.lineWidth = 3.4; g.lineCap = 'round';
+                for (let i = 0; i < 7; i++) {
+                    const x0 = S * (0.24 + rr() * 0.52);
+                    g.beginPath(); g.moveTo(x0, S); g.lineTo(x0 + (rr() - 0.5) * 12, S * 0.42); g.stroke();
+                    g.fillStyle = '#5d8438'; g.beginPath(); g.ellipse(x0, S * 0.8, 9, 4.4, rr(), 0, 7); g.fill();
+                }
+                const petalas = ['#e8e4da', '#e5cf6e', '#d9a0b8', '#c9d6ea'];
+                for (let i = 0; i < 6; i++) {
+                    const cx = S * (0.2 + rr() * 0.6), cy = S * (0.16 + rr() * 0.3), r = 5 + rr() * 4.6, cor = petalas[(rr() * petalas.length) | 0];
+                    g.fillStyle = cor;
+                    for (let p = 0; p < 5; p++) { const a = p / 5 * Math.PI * 2; g.beginPath(); g.ellipse(cx + Math.cos(a) * r * 0.72, cy + Math.sin(a) * r * 0.72, r * 0.62, r * 0.42, a, 0, 7); g.fill(); }
+                    g.fillStyle = '#e8a33c'; g.beginPath(); g.arc(cx, cy, r * 0.4, 0, 7); g.fill();
+                }
+            });
+            const texRosetaV = texturaCanvasV(256, (g, S) => {
+                let s2 = 31337;
+                const rr = () => (s2 = (s2 * 16807) % 2147483647) / 2147483647;
+                g.clearRect(0, 0, S, S);
+                const cx = S / 2, cy = S / 2;
+                for (let i = 0; i < 64; i++) {
+                    const a = rr() * Math.PI * 2, comp = S * (0.16 + rr() * 0.30);
+                    const x1 = cx + Math.cos(a) * comp, y1 = cy + Math.sin(a) * comp;
+                    const mx = cx + Math.cos(a + 0.35) * comp * 0.55, my = cy + Math.sin(a + 0.35) * comp * 0.55;
+                    const gr = g.createLinearGradient(cx, cy, x1, y1);
+                    gr.addColorStop(0, '#46681f'); gr.addColorStop(1, rr() < 0.2 ? '#a8923f' : '#7cab44');
+                    g.strokeStyle = gr; g.lineWidth = 3 + rr() * 3.4; g.lineCap = 'round';
+                    g.beginPath(); g.moveTo(cx, cy); g.quadraticCurveTo(mx, my, x1, y1); g.stroke();
+                }
+            });
+            /* — registo de baldes + recibo + cortes — */
+            const baldesV = {};
+            const registarV = (nome, im, trisPorInst) => { (baldesV[nome] = baldesV[nome] || []).push({ im, total: im.count, tris: trisPorInst }); };
+            const reciboV = { pronto: false, nivel: 'alta', baldes: {}, plantas: {}, obstaculos: 0, erros: [] };
+            world.povoamentoTroca = reciboV;
+            const FRAC_V = {
+                ultra: { tufos: 1, tufosAltos: 1, rosetas: 1, juncos: 1, flores: 1, fetosPH: 1, fetosKit: 1, arbustos: 1, arvores: 1, pedras: 1 },
+                alta: { tufos: 1, tufosAltos: 1, rosetas: 1, juncos: 1, flores: 1, fetosPH: 1, fetosKit: 1, arbustos: 1, arvores: 1, pedras: 1 },
+                media: { tufos: 0.38, tufosAltos: 0.6, rosetas: 0.38, juncos: 0.7, flores: 0.5, fetosPH: 0.35, fetosKit: 0.6, arbustos: 0.51, arvores: 0.55, pedras: 0.7 },
+                baixa: { tufos: 0.19, tufosAltos: 0.3, rosetas: 0.19, juncos: 0.5, flores: 0.3, fetosPH: 0, fetosKit: 0.3, arbustos: 0.32, arvores: 0.35, pedras: 0.5 },
+                /* PASSO 6 (21/11): ULTRA LEVE — a densidade minima do
+                 * degrau novo (aparelhos fracos): a relva quase sai
+                 * (o chao pintado aguenta a leitura de prado), as
+                 * arvores/pedras — que tambem sao leitura de
+                 * obstaculo — cortam menos. O reflexo planar ja
+                 * fica fora (so alta/ultra o ligam, abaixo). */
+                ultraleve: { tufos: 0.10, tufosAltos: 0.15, rosetas: 0.10, juncos: 0.35, flores: 0.15, fetosPH: 0, fetosKit: 0.15, arbustos: 0.20, arvores: 0.30, pedras: 0.40 }
+            };
+            world.definirPovoamento = (q) => {
+                const F = FRAC_V[q] || FRAC_V.alta;
+                for (const nome of Object.keys(baldesV)) {
+                    const f = (F[nome] !== undefined) ? F[nome] : 1;
+                    for (const b of baldesV[nome]) b.im.count = Math.round(b.total * f);
+                }
+                reciboV.nivel = q;
+                /* porta de qualidade do REFLEXO PLANAR da água (volta
+                 * 2 das cores): só alta/ultra pagam o passe extra */
+                world.__nivelReflexoAgua = (q === 'alta' || q === 'ultra');
+            };
+            const obstaculosV = [];
+            /* — TESTE DA RELVA (PASSO 6, 21/11) — item nomeado do
+             * Mestre (20/11 23:42: «Pode testar»): uma variante de
+             * tufos MAIORES e MAIS JUNTOS guardada como SEGUNDA
+             * configuração desta tabela. A configuração OFICIAL é a
+             * de hoje, ao bit (mesmos literais, mesma ordem de
+             * sorteios do RNG das posições — a cena aprovada não
+             * muda um tufo). A do TESTE só nasce quando a chave
+             * localStorage 'hudt1-relva-teste' está 'ligado' à
+             * construção (as sondas do passo ligam-na; o jogo, por
+             * omissão, constrói sempre a oficial). A configuração
+             * oficial só muda com o veredicto dele sobre a
+             * comparação — aí os valores do teste passam a ser os
+             * da linha 'oficial'. Recibo: povoamentoTroca.relva. */
+            let relvaTesteLigadoV = false;
+            try { relvaTesteLigadoV = localStorage.getItem('hudt1-relva-teste') === 'ligado'; } catch (_) {}
+            const CFG_RELVA_V = relvaTesteLigadoV ? {
+                nome: 'teste',
+                geoBase: [0.85, 0.72], escBase: [0.9, 1.6], nBase: 33000,
+                escPerto: [1.0, 1.8], nPerto: 15000, tentPerto: 220000,
+                geoAlto: [1.05, 1.30], escAlto: [0.9, 1.45], nAlto: 4200,
+                rosBase: 0.45, rosPerto: 0.45, rosAlto: 0.62
+            } : {
+                nome: 'oficial',
+                geoBase: [0.62, 0.52], escBase: [0.7, 1.35], nBase: 24000,
+                escPerto: [0.8, 1.5], nPerto: 11000, tentPerto: 140000,
+                geoAlto: [0.85, 1.05], escAlto: [0.75, 1.25], nAlto: 3400,
+                rosBase: 0.33, rosPerto: 0.33, rosAlto: 0.48
+            };
+            reciboV.relva = CFG_RELVA_V.nome;
+            /* — TUFOS BASE (peso da prova) + roseta — */
+            const pesoTufoV = (px, pz) => {
+                const rel = alturaV(px, pz) - AGUA_Y_V;
+                if (rel < 0.22) return 0;
+                let p = 0.34 + manchaOuroV(px, pz) * 0.30 + Math.max(0, ruidoV(px, pz, 0.05)) * 0.30;
+                if (naManchaV(px, pz)) p += 0.22;
+                const dp = distCaminhoV(px, pz);
+                if (dp < 2.2) return 0; if (dp < 3.4) p *= 0.4;
+                if (naClareiraV(px, pz, 0)) p *= 0.55;
+                return Math.min(p, 0.97);
+            };
+            const ptsTufoV = amostrarV(CFG_RELVA_V.nBase, pesoTufoV);
+            const matTufoV = new T.MeshLambertMaterial({ map: texTufoV, alphaTest: 0.45, side: T.DoubleSide });
+            matTufoV.envMapIntensity = world.iblTroca.tufo;
+            aplicarVentoV(matTufoV, 0.075, 0.0, CFG_RELVA_V.geoBase[1]);
+            const imTufoV = new T.InstancedMesh(cruzarV(CFG_RELVA_V.geoBase[0], CFG_RELVA_V.geoBase[1]), matTufoV, ptsTufoV.length);
+            preencherV(imTufoV, ptsTufoV, CFG_RELVA_V.escBase[0], CFG_RELVA_V.escBase[1], 0.03);
+            imTufoV.onBeforeRender = () => { uTempoV.value = performance.now() / 1000; };
+            /* cores por instância: AS RECEITAS DA PROVA (volta das
+             * cores, 21/11) — verde setHSL(0,295±0,015; 0,55; L
+             * 0,40–0,53), ouro setHSL(0,12; 0,50; L 0,46–0,53) nos
+             * corações de mancha > 0,66. Os valores RGB da integração
+             * foram abandonados: tinham sido escolhidos a compensar a
+             * pintura composta e a pele lima — removidas as duas, a
+             * régua volta a ser a receita da prova. Junto ao caminho,
+             * tom seco pisado. RNG privado (rndCorV): o fluxo de rndV
+             * das POSIÇÕES aprovadas não se consome aqui. */
+            let semCorV = 20261121;
+            const rndCorV = () => (semCorV = (semCorV * 16807) % 2147483647) / 2147483647;
+            { const cor = new T.Color();
+              ptsTufoV.forEach(([px, pz], i) => {
+                  const ouro = manchaOuroV(px, pz), cam = distCaminhoV(px, pz) < 3.4;
+                  if (cam) cor.setHSL(0.13, 0.38, 0.42 + rndCorV() * 0.08);
+                  else if (ouro > 0.66) cor.setHSL(0.12, 0.50, 0.46 + rndCorV() * 0.07);
+                  else cor.setHSL(0.295 + (rndCorV() - 0.5) * 0.03, 0.55, 0.40 + rndCorV() * 0.13);
+                  imTufoV.setColorAt(i, cor);
+              });
+              if (imTufoV.instanceColor) imTufoV.instanceColor.needsUpdate = true; }
+            registarV('tufos', imTufoV, 4);
+            const matRosV = new T.MeshLambertMaterial({ map: texRosetaV, alphaTest: 0.4, side: T.DoubleSide, color: new T.Color(0.82, 0.85, 0.78) });
+            matRosV.envMapIntensity = world.iblTroca.tufo;
+            aplicarSoVeuV(matRosV);
+            const imRosV = new T.InstancedMesh(geoRosetaV(CFG_RELVA_V.rosBase), matRosV, ptsTufoV.length);
+            preencherV(imRosV, ptsTufoV, 0.7, 1.35, -0.005);
+            /* CORES (21/11): as rosetas ganham a receita da prova por
+             * instância (não tinham nenhuma — liam-se cruas da textura,
+             * fora da paleta); um toque mais escuras que os tufos, por
+             * viverem coladas ao chão */
+            { const cor = new T.Color();
+              ptsTufoV.forEach(([px, pz], i) => {
+                  if (manchaOuroV(px, pz) > 0.66) cor.setHSL(0.12, 0.48, 0.42 + rndCorV() * 0.07);
+                  else cor.setHSL(0.295 + (rndCorV() - 0.5) * 0.03, 0.52, 0.36 + rndCorV() * 0.12);
+                  imRosV.setColorAt(i, cor);
+              });
+              if (imRosV.instanceColor) imRosV.instanceColor.needsUpdate = true; }
+            registarV('rosetas', imRosV, 6); /* cone: 6 tri */
+            /* — CAMADA «PERTO» DA PROVA (volta 2 das cores, 21/11):
+             * 11.000 tufos em anéis à volta de cinco focos — a camada
+             * que na prova fecha o miolo das vistas; a candidata só
+             * tinha os tufos base e ao olho do Mestre a relva lia-se
+             * «aos tufinhos separados». Receita da prova: mesmo
+             * cruzado dos tufos base, escala 0,8–1,5, aceitação
+             * pesoTufo×1,35. RNG privado (rndPertoV): os sorteios das
+             * camadas aprovadas não se consomem. Focos em coords. da
+             * prova: vale de entrada, clareira 1, junto ao orc do
+             * caminho, lago, norte. Registada nos baldes
+             * 'tufos'/'rosetas': os cortes de qualidade aplicam-lhe a
+             * mesma fracção dos tufos base. */
+            let semPertoV = 8112026;
+            const rndPertoV = () => (semPertoV = (semPertoV * 16807) % 2147483647) / 2147483647;
+            const focosPertoV = [[-30, 62, 34], [18, 8, 30], [-6, caminhoZV(-6) + 3.4, 15], [LAGOPV.x, LAGOPV.z, 40], [2, 55, 20]];
+            const ptsPertoV = [];
+            for (let tentV = 0; tentV < CFG_RELVA_V.tentPerto && ptsPertoV.length < CFG_RELVA_V.nPerto; tentV++) {
+                const fV = focosPertoV[(rndPertoV() * focosPertoV.length) | 0];
+                const aV = rndPertoV() * Math.PI * 2, rV = Math.sqrt(rndPertoV()) * fV[2];
+                const px = fV[0] + Math.cos(aV) * rV, pz = fV[1] + Math.sin(aV) * rV;
+                if (px < -128 || px > 128 || pz < -128 || pz > 128) continue;
+                if (rndPertoV() < pesoTufoV(px, pz) * 1.35) ptsPertoV.push([px, pz]);
+            }
+            const imPertoV = new T.InstancedMesh(cruzarV(CFG_RELVA_V.geoBase[0], CFG_RELVA_V.geoBase[1]), matTufoV, ptsPertoV.length);
+            preencherV(imPertoV, ptsPertoV, CFG_RELVA_V.escPerto[0], CFG_RELVA_V.escPerto[1], 0.03);
+            { const cor = new T.Color();
+              ptsPertoV.forEach(([px, pz], i) => {
+                  const ouro = manchaOuroV(px, pz), cam = distCaminhoV(px, pz) < 3.4;
+                  if (cam) cor.setHSL(0.13, 0.38, 0.42 + rndCorV() * 0.08);
+                  else if (ouro > 0.66) cor.setHSL(0.12, 0.50, 0.46 + rndCorV() * 0.07);
+                  else cor.setHSL(0.295 + (rndCorV() - 0.5) * 0.03, 0.55, 0.40 + rndCorV() * 0.13);
+                  imPertoV.setColorAt(i, cor);
+              });
+              if (imPertoV.instanceColor) imPertoV.instanceColor.needsUpdate = true; }
+            registarV('tufos', imPertoV, 4);
+            const imRosPertoV = new T.InstancedMesh(geoRosetaV(CFG_RELVA_V.rosPerto), matRosV, ptsPertoV.length);
+            preencherV(imRosPertoV, ptsPertoV, 0.8, 1.5, -0.005);
+            { const cor = new T.Color();
+              ptsPertoV.forEach(([px, pz], i) => {
+                  if (manchaOuroV(px, pz) > 0.66) cor.setHSL(0.12, 0.48, 0.42 + rndCorV() * 0.07);
+                  else cor.setHSL(0.295 + (rndCorV() - 0.5) * 0.03, 0.52, 0.36 + rndCorV() * 0.12);
+                  imRosPertoV.setColorAt(i, cor);
+              });
+              if (imRosPertoV.instanceColor) imRosPertoV.instanceColor.needsUpdate = true; }
+            registarV('rosetas', imRosPertoV, 6); /* cone: 6 tri */
+            /* — TUFOS ALTOS (manchas e manchas de ouro) + roseta — */
+            const pesoAltoV = (px, pz) => {
+                const rel = alturaV(px, pz) - AGUA_Y_V;
+                if (rel < 0.3) return 0;
+                let p = Math.max(0, manchaOuroV(px, pz) - 0.45) * 0.9;
+                if (naManchaV(px, pz)) p += 0.85;
+                const dp = distCaminhoV(px, pz);
+                if (dp < 2.6) return 0; if (dp < 4) p *= 0.35;
+                if (naClareiraV(px, pz, 0)) p *= 0.3;
+                return Math.min(p, 0.95);
+            };
+            const ptsAltoV = amostrarV(CFG_RELVA_V.nAlto, pesoAltoV);
+            const matAltoV = new T.MeshLambertMaterial({ map: texTufoV, alphaTest: 0.45, side: T.DoubleSide });
+            matAltoV.envMapIntensity = world.iblTroca.tufo;
+            aplicarVentoV(matAltoV, 0.11, 1.7, CFG_RELVA_V.geoAlto[1]);
+            const imAltoV = new T.InstancedMesh(cruzarV(CFG_RELVA_V.geoAlto[0], CFG_RELVA_V.geoAlto[1]), matAltoV, ptsAltoV.length);
+            preencherV(imAltoV, ptsAltoV, CFG_RELVA_V.escAlto[0], CFG_RELVA_V.escAlto[1], 0.03);
+            { const cor = new T.Color();
+              ptsAltoV.forEach(([px, pz], i) => {
+                  if (manchaOuroV(px, pz) > 0.66) cor.setHSL(0.12, 0.50, 0.46 + rndCorV() * 0.07);
+                  else cor.setHSL(0.295 + (rndCorV() - 0.5) * 0.03, 0.55, 0.42 + rndCorV() * 0.13);
+                  imAltoV.setColorAt(i, cor);
+              });
+              if (imAltoV.instanceColor) imAltoV.instanceColor.needsUpdate = true; }
+            registarV('tufosAltos', imAltoV, 4);
+            const imRosAltoV = new T.InstancedMesh(geoRosetaV(CFG_RELVA_V.rosAlto), matRosV, ptsAltoV.length);
+            preencherV(imRosAltoV, ptsAltoV, 0.75, 1.25, -0.005);
+            { const cor = new T.Color();
+              ptsAltoV.forEach(([px, pz], i) => {
+                  if (manchaOuroV(px, pz) > 0.66) cor.setHSL(0.12, 0.48, 0.42 + rndCorV() * 0.07);
+                  else cor.setHSL(0.295 + (rndCorV() - 0.5) * 0.03, 0.52, 0.38 + rndCorV() * 0.12);
+                  imRosAltoV.setColorAt(i, cor);
+              });
+              if (imRosAltoV.instanceColor) imRosAltoV.instanceColor.needsUpdate = true; }
+            registarV('rosetas', imRosAltoV, 6); /* cone: 6 tri */
+            /* — JUNCOS (grupos na margem do lago) — VOLTA 2 DAS CORES
+             * (21/11): receita afinada à da prova — 30 grupos no anel
+             * 0,86–1,06 do raio (metade dentro da água baixa, como na
+             * prova), 9–21 por grupo; a volta 1 tinha 4–9 por grupo
+             * num anel mais fora e um filtro de altura que matava os
+             * da água baixa: 121 contra ~450 da prova, e a margem
+             * lia-se nua nas fotos do lago. */
+            const ptsJuncoV = [];
+            for (let gI = 0; gI < 30; gI++) {
+                const a = rndV() * Math.PI * 2, rr = 30 * (0.86 + rndV() * 0.20);
+                const cx = LAGOPV.x + Math.cos(a) * rr, cz = LAGOPV.z + Math.sin(a) * rr, n = 9 + (rndV() * 13 | 0);
+                for (let k = 0; k < n; k++) {
+                    const px = cx + (rndV() - 0.5) * 3.0, pz = cz + (rndV() - 0.5) * 3.0;
+                    const rel = alturaV(px, pz) - AGUA_Y_V;
+                    if (rel > -1.2 && rel < 2.2) ptsJuncoV.push([px, pz]);
+                }
+            }
+            const matJuncoV = new T.MeshLambertMaterial({ map: texJuncoV, alphaTest: 0.45, side: T.DoubleSide });
+            matJuncoV.envMapIntensity = world.iblTroca.tufo;
+            aplicarVentoV(matJuncoV, 0.035, 3.1, 1.35);
+            const imJuncoV = new T.InstancedMesh(cruzarV(0.85, 1.35), matJuncoV, ptsJuncoV.length);
+            preencherV(imJuncoV, ptsJuncoV, 0.7, 1.1, 0.10);
+            registarV('juncos', imJuncoV, 4);
+            /* — FLORES (manchas de terra) — */
+            const ptsFlorV = amostrarV(520, (px, pz) => {
+                const rel = alturaV(px, pz) - AGUA_Y_V;
+                if (rel < 0.25) return 0;
+                let p = Math.max(0, manchaTerraV(px, pz) - 0.52) * 1.15;
+                const dp = distCaminhoV(px, pz);
+                if (dp < 2.4) return 0; if (dp < 4) p *= 0.4;
+                return Math.min(p, 0.9);
+            });
+            const imFlorV = new T.InstancedMesh(cruzarV(0.17, 0.3), new T.MeshLambertMaterial({ map: texFlorV, alphaTest: 0.45, side: T.DoubleSide }), ptsFlorV.length);
+            imFlorV.material.envMapIntensity = world.iblTroca.tufo;
+            preencherV(imFlorV, ptsFlorV, 0.8, 1.4, 0.02);
+            { const cor = new T.Color(); const tonsFlor = [[1, 1, 1], [1.06, 0.94, 0.62], [1.02, 0.82, 0.88], [0.9, 0.96, 1.05]];
+              ptsFlorV.forEach((_, i) => { const t = tonsFlor[(rndV() * tonsFlor.length) | 0]; cor.setRGB(t[0], t[1], t[2]); imFlorV.setColorAt(i, cor); });
+              if (imFlorV.instanceColor) imFlorV.instanceColor.needsUpdate = true; }
+            registarV('flores', imFlorV, 4);
+            /* contagens de PLANTAS (o recibo `baldes` conta
+             * malhas-instância para os cortes e o censo; as plantas
+             * verdadeiras — um GLB de 2 sub-malhas é UMA planta —
+             * vivem em reciboV.plantas) */
+            reciboV.plantas.tufos = ptsTufoV.length;
+            reciboV.plantas.tufosAltos = ptsAltoV.length;
+            reciboV.plantas.juncos = ptsJuncoV.length;
+            reciboV.plantas.flores = ptsFlorV.length;
+            /* — GLB do kit e da prova (assíncrono; o recibo fecha no fim) — */
+            const carregarGLBV = url => new Promise((res, rej) => new T.GLTFLoader().load(url, g => res(g.scene), undefined, rej));
+            const tentarGLBV = async (url) => { try { return await carregarGLBV(url); } catch (e) { reciboV.erros.push(url); return null; } };
+            function instanciarMultiV(raiz, pacote, sombras, variarFolhas) {
+                const malhas = []; raiz.updateMatrixWorld(true);
+                raiz.traverse(o => { if (o.isMesh) malhas.push(o); });
+                const saida = [];
+                for (const malha of malhas) {
+                    const geo = malha.geometry.clone().applyMatrix4(malha.matrixWorld);
+                    const tris = Math.round((geo.index ? geo.index.count : geo.attributes.position.count) / 3);
+                    /* CORES (21/11): o material CLONA-SE e marca-se
+                     * __pintado + __mapaPintado ANTES de entrar na cena —
+                     * a pintura da casa (polling) salta a vegetação e as
+                     * pedras do mapa novo: na prova aprovada elas lêem-se
+                     * CRUAS (Standard + IBL), e a pintura (posterização +
+                     * dessaturação 0,22 + rim + rugosidade) era a causa
+                     * das copas acastanhadas/quase pretas da candidata.
+                     * Figuras e mundo antigo guardam a pintura. */
+                    const matGLB = malha.material.clone();
+                    matGLB.envMapIntensity = world.iblTroca.glb;   // PASSO 5: IBL da prova nas copas/pedras (na prova lêem-se Standard + IBL)
+                    matGLB.userData.__pintado = true;
+                    matGLB.userData.__mapaPintado = true;
+                    const im = new T.InstancedMesh(geo, matGLB, pacote.mats.length);
+                    pacote.mats.forEach((m, i) => im.setMatrixAt(i, m));
+                    if (variarFolhas && malha.material && /folhas|leaves/i.test(malha.material.name || '')) {
+                        const cor = new T.Color();
+                        for (let i = 0; i < pacote.mats.length; i++) { cor.setRGB(0.85 + rndV() * 0.20, 0.88 + rndV() * 0.18, 0.82 + rndV() * 0.20); im.setColorAt(i, cor); }
+                        if (im.instanceColor) im.instanceColor.needsUpdate = true;
+                    }
+                    im.castShadow = !!sombras; im.frustumCulled = false;
+                    scene.add(im); saida.push({ im, tris });
+                }
+                return saida;
+            }
+            (async () => {
+                /* — ÁRVORES por zonas (a distribuição da prova) — */
+                const zonasArvV = [
+                    { cx: -78, cz: -62, r: 34, comum: 16, pinheiro: 6, torcida: 2 },
+                    { cx: 94, cz: 56, r: 28, comum: 12, pinheiro: 4, torcida: 2 },
+                    { cx: 100, cz: -54, r: 24, comum: 8, pinheiro: 5, torcida: 0 }
+                ];
+                const pedidosV = [];
+                for (const z of zonasArvV) for (const esp of ['comum', 'pinheiro', 'torcida']) for (let i = 0; i < z[esp]; i++) {
+                    const p = pontosZonaV(z.cx, z.cz, z.r, 1, { lagoMin: 35, camMin: 5 })[0];
+                    if (p) pedidosV.push({ esp, px: p[0], pz: p[1] });
+                }
+                for (const [px, pz, esp] of [[30, 80, 'comum'], [84, 42, 'comum'], [-40, 74, 'comum'], [-6, 70, 'torcida'], [66, -14, 'pinheiro']]) pedidosV.push({ esp, px, pz });
+                for (const [px, pz] of amostrarV(15, (x, z) => (Math.abs(x) > 92 || Math.abs(z) > 92) ? 0.8 : 0)) pedidosV.push({ esp: 'comum', px, pz });
+                const arvoresV = [];
+                for (const p of pedidosV) if (!arvoresV.some(a => Math.hypot(a.px - p.px, a.pz - p.pz) < 4.6)) arvoresV.push(p);
+                const VAR_ARV_V = { comum: [1, 2, 4], pinheiro: [1, 3, 4], torcida: [1, 3] };
+                const ESC_ARV_V = { comum: [0.95, 1.45], pinheiro: [0.95, 1.40], torcida: [0.52, 0.66] };
+                const URL_ARV_V = { comum: v => `modelos/cenario/arvore-comum-${v}.glb`, pinheiro: v => `modelos/cenario/pinheiro-${v}.glb`, torcida: v => `modelos/cenario/arvore-torcida-${v}.glb` };
+                for (const esp of ['comum', 'pinheiro', 'torcida']) {
+                    const doTipo = arvoresV.filter(a => a.esp === esp);
+                    const vars = VAR_ARV_V[esp];
+                    for (let vi = 0; vi < vars.length; vi++) {
+                        const sub = embaralharV(doTipo.filter((_, i) => i % vars.length === vi));
+                        if (!sub.length) continue;
+                        const raiz = await tentarGLBV(URL_ARV_V[esp](vars[vi]));
+                        if (!raiz) continue;
+                        const pacote = matrizesV(sub.map(a => [a.px, a.pz]), ESC_ARV_V[esp][0], ESC_ARV_V[esp][1], 0.06);
+                        instanciarMultiV(raiz, pacote, true, true).forEach(({ im, tris }) => registarV('arvores', im, tris));
+                        sub.forEach(a => obstaculosV.push({ x: a.px + 6, z: a.pz - 19, r: 0.5, h: 10 }));
+                    }
+                }
+                /* — árvores mortas + tronco caído — */
+                for (const [ficheiro, px, pz, eMin, eMax] of [['arvore-morta-1', -38, 6, 0.95, 1.0], ['arvore-morta-2', 96, -78, 0.85, 0.9]]) {
+                    const raiz = await tentarGLBV(`modelos/cenario/${ficheiro}.glb`);
+                    if (!raiz) continue;
+                    const pacote = matrizesV([[px, pz]], eMin, eMax, 0.04);
+                    instanciarMultiV(raiz, pacote, true, false).forEach(({ im, tris }) => registarV('arvores', im, tris));
+                    obstaculosV.push({ x: px + 6, z: pz - 19, r: 0.5, h: 8 });
+                }
+                { const texCascaV = new T.TextureLoader().load('modelos/cenario/casca-dif.jpg');
+                  texCascaV.encoding = T.sRGBEncoding; texCascaV.wrapS = texCascaV.wrapT = T.RepeatWrapping; texCascaV.repeat.set(3, 1);
+                  const matTroncoV = new T.MeshLambertMaterial({ map: texCascaV });
+                  matTroncoV.envMapIntensity = world.iblTroca.glb;
+                  matTroncoV.userData.__pintado = true; matTroncoV.userData.__mapaPintado = true;   // CORES (21/11): a casca lê-se crua, como na prova — a pintura da casa salta-a
+                  const troncoV = new T.Mesh(new T.CylinderGeometry(0.16, 0.24, 7.5, 7), matTroncoV);
+                  troncoV.rotation.z = Math.PI / 2; troncoV.rotation.y = 0.7;
+                  troncoV.position.set(2 + 6, alturaV(2, 52) + 0.22, 52 - 19);
+                  troncoV.castShadow = true; scene.add(troncoV); }
+                /* — PEDRAS MÉDIAS do kit + afloramentos — */
+                const ptsPedraKitV = [];
+                for (let i = 0; i < 10; i++) { const a = rndV() * Math.PI * 2, rr = 31 + rndV() * 6; ptsPedraKitV.push([LAGOPV.x + Math.cos(a) * rr, LAGOPV.z + Math.sin(a) * rr]); }
+                ptsPedraKitV.push(...amostrarV(22, (x, z) => { const rel = alturaV(x, z) - AGUA_Y_V; if (rel < 1.0 || distCaminhoV(x, z) < 5 || naClareiraV(x, z, -6)) return 0; return naManchaV(x, z) ? 0.55 : 0.16; }));
+                embaralharV(ptsPedraKitV);
+                const tercoKV = Math.ceil(ptsPedraKitV.length / 3);
+                for (const [vi, fatia] of [[1, ptsPedraKitV.slice(0, tercoKV)], [2, ptsPedraKitV.slice(tercoKV, tercoKV * 2)], [3, ptsPedraKitV.slice(tercoKV * 2)]]) {
+                    if (!fatia.length) continue;
+                    const raiz = await tentarGLBV(`modelos/cenario/pedra-media-${vi}.glb`);
+                    if (!raiz) continue;
+                    const pacote = matrizesV(fatia, 0.6, 1.5, 0.14);
+                    instanciarMultiV(raiz, pacote, true, false).forEach(({ im, tris }) => registarV('pedras', im, tris));
+                    pacote.regs.forEach(rg => { if (rg.e >= 1.0) obstaculosV.push({ x: rg.px + 6, z: rg.pz - 19, r: Math.round(1.1 * rg.e * 100) / 100, h: Math.round(1.5 * rg.e * 100) / 100 }); });
+                }
+                const ptsAflorV = [];
+                for (const [cx, cz] of [[-104, -16], [58, 92], [16, -96]]) { const n = 4 + (rndV() * 2 | 0); for (let i = 0; i < n; i++) ptsAflorV.push([cx + (rndV() - 0.5) * 7, cz + (rndV() - 0.5) * 7]); }
+                for (const [vi, fatia, eMin, eMax] of [[1, ptsAflorV.filter((_, i) => i % 2 === 0), 1.8, 3.1], [3, ptsAflorV.filter((_, i) => i % 2 === 1), 1.8, 3.0]]) {
+                    if (!fatia.length) continue;
+                    const raiz = await tentarGLBV(`modelos/cenario/pedra-media-${vi}.glb`);
+                    if (!raiz) continue;
+                    const pacote = matrizesV(fatia, eMin, eMax, 0.30);
+                    instanciarMultiV(raiz, pacote, true, false).forEach(({ im, tris }) => registarV('pedras', im, tris));
+                    pacote.regs.forEach(rg => obstaculosV.push({ x: rg.px + 6, z: rg.pz - 19, r: Math.round(1.1 * rg.e * 100) / 100, h: Math.round(1.5 * rg.e * 100) / 100 }));
+                }
+                /* — FETOS PH (margem do lago, caminho, bosques, manchas) — */
+                const ptsFetoV = [
+                    ...amostrarV(64, (x, z) => { const rel = alturaV(x, z) - AGUA_Y_V; return (rel > 0.3 && rel < 1.9) ? 0.85 : 0; }),
+                    ...amostrarV(28, (x, z) => { const dp = distCaminhoV(x, z); return (dp > 2.2 && dp < 5.2) ? 0.6 : 0; }),
+                    ...pontosZonaV(-78, -62, 30, 16, { lagoMin: 35, camMin: 4 }),
+                    ...pontosZonaV(94, 56, 25, 12, { lagoMin: 35, camMin: 4 }),
+                    ...pontosZonaV(100, -54, 21, 8, { lagoMin: 35, camMin: 4 })
+                ];
+                for (const [cx, cz, r] of MANCHAS_V) ptsFetoV.push(...pontosZonaV(cx, cz, r, 9, { lagoMin: 35, camMin: 3.4 }));
+                embaralharV(ptsFetoV);
+                const metadeFV = Math.ceil(ptsFetoV.length / 2);
+                for (const [ficheiro, fatia, eMin, eMax] of [['fern-a', ptsFetoV.slice(0, metadeFV), 0.9, 1.6], ['fern-b', ptsFetoV.slice(metadeFV), 0.8, 1.4]]) {
+                    if (!fatia.length) continue;
+                    const raiz = await tentarGLBV(`modelos/cenario/${ficheiro}.glb`);
+                    if (!raiz) continue;
+                    const pacote = matrizesV(fatia, eMin, eMax, 0.02);
+                    instanciarMultiV(raiz, pacote, false, false).forEach(({ im, tris }) => registarV('fetosPH', im, tris));
+                }
+                /* — PEDRAS PH (anel do lago + prado) — */
+                const ptsPedraPHV = [];
+                for (let i = 0; i < 11; i++) {
+                    const a = rndV() * Math.PI * 2, rr = 31.5 + rndV() * 4;
+                    const x = LAGOPV.x + Math.cos(a) * rr, z = LAGOPV.z + Math.sin(a) * rr;
+                    ptsPedraPHV.push([x, z]);
+                    if (rndV() < 0.55) ptsPedraPHV.push([x + (rndV() - 0.5) * 3.4, z + (rndV() - 0.5) * 3.4]);
+                }
+                ptsPedraPHV.push(...amostrarV(9, (x, z) => { const rel = alturaV(x, z) - AGUA_Y_V; if (rel < 1.2 || distCaminhoV(x, z) < 5.5 || naClareiraV(x, z, 0)) return 0; return naManchaV(x, z) ? 0.5 : 0.10; }));
+                const PONTOS_ROCHA_V = ptsPedraPHV.slice();
+                embaralharV(ptsPedraPHV);
+                const tercoRV = Math.ceil(ptsPedraPHV.length / 3);
+                for (const [ficheiro, fatia, eMin, eMax] of [['rock-a', ptsPedraPHV.slice(0, tercoRV), 0.5, 1.3], ['rock-b', ptsPedraPHV.slice(tercoRV, tercoRV * 2), 0.5, 1.4], ['rock-c', ptsPedraPHV.slice(tercoRV * 2), 0.5, 1.2]]) {
+                    if (!fatia.length) continue;
+                    const raiz = await tentarGLBV(`modelos/cenario/${ficheiro}.glb`);
+                    if (!raiz) continue;
+                    const pacote = matrizesV(fatia, eMin, eMax, 0.16);
+                    instanciarMultiV(raiz, pacote, true, false).forEach(({ im, tris }) => registarV('pedras', im, tris));
+                    pacote.regs.forEach(rg => { if (rg.e >= 0.9) obstaculosV.push({ x: rg.px + 6, z: rg.pz - 19, r: Math.round(0.8 * rg.e * 100) / 100, h: Math.round(1.1 * rg.e * 100) / 100 }); });
+                }
+                /* — FETOS do kit (manchas e bosques) — */
+                const ptsFetoKitV = [];
+                for (const [cx, cz, r] of MANCHAS_V) ptsFetoKitV.push(...pontosZonaV(cx, cz, r, 15, { lagoMin: 35, camMin: 3.4 }));
+                ptsFetoKitV.push(...pontosZonaV(-78, -62, 30, 12, { lagoMin: 35, camMin: 4 }));
+                ptsFetoKitV.push(...pontosZonaV(94, 56, 25, 10, { lagoMin: 35, camMin: 4 }));
+                embaralharV(ptsFetoKitV);
+                { const raiz = await tentarGLBV('modelos/cenario/feto-kit.glb');
+                  if (raiz) { const pacote = matrizesV(ptsFetoKitV, 0.8, 1.5, 0.03); instanciarMultiV(raiz, pacote, false, false).forEach(({ im, tris }) => registarV('fetosKit', im, tris)); } }
+                /* — ARBUSTOS NATURALIZADOS (o bloco exacto da prova:
+                 * grupos irregulares amarrados a orlas dos bosques,
+                 * pedras, anel do lago e bordas do caminho; cada pé com
+                 * escala anisotrópica própria e afundamento próprio;
+                 * RNG privado com a semente da prova) — */
+                let semBV = 20261121;
+                const rndBV = () => (semBV = (semBV * 16807) % 2147483647) / 2147483647;
+                const podeMatoV = (x, z) => Math.hypot(x - LAGOPV.x, z - LAGOPV.z) >= 33 && distCaminhoV(x, z) >= 3.4 && !naClareiraV(x, z, 1);
+                const pesBV = [];
+                const grupoBV = (cx, cz, n, rMin, rMax) => {
+                    for (let i = 0; i < n; i++) {
+                        const a = rndBV() * Math.PI * 2, d = rMin + rndBV() * (rMax - rMin);
+                        const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
+                        if (!podeMatoV(x, z)) continue;
+                        const e = 0.55 + rndBV() * 1.05;
+                        pesBV.push({ x, z, sx: e * (0.8 + rndBV() * 0.55), sy: e * (0.75 + rndBV() * 0.5), sz: e * (0.8 + rndBV() * 0.55), af: 0.08 + rndBV() * 0.16 });
+                    }
+                };
+                for (const [cx, cz, r] of [[-78, -62, 34], [94, 56, 28], [100, -54, 24]]) for (let a = 0; a < 5; a++) {
+                    const ang = rndBV() * Math.PI * 2, rr = r * (0.82 + rndBV() * 0.25);
+                    grupoBV(cx + Math.cos(ang) * rr, cz + Math.sin(ang) * rr, 3 + (rndBV() * 4 | 0), 1.2, 3.4);
+                }
+                for (const [cx, cz, r] of MANCHAS_V) {
+                    grupoBV(cx + (rndBV() - 0.5) * r * 0.8, cz + (rndBV() - 0.5) * r * 0.8, 4 + (rndBV() * 4 | 0), 1.0, 3.0);
+                    grupoBV(cx + (rndBV() - 0.5) * r * 0.8, cz + (rndBV() - 0.5) * r * 0.8, 4 + (rndBV() * 4 | 0), 1.0, 3.0);
+                    for (let s = 0; s < 2; s++) {
+                        const ang = rndBV() * Math.PI * 2, rr = r * (0.55 + rndBV() * 0.5);
+                        grupoBV(cx + Math.cos(ang) * rr, cz + Math.sin(ang) * rr, 1 + (rndBV() * 2 | 0), 0.5, 1.5);
+                    }
+                }
+                PONTOS_ROCHA_V.forEach(([rx, rz], i) => { if (i % 2 === 0) grupoBV(rx, rz, 2 + (rndBV() * 3 | 0), 0.8, 2.0); });
+                for (let a = 0; a < 5; a++) {
+                    const ang = rndBV() * Math.PI * 2, rr = 36 + rndBV() * 9;
+                    grupoBV(LAGOPV.x + Math.cos(ang) * rr, LAGOPV.z + Math.sin(ang) * rr, 2 + (rndBV() * 4 | 0), 1.2, 3.2);
+                }
+                for (let a = 0; a < 6; a++) {
+                    const px = -110 + rndBV() * 230, lado = rndBV() < 0.5 ? -1 : 1;
+                    grupoBV(px, caminhoZV(px) + lado * (3.6 + rndBV() * 2.9), 2 + (rndBV() * 3 | 0), 1.0, 2.6);
+                }
+                const pesNormaisV = pesBV.filter((_, i) => i % 5 !== 4);
+                const pesFloresV = pesBV.filter((_, i) => i % 5 === 4);
+                const pacoteArbV = (pes) => {
+                    const mats = [];
+                    for (const p of pes) {
+                        EUV.set(0, rndBV() * Math.PI * 2, 0); QTV.setFromEuler(EUV);
+                        SCV.set(p.sx, p.sy, p.sz);
+                        PVV.set(p.x + 6, alturaV(p.x, p.z) - p.af, p.z - 19);
+                        mats.push(new T.Matrix4().compose(PVV.clone(), QTV.clone(), SCV.clone()));
+                    }
+                    return { mats, regs: [] };
+                };
+                for (const [ficheiro, pes] of [['arbusto', pesNormaisV], ['arbusto-flores', pesFloresV]]) {
+                    if (!pes.length) continue;
+                    const raiz = await tentarGLBV(`modelos/cenario/${ficheiro}.glb`);
+                    if (!raiz) continue;
+                    instanciarMultiV(raiz, pacoteArbV(pes), true, true).forEach(({ im, tris }) => registarV('arbustos', im, tris));
+                }
+                /* — fecho: obstáculos oficiais + recibo — */
+                reciboV.plantas.arvores = arvoresV.length + 2;
+                reciboV.plantas.pedras = ptsPedraKitV.length + ptsAflorV.length + ptsPedraPHV.length;
+                reciboV.plantas.fetosPH = ptsFetoV.length;
+                reciboV.plantas.fetosKit = ptsFetoKitV.length;
+                reciboV.plantas.arbustos = pesBV.length;
+                world.obstaculos = Object.freeze(obstaculosV);
+                reciboV.obstaculos = obstaculosV.length;
+                /* PASSO 4 DA TROCA — os obstáculos pousam no sistema
+                 * de casas do jogo.js: para cada obstáculo oficial,
+                 * as casas cujo quadrado (lado 1,5 m, a conversão da
+                 * cena) o círculo do obstáculo toca ficam bloqueadas,
+                 * com a altura máxima entre os obstáculos da casa.
+                 * Publicado em window.__casasBloqueadasTroca (Map
+                 * 'x,y' do motor -> altura) e no recibo do mundo; o
+                 * jogo.js lê-o com duck-typing e, sem recibo (mapa
+                 * antigo), nada bloqueia — como sempre foi. */
+                {
+                    const CELLV = 1.5, meia = CELLV / 2;
+                    const mapaBloq = new Map();
+                    for (const o of obstaculosV) {
+                        const ix0 = Math.max(0, Math.floor((o.x - o.r - meia) / CELLV + (area.cols - 1) / 2));
+                        const ix1 = Math.min(area.cols - 1, Math.ceil((o.x + o.r + meia) / CELLV + (area.cols - 1) / 2));
+                        const iz0 = Math.max(0, Math.floor((o.z - o.r - meia) / CELLV + (area.rows - 1) / 2));
+                        const iz1 = Math.min(area.rows - 1, Math.ceil((o.z + o.r + meia) / CELLV + (area.rows - 1) / 2));
+                        for (let ix = ix0; ix <= ix1; ix++) for (let iz = iz0; iz <= iz1; iz++) {
+                            const cx = (ix - (area.cols - 1) / 2) * CELLV, cz = (iz - (area.rows - 1) / 2) * CELLV;
+                            const dx = Math.max(0, Math.abs(o.x - cx) - meia), dz = Math.max(0, Math.abs(o.z - cz) - meia);
+                            if (dx * dx + dz * dz > o.r * o.r) continue;
+                            const chaveB = (area.origin.x + ix) + ',' + (area.origin.y + iz);
+                            mapaBloq.set(chaveB, Math.max(mapaBloq.get(chaveB) || 0, o.h));
+                        }
+                    }
+                    window.__casasBloqueadasTroca = mapaBloq;
+                    world.casasBloqueadasTroca = { casas: mapaBloq.size, obstaculos: obstaculosV.length };
+                    reciboV.casasBloqueadas = mapaBloq.size;
+                }
+                for (const nome of Object.keys(baldesV)) reciboV.baldes[nome] = baldesV[nome].reduce((s, b) => s + b.total, 0);
+                /* PASSO 6 (21/11): uma sessao que NASCE em Ultra
+                 * Leve (a preferencia guardada) aplica a densidade
+                 * minima ja aqui — o gancho da cena pode ter
+                 * corrido antes de este bloco definir a funcao. Os
+                 * outros perfis nascem em 'alta', como sempre (a
+                 * amarracao completa do selector e do passo 7). */
+                let nivelInicialV = 'alta';
+                try { if (localStorage.getItem('hudt1-qualidade') === 'ultraleve') nivelInicialV = 'ultraleve'; } catch (_) {}
+                world.definirPovoamento(nivelInicialV);
+                reciboV.pronto = true;
+            })().catch(e => { reciboV.erros.push('geral: ' + ((e && e.message) || e)); reciboV.pronto = true; });
+        }
+
+        /* ================= TROCA DE MAPA — NÉVOA E CÉU DA PROVA =================
+         * CORES (21/11): passo 5 antecipado SÓ na névoa e no céu, por
+         * a cor o exigir (a palavra do Mestre sobre as cores). A
+         * candidata lia-se sob a névoa do jogo (FogExp2 0,0105, escala
+         * da arena) e o céu dela; a prova aprovada lê-se sob Fog
+         * LINEAR quente 0xeccf9a (230–850) e um fundo em gradiente
+         * quente. Sem esta atmosfera, nenhuma paleta de materiais
+         * bate ao olho com a prova. RESÍDUO DECLARADO: o ciclo de
+         * ambiente do cena.js pode retocar a COR de scene.fog por
+         * frame e publica o seu próprio domo de céu por cima deste
+         * fundo — domar o ciclo é do passo 5 (dono: cena.js); aqui
+         * fica a base da troca posta na construção da cena. */
+        {
+            scene.fog = new T.Fog(0xeccf9a, 230, 850);
+            const cvCeuT = document.createElement('canvas'); cvCeuT.width = 16; cvCeuT.height = 1024;
+            const gCeuT = cvCeuT.getContext('2d');
+            const gradCeuT = gCeuT.createLinearGradient(0, 0, 0, 1024);
+            gradCeuT.addColorStop(0.00, '#54719e'); gradCeuT.addColorStop(0.26, '#87a1b6');
+            gradCeuT.addColorStop(0.44, '#b3bfb2'); gradCeuT.addColorStop(0.58, '#d9c9a4');
+            gradCeuT.addColorStop(0.67, '#f3cf92'); gradCeuT.addColorStop(0.73, '#ffc978');
+            gradCeuT.addColorStop(0.79, '#d99f5c'); gradCeuT.addColorStop(1.00, '#7a5f42');
+            gCeuT.fillStyle = gradCeuT; gCeuT.fillRect(0, 0, 16, 1024);
+            const texCeuT = new T.CanvasTexture(cvCeuT);
+            texCeuT.encoding = T.sRGBEncoding;
+            scene.background = texCeuT;
+            world.nevoaTroca = { fog: '0xeccf9a linear 230-850', ceu: 'gradiente-da-prova' };
+        }
 
         instalarPintura(T, scene, { texPedra, texMadeira, texContacto }, world);
 
