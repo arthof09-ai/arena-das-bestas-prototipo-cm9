@@ -61,7 +61,7 @@
     try {
         if (localStorage.getItem('hudt1-contorno') === 'desligado') uniformePisoContorno.value = 0.0;
     } catch (_) { /* sem armazenamento, vale o pré-setado: ligado */ }
-    const instalarPintura = (T, scene, mundoTex) => {
+    const instalarPintura = (T, scene, mundoTex, world) => {
         /* ---------- PINTURA DOS MATERIAIS (Visual 3, PESQUISA-A §2) ----------
          * Sem trocar materiais nem tocar nos sagrados: injecta-se no fim do
          * fragmento (antes de tonemapping_fragment, onde gl_FragColor já
@@ -74,7 +74,36 @@
          * MeshBasicMaterial fica FORA (runas, chamas, halos: emissivos
          * puros). As figuras GLTF entram depois da carga → polling com
          * marca userData.__pintado (nunca injectar duas vezes). */
-        const fabricaPintura = (comRim, mistura, dessat) => shader => {
+                /* PASSO 2 (SS6.3) -- RE-BASE REF_114: a pintura vive agora em instalarPintura
+         * (partilhada campo+trono); `world` chega como parametro. No trono nenhuma peca
+         * tem a marca, logo uPecaNeve = 0 la e o troco nao faz nada. */
+/* PASSO 2 (SS6.3): os pintores passam a ser FUNÇÕES REGULARES
+         * (não setas): o three chama material.onBeforeCompile(shader)
+         * como método do material, por isso `this` dentro do pintor É
+         * o material — é assim que o troço da neve lê a marca
+         * userData.__pecaCenario de CADA material sem um segundo
+         * onBeforeCompile e sem defines (um só programa por tipo). */
+        const fabricaPintura = (comRim, mistura, dessat) => function (shader) {
+/* TROÇO DA NEVE NAS PEÇAS (SS6.3) — injecção INCONDICIONAL
+             * e idêntica para todos os materiais do tipo: normal do
+             * MUNDO em varying próprio (a normal de vista do fragmento
+             * está proibida — a árvore ganharia/perderia neve ao rodar
+             * a câmera), mistura no DIFUSO logo após map_fragment
+             * (antes da iluminação; branco somado depois está
+             * proibido), factor = uCobertura x uPecaNeve x limiar da
+             * normal. uCobertura é UM SÓ objecto {value} partilhado
+             * com a cena (world.__neveCoberturaU, criado por quem
+             * chegar primeiro — a cena escreve-o por fotograma em
+             * ambQuadro); uPecaNeve é valor por material: 1 marcado /
+             * 0 não marcado (figuras limpas por construção). O shader
+             * fica registado em userData.__neveShader para as sondas. */
+            shader.uniforms.uCobertura = (world.__neveCoberturaU ||= { value: 0 });
+            shader.uniforms.uPecaNeve = { value: (this && this.userData && this.userData.__pecaCenario) ? 1 : 0 };
+            if (this && this.userData) this.userData.__neveShader = shader;
+            shader.vertexShader = 'varying vec3 vNormalMundoP;\n' + shader.vertexShader.replace('#include <beginnormal_vertex>',
+                '#include <beginnormal_vertex>\n vNormalMundoP = normalize(mat3(modelMatrix) * objectNormal);');
+            shader.fragmentShader = ('uniform float uCobertura; uniform float uPecaNeve; varying vec3 vNormalMundoP;\n' + shader.fragmentShader)
+                .replace('#include <map_fragment>', '#include <map_fragment>\n diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.96, 1.0), uCobertura * uPecaNeve * smoothstep(0.55, 0.8, normalize(vNormalMundoP).y));');
             const inj = '{ vec3 corP = gl_FragColor.rgb;'
                 + ' float lumP = dot(corP, vec3(0.299, 0.587, 0.114));'
                 + ' float fP = lumP * 4.0; float baseP = floor(fP);'
@@ -1555,6 +1584,18 @@
                 grupo.position.set(x, alturaNova(x, z) - 0.05, z);
                 grupo.rotation.y = rnd() * Math.PI * 2;
                 escurecer(peca, factor, frio);
+                /* PASSO 2 DO AMBIENTE (desenho SS6.3/SS6.5): marca de
+                 * cenário para a neve assentada — SÓ árvores-mortas e
+                 * rochas (arbustos FORA nesta tranche; figuras nunca
+                 * passam por porPeca). A marca vai nos materiais JÁ
+                 * clonados por escurecer (os que a cena usa) e o troço
+                 * da neve em fabricaPintura lê-a ao compilar, como
+                 * valor de uniforme (uPecaNeve), nunca como define. */
+                if (ficheiro === 'modelos/cenario/arvores-mortas.glb' || ficheiro === 'modelos/cenario/rochas.glb') {
+                    peca.traverse(o => {
+                        if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m) m.userData.__pecaCenario = true; });
+                    });
+                }
                 scene.add(grupo); stats.pecas++;
                 // VOLTA 3: sombra de contacto irregular debaixo de cada peça
                 // — peça sem contacto lê-se «colada» (Disfarce item 10)
@@ -1576,7 +1617,7 @@
         anel(10, 9.9, 13.5, (x, z, i) => porPeca('modelos/cenario/rochas.glb', 'Rock_' + (1 + (i % 5)), x, z, 0.9 + rnd() * 1.3, 0.8, 0.12));
         anel(12, 9.6, 13.5, (x, z, i) => porPeca('modelos/cenario/arbustos.glb', i % 2 ? 'Bush' : 'Plant_1', x, z, 0.55 + rnd() * 0.4, 0.42, 0.38));
 
-        instalarPintura(T, scene, { texPedra, texMadeira, texContacto });
+        instalarPintura(T, scene, { texPedra, texMadeira, texContacto }, world);
 
         /* ---------- recibo para medição externa (só leitura) ----------
          * Adenda do crítico R2: a leitura só é válida com a carga completa —
@@ -1626,7 +1667,7 @@
             const gr2 = b.createRadialGradient(64, 64, 4, 64, 64, 60);
             gr2.addColorStop(0, 'rgba(8,6,4,0.5)'); gr2.addColorStop(1, 'rgba(8,6,4,0)');
             b.fillStyle = gr2; b.fillRect(0, 0, 128, 128);
-            instalarPintura(T, scene, { texContacto: new T.CanvasTexture(bc) });
+            instalarPintura(T, scene, { texContacto: new T.CanvasTexture(bc) }, world);
             return world;
         };
     }

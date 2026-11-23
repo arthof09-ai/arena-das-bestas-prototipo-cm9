@@ -716,6 +716,79 @@
             const respPts = new T.Points(respGeo, respMat);
             respPts.frustumCulled = false; respPts.visible = false; respPts.renderOrder = 4;
             scene.add(respPts);
+            /* ---------- PASSO 2 DO AMBIENTE: POÇAS + NEVE ASSENTADA
+             * (desenho FASE 2, SS5 + SS6; ERRATA-1 dos limiares) ----------
+             * Duas malhas próprias sobre a altura QUE SE VÊ
+             * (world.alturaVisivel; recurso world.height — o padrão da
+             * câmera livre), cada uma 1 draw call SÓ quando activa:
+             * seca/sem neve, invisíveis = baselines intactas.
+             * renderOrder (escolha registada): chão < poças 3 <
+             * neve-chão 4 < pontos 5; a camada resp do 052 fica nos
+             * seus 4 (só desenha com a chuva de teste ligada e nunca
+             * há poças sob neve — a malha das poças nem desenha com
+             * precip = neve, SS5.4/SS6.5). */
+            const ambAlturaVis = (x, z) => world.alturaVisivel ? world.alturaVisivel(x, z) : world.height(x, z);
+            const ambMalhaChao = (tam, eps) => {
+                const g = new T.PlaneGeometry(tam, tam, 112, 112);
+                g.rotateX(-Math.PI / 2);
+                const pp = g.attributes.position;
+                for (let i = 0; i < pp.count; i++) pp.setY(i, ambAlturaVis(pp.getX(i), pp.getZ(i)) + eps);
+                g.computeVertexNormals();
+                return g;
+            };
+            const ambFogUniforms = () => T.UniformsUtils.clone(T.UniformsLib.fog);
+            /* POÇAS (SS5.4): malha única 28x28 m / 112x112 seg, eps
+             * 0,03 m, polygonOffset(-2,-2). A textura de dados é o
+             * mapa de limiares (112x112, byte = entrada x 0,015;
+             * 255 = nunca molha): LinearFilter SEM mipmaps (a bilinear
+             * suaviza a borda de 0,25 m). Orientação: o gerador
+             * escreveu a linha 0 do PNG = z máximo (+13,875 m) e as
+             * colunas = x de -13,875; com PlaneGeometry +
+             * rotateX(-PI/2) e as UVs por omissão, a correspondência
+             * exacta obtém-se com flipY = false (conferido contra os
+             * centróides das bacias — ver relatório da construção). */
+            const pocasTex = new T.TextureLoader().load('mapa-limiares.png');
+            pocasTex.flipY = false;
+            pocasTex.magFilter = T.LinearFilter;
+            pocasTex.minFilter = T.LinearFilter;
+            pocasTex.generateMipmaps = false;
+            const pocasMat = new T.ShaderMaterial({
+                uniforms: Object.assign(ambFogUniforms(), { uMapa: { value: pocasTex }, uAcumulacao: { value: 0 }, uHorizonte: { value: C(0x35485e) } }),
+                vertexShader: 'varying vec2 vUv; varying vec3 vMundo; varying vec3 vNormalM;\n#include <fog_pars_vertex>\nvoid main() { vUv = uv; vNormalM = normalize(mat3(modelMatrix) * normal); vec4 wp = modelMatrix * vec4(position, 1.0); vMundo = wp.xyz; vec4 mvPosition = viewMatrix * wp; gl_Position = projectionMatrix * mvPosition;\n#include <fog_vertex>\n}',
+                fragmentShader: 'uniform sampler2D uMapa; uniform float uAcumulacao; uniform vec3 uHorizonte; varying vec2 vUv; varying vec3 vMundo; varying vec3 vNormalM;\n#include <fog_pars_fragment>\nvoid main() { float entrada = texture2D(uMapa, vUv).r * 3.825; float alfa = smoothstep(entrada - 0.15, entrada + 0.15, uAcumulacao); if (alfa <= 0.002) discard; vec3 V = normalize(cameraPosition - vMundo); float fres = pow(1.0 - clamp(dot(V, normalize(vNormalM)), 0.0, 1.0), 3.0) * 0.45; vec3 cor = mix(vec3(0.038, 0.04, 0.046), uHorizonte, fres); gl_FragColor = vec4(cor, alfa);\n#include <fog_fragment>\n#include <tonemapping_fragment>\n#include <encodings_fragment>\n}',
+                transparent: true, depthWrite: false, fog: true,
+                polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+            });
+            const pocasMesh = new T.Mesh(ambMalhaChao(28, .03), pocasMat);
+            pocasMesh.frustumCulled = false; pocasMesh.visible = false; pocasMesh.castShadow = false; pocasMesh.renderOrder = 3; pocasMesh.name = 'passo2-pocas';
+            scene.add(pocasMesh);
+            /* NEVE NO CHÃO (SS6.2): malha própria 120 m / 112x112 seg
+             * (a tesselação do visual2-chao), eps 0,045 m,
+             * polygonOffset(-3,-3), renderOrder 4. Alfa de dois
+             * termos — véu uniforme + manchas por ruído de valor de
+             * baixa frequência (célula ~2 m; hash determinístico das
+             * coordenadas inteiras da célula, semente 9021 — stream
+             * própria da neve-chão, registada aqui; interpolação
+             * suave) com um octavo fino (célula ~0,5 m) a perturbar
+             * SÓ o limiar perto da fronteira da mancha. Supressão
+             * junto ao fogo por uFogos[8] (SS6.2), actualizado por
+             * fotograma em ambQuadro. */
+            const neveChaoMat = new T.ShaderMaterial({
+                uniforms: Object.assign(ambFogUniforms(), { uCobertura: { value: 0 }, uEncharca: { value: 0 }, uFogos: { value: Array.from({ length: 8 }, () => new T.Vector4(0, 0, 1, 0)) } }),
+                vertexShader: 'varying vec3 vMundo;\n#include <fog_pars_vertex>\nvoid main() { vec4 wp = modelMatrix * vec4(position, 1.0); vMundo = wp.xyz; vec4 mvPosition = viewMatrix * wp; gl_Position = projectionMatrix * mvPosition;\n#include <fog_vertex>\n}',
+                fragmentShader: 'uniform float uCobertura; uniform float uEncharca; uniform vec4 uFogos[8]; varying vec3 vMundo;\n#include <fog_pars_fragment>\nfloat neveHash(vec2 cel) { return fract(sin(dot(cel + vec2(9021.0, 9021.0), vec2(127.1, 311.7))) * 43758.5453123); }\nfloat neveRuido(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f); return mix(mix(neveHash(i), neveHash(i + vec2(1.0, 0.0)), u.x), mix(neveHash(i + vec2(0.0, 1.0)), neveHash(i + vec2(1.0, 1.0)), u.x), u.y); }\nvoid main() { vec2 p = vMundo.xz; float limiarRuido = neveRuido(p / 2.0); float fino = neveRuido(p / 0.5); float perto = 1.0 - clamp(abs(uCobertura - limiarRuido) / 0.25, 0.0, 1.0); limiarRuido += (fino - 0.5) * 0.15 * perto; float gNeve = smoothstep(0.10, 0.55, uCobertura); float mancha = smoothstep(limiarRuido - 0.08, limiarRuido + 0.08, uCobertura) * (1.0 - 0.15 * uEncharca) * gNeve; float alfa = max(uCobertura * 0.35, mancha); for (int i = 0; i < 8; i++) { vec4 f = uFogos[i]; if (f.w > 0.5) alfa *= smoothstep(0.7 * f.z, f.z, distance(p, f.xy)); } if (alfa <= 0.002) discard; vec3 cor = vec3(0.93, 0.96, 1.0) * (1.0 - 0.28 * uEncharca); gl_FragColor = vec4(cor, alfa);\n#include <fog_fragment>\n#include <tonemapping_fragment>\n#include <encodings_fragment>\n}',
+                transparent: true, depthWrite: false, fog: true,
+                polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3
+            });
+            const neveChaoMesh = new T.Mesh(ambMalhaChao(120, .045), neveChaoMat);
+            neveChaoMesh.frustumCulled = false; neveChaoMesh.visible = false; neveChaoMesh.castShadow = false; neveChaoMesh.renderOrder = 4; neveChaoMesh.name = 'passo2-neve-chao';
+            scene.add(neveChaoMesh);
+            /* Estado do Passo 2 (SS5.5 + SS6.1): corre em ambQuadro,
+             * por fotograma, lendo ambAlvo (nível alvo) e
+             * ambActual.precip (tipo, troca imediata). Nenhum sistema
+             * paralelo. ambAcumPocas em [0,3] · ambNeveA em [0,1] ·
+             * ambEncharca em [0,1]. */
+            let ambAcumPocas = 0, ambNeveA = 0, ambEncharca = 0;
             let ambAlvo = { hora: 23, chuva: 0, raios: false, precip: 'chuva' };
             let ambActual = { hora: 23, chuva: 0, precip: 'chuva' };
             let ambTrans = null, ambPulsoT0 = -1, ambUltimoRaio = -1e9, ambCapChuva = null;
@@ -907,6 +980,63 @@
                     if (alvoNevoa === 0 && ambNevoaExtra < 0.00005) ambNevoaExtra = 0;
                 }
                 if (ambDerivados) ambDerivados.nevoaExtra = ambNevoaExtra;
+                /* PASSO 2 — máquina de estado das poças e da neve
+                 * assentada (SS5.5 + SS6.1; taxas em tempo de jogo
+                 * acelerado, declarado no desenho). chuvaAlvo é o
+                 * NÍVEL ALVO (ambAlvo.chuva, inteiro 0/1/2); o tipo é
+                 * o de ambActual.precip (troca imediata). Poças: só a
+                 * chuva Forte cresce +0,75/min (tecto 3, cheia ~4 min);
+                 * Fraca mantém; sem chuva seca -0,5/min por descida de
+                 * nível; sob neve CONGELA (mantém) e a malha não
+                 * desenha. Neve: só a neve Forte cresce dt/240 (cheia
+                 * 4 min); Fraca mantém; seca derrete dt/300; sob chuva
+                 * (qualquer nível >= 1) primeiro ENCHARCA —
+                 * ambEncharca 0->1 em 45 s com A parado — e só
+                 * esgotado o encharcamento A desce a dt/200; chuva a 0
+                 * derrete a dt/300. Fora da chuva que encharca,
+                 * ambEncharca volta a 0 a dt/10. */
+                if (dt > 0) {
+                    const chuvaAlvoP2 = ambAlvo.chuva, tipoP2 = ambActual.precip;
+                    if (tipoP2 !== 'neve') {
+                        if (chuvaAlvoP2 === 2) ambAcumPocas = Math.min(3, ambAcumPocas + dt * 0.75 / 60);
+                        else if (chuvaAlvoP2 === 0) ambAcumPocas = Math.max(0, ambAcumPocas - dt * 0.5 / 60);
+                    }
+                    const encharcando = tipoP2 === 'chuva' && chuvaAlvoP2 >= 1;
+                    if (tipoP2 === 'neve') {
+                        if (chuvaAlvoP2 === 2) ambNeveA = Math.min(1, ambNeveA + dt / 240);
+                        else if (chuvaAlvoP2 === 0) ambNeveA = Math.max(0, ambNeveA - dt / 300);
+                    } else if (tipoP2 === 'chuva') {
+                        if (chuvaAlvoP2 >= 1) {
+                            if (ambEncharca < 1) ambEncharca = Math.min(1, ambEncharca + dt / 45);
+                            else ambNeveA = Math.max(0, ambNeveA - dt / 200);
+                        } else ambNeveA = Math.max(0, ambNeveA - dt / 300);
+                    }
+                    if (!encharcando) ambEncharca = Math.max(0, ambEncharca - dt / 10);
+                }
+                /* Escrita dos uniformes + visibilidades + derivado
+                 * lido pelas sondas (via getAmbienteAplicado). */
+                const ambCoberturaP2 = Math.pow(ambNeveA, 0.6);
+                pocasMat.uniforms.uAcumulacao.value = ambAcumPocas;
+                if (ambUltimoHor) pocasMat.uniforms.uHorizonte.value.copy(ambUltimoHor);
+                pocasMesh.visible = ambAcumPocas > 0 && ambActual.precip !== 'neve';
+                neveChaoMat.uniforms.uCobertura.value = ambCoberturaP2;
+                neveChaoMat.uniforms.uEncharca.value = ambEncharca;
+                neveChaoMesh.visible = ambCoberturaP2 > 0;
+                (world.__neveCoberturaU ||= { value: 0 }).value = ambCoberturaP2;
+                {   /* uFogos[8] (SS6.2): entrada 0 = fogueira central
+                     * (0,0) r=1,5, activa com fogueiraBase > 0; as
+                     * restantes = casas a arder de fogosCasas (r=1,2,
+                     * activas enquanto !f.apagar); resto a activo 0. */
+                    const fogArr = neveChaoMat.uniforms.uFogos.value;
+                    let fogI = 0;
+                    fogArr[fogI++].set(0, 0, 1.5, ambDerivados && ambDerivados.fogueiraBase > 0 ? 1 : 0);
+                    for (const f of fogosCasas.values()) {
+                        if (fogI >= 8) break;
+                        fogArr[fogI++].set(f.grupo.position.x, f.grupo.position.z, 1.2, f.apagar ? 0 : 1);
+                    }
+                    while (fogI < 8) fogArr[fogI++].set(0, 0, 1, 0);
+                }
+                if (ambDerivados) { ambDerivados.acumPocas = ambAcumPocas; ambDerivados.neveA = ambNeveA; ambDerivados.encharca = ambEncharca; ambDerivados.cobertura = ambCoberturaP2; }
             }
             function ambTick(now) {
                 chuvaMat.uniforms.uTempo.value = now / 1000;
@@ -4082,7 +4212,7 @@
                     observer.disconnect();
                     renderer.domElement.removeEventListener('webglcontextlost', contextLost);
                     [...units.keys()].forEach(removeUnit);
-                    chuvaGeo.dispose(); chuvaMat.dispose(); neveGeo.dispose(); neveMat.dispose(); respGeo.dispose(); respMat.dispose(); ceuDispose();
+                    chuvaGeo.dispose(); chuvaMat.dispose(); neveGeo.dispose(); neveMat.dispose(); respGeo.dispose(); respMat.dispose(); pocasMesh.geometry.dispose(); pocasMat.dispose(); pocasTex.dispose(); neveChaoMesh.geometry.dispose(); neveChaoMat.dispose(); ceuDispose();
                     release(scene);
                     sun.shadow.map?.dispose();
                     renderer.dispose();
