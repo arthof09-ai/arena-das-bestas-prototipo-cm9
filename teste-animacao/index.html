@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TESTE-ANIMACAO</title>
+<link rel="icon" href="data:,">
+<style>
+  html,body{margin:0;padding:0;background:#14161c;color:#f2f3f5;font-family:Arial,Helvetica,sans-serif}
+  header{padding:14px 12px 4px;text-align:center}
+  h1{margin:0;font-size:34px;letter-spacing:1px}
+  .instrucao{font-size:20px;margin:8px 0 2px;color:#ffd75e;font-weight:bold}
+  .paineis{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;padding:12px}
+  .painel{flex:1 1 340px;max-width:560px;background:#1d2027;border:2px solid #3a3f4b;border-radius:12px;padding:10px}
+  .painel h2{margin:2px 0;font-size:24px;text-align:center}
+  .par{margin:0 0 8px;text-align:center;font-size:14px;color:#b9bfc9}
+  .ecra{width:100%;aspect-ratio:4/3;background:#232733;border-radius:8px;overflow:hidden}
+  .ecra canvas{display:block;width:100%;height:100%}
+  .contador{margin-top:10px;text-align:center}
+  .contador .rotulo{font-size:15px;color:#b9bfc9;letter-spacing:1px}
+  .contador .valor{font-size:52px;font-weight:bold;line-height:1.05;color:#7dff8a}
+  .contador .gama{font-size:16px;color:#e8eaee}
+  .erro{color:#ff7d7d !important}
+  footer{padding:4px 12px 16px;text-align:center;font-size:13px;color:#8b919c}
+</style>
+</head>
+<body>
+<header>
+  <h1>TESTE-ANIMACAO</h1>
+  <p class="instrucao">Diz ao Muse: a figura da esquerda anda? E a da direita?</p>
+</header>
+
+<div class="paineis">
+  <section class="painel" id="painelA">
+    <h2>ESQUERDA — ACTUAL</h2>
+    <p class="par">O par do jogo de hoje: three r128 + GLTFLoader antigo (par misturado)</p>
+    <div class="ecra" id="ecraA"></div>
+    <div class="contador">
+      <div class="rotulo">ÂNGULO DA CANELA (graus)</div>
+      <div class="valor" id="valorA">…</div>
+      <div class="gama" id="gamaA">a carregar…</div>
+    </div>
+  </section>
+
+  <section class="painel" id="painelB">
+    <h2>DIREITA — NOVO</h2>
+    <p class="par">Par casado e actual: three r187 + GLTFLoader r187 (da mesma versão)</p>
+    <div class="ecra" id="ecraB"></div>
+    <div class="contador">
+      <div class="rotulo">ÂNGULO DA CANELA (graus)</div>
+      <div class="valor" id="valorB">…</div>
+      <div class="gama" id="gamaB">a carregar…</div>
+    </div>
+  </section>
+</div>
+
+<footer>Página de teste TESTE-ANIMACAO — não é o jogo. Se o número da canela mexe, a pose está a ser refeita nesse lado.</footer>
+
+<script src="actual/three.min.js"></script>
+<script src="actual/GLTFLoader.js"></script>
+<script>
+/* ============ PAINEL A — par exacto do jogo vivo (three r128) ============ */
+(function () {
+  var T = window.THREE;
+  var saida = { pronto: false, erro: null, angulo: null, min: null, max: null };
+  window.__testeA = saida;
+  var valorEl = document.getElementById('valorA'), gamaEl = document.getElementById('gamaA');
+  function falha(msg) {
+    saida.erro = msg; valorEl.textContent = 'ERRO'; valorEl.classList.add('erro');
+    gamaEl.textContent = msg; gamaEl.classList.add('erro');
+  }
+  try {
+    var ecra = document.getElementById('ecraA');
+    var renderer = new T.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(ecra.clientWidth, ecra.clientHeight);
+    renderer.outputEncoding = T.sRGBEncoding;
+    renderer.toneMapping = T.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.92;
+    ecra.appendChild(renderer.domElement);
+    var cena = new T.Scene();
+    cena.background = new T.Color(0x232733);
+    var cam = new T.PerspectiveCamera(45, ecra.clientWidth / ecra.clientHeight, 0.1, 50);
+    cam.position.set(1.7, 1.35, 2.3); cam.lookAt(0, 0.85, 0);
+    cena.add(new T.HemisphereLight(0xffffff, 0x333344, 0.9));
+    var sol = new T.DirectionalLight(0xffffff, 0.9); sol.position.set(2, 4, 3); cena.add(sol);
+    var chao = new T.Mesh(new T.CircleGeometry(3, 40), new T.MeshStandardMaterial({ color: 0x3d4454 }));
+    chao.rotation.x = -Math.PI / 2; cena.add(chao);
+
+    new T.GLTFLoader().load('modelos/manequim-f-roxa.glb', function (gltf) {
+      cena.add(gltf.scene);
+      var ossos = {};
+      gltf.scene.traverse(function (o) { if (o.isBone) ossos[o.name] = o; });
+      function acha(nome) {
+        var alvo = nome.replace(/[^a-z0-9]/gi, '').toLowerCase();
+        for (var k in ossos) if (k.replace(/[^a-z0-9]/gi, '').toLowerCase() === alvo) return ossos[k];
+        return null;
+      }
+      var canela = acha('shin.L'), pe = acha('foot.L');
+      if (!canela || !pe) { falha('ossos da perna não encontrados'); return; }
+      var mixer = new T.AnimationMixer(gltf.scene);
+      var clipe = T.AnimationClip.findByName(gltf.animations, 'andar_v3_fase2');
+      if (!clipe) { falha('clipe andar_v3_fase2 em falta'); return; }
+      mixer.clipAction(clipe).play();
+      saida.pronto = true;
+      var relogio = new T.Clock();
+      var vC = new T.Vector3(), vP = new T.Vector3(), baixo = new T.Vector3(0, -1, 0);
+      (function ciclo() {
+        requestAnimationFrame(ciclo);
+        mixer.update(relogio.getDelta());
+        canela.getWorldPosition(vC); pe.getWorldPosition(vP);
+        var ang = vP.sub(vC).angleTo(baixo) * 180 / Math.PI;
+        saida.angulo = ang;
+        if (saida.min === null || ang < saida.min) saida.min = ang;
+        if (saida.max === null || ang > saida.max) saida.max = ang;
+        valorEl.textContent = ang.toFixed(1) + '°';
+        gamaEl.textContent = 'desde que abriu: de ' + saida.min.toFixed(1) + '° a ' + saida.max.toFixed(1) + '°';
+        renderer.render(cena, cam);
+      })();
+    }, undefined, function (e) { falha('erro a carregar a figura: ' + (e && e.message || e)); });
+  } catch (e) { falha('erro: ' + (e && e.message || e)); }
+})();
+</script>
+
+<script type="importmap">
+{ "imports": {
+  "three": "./novo/three.module.js",
+  "three/addons/": "./novo/addons/"
+} }
+</script>
+<script type="module">
+/* ============ PAINEL B — par casado three r187 ============ */
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+(function () {
+  var saida = { pronto: false, erro: null, angulo: null, min: null, max: null };
+  window.__testeB = saida;
+  var valorEl = document.getElementById('valorB'), gamaEl = document.getElementById('gamaB');
+  function falha(msg) {
+    saida.erro = msg; valorEl.textContent = 'ERRO'; valorEl.classList.add('erro');
+    gamaEl.textContent = msg; gamaEl.classList.add('erro');
+  }
+  try {
+    var ecra = document.getElementById('ecraB');
+    var renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(ecra.clientWidth, ecra.clientHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.92;
+    ecra.appendChild(renderer.domElement);
+    var cena = new THREE.Scene();
+    cena.background = new THREE.Color(0x232733);
+    var cam = new THREE.PerspectiveCamera(45, ecra.clientWidth / ecra.clientHeight, 0.1, 50);
+    cam.position.set(1.7, 1.35, 2.3); cam.lookAt(0, 0.85, 0);
+    cena.add(new THREE.HemisphereLight(0xffffff, 0x333344, 1.7));
+    var sol = new THREE.DirectionalLight(0xffffff, 1.9); sol.position.set(2, 4, 3); cena.add(sol);
+    var chao = new THREE.Mesh(new THREE.CircleGeometry(3, 40), new THREE.MeshStandardMaterial({ color: 0x3d4454 }));
+    chao.rotation.x = -Math.PI / 2; cena.add(chao);
+
+    new GLTFLoader().load('modelos/manequim-f-roxa.glb', function (gltf) {
+      cena.add(gltf.scene);
+      var ossos = {};
+      gltf.scene.traverse(function (o) { if (o.isBone) ossos[o.name] = o; });
+      function acha(nome) {
+        var alvo = nome.replace(/[^a-z0-9]/gi, '').toLowerCase();
+        for (var k in ossos) if (k.replace(/[^a-z0-9]/gi, '').toLowerCase() === alvo) return ossos[k];
+        return null;
+      }
+      var canela = acha('shin.L'), pe = acha('foot.L');
+      if (!canela || !pe) { falha('ossos da perna não encontrados'); return; }
+      var mixer = new THREE.AnimationMixer(gltf.scene);
+      var clipe = THREE.AnimationClip.findByName(gltf.animations, 'andar_v3_fase2');
+      if (!clipe) { falha('clipe andar_v3_fase2 em falta'); return; }
+      mixer.clipAction(clipe).play();
+      saida.pronto = true;
+      var relogio = new THREE.Clock();
+      var vC = new THREE.Vector3(), vP = new THREE.Vector3(), baixo = new THREE.Vector3(0, -1, 0);
+      (function ciclo() {
+        requestAnimationFrame(ciclo);
+        mixer.update(relogio.getDelta());
+        canela.getWorldPosition(vC); pe.getWorldPosition(vP);
+        var ang = vP.sub(vC).angleTo(baixo) * 180 / Math.PI;
+        saida.angulo = ang;
+        if (saida.min === null || ang < saida.min) saida.min = ang;
+        if (saida.max === null || ang > saida.max) saida.max = ang;
+        valorEl.textContent = ang.toFixed(1) + '°';
+        gamaEl.textContent = 'desde que abriu: de ' + saida.min.toFixed(1) + '° a ' + saida.max.toFixed(1) + '°';
+        renderer.render(cena, cam);
+      })();
+    }, undefined, function (e) { falha('erro a carregar a figura: ' + (e && e.message || e)); });
+  } catch (e) { falha('erro: ' + (e && e.message || e)); }
+})();
+</script>
+</body>
+</html>
