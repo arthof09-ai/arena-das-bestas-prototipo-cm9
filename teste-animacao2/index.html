@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TESTE-ANIMACAO2</title>
+<link rel="icon" href="data:,">
+<style>
+  html,body{margin:0;padding:0;background:#14161c;color:#f2f3f5;font-family:Arial,Helvetica,sans-serif}
+  header{padding:14px 12px 4px;text-align:center}
+  h1{margin:0;font-size:34px;letter-spacing:1px}
+  .instrucao{font-size:21px;margin:8px 0 2px;color:#ffd75e;font-weight:bold}
+  #erro{display:none;background:#5a1f1f;color:#ffb3b3;font-size:17px;padding:10px;text-align:center}
+  .ecra{max-width:900px;margin:10px auto;padding:0 10px}
+  .ecra canvas{display:block;width:100%;border:2px solid #3a3f4b;border-radius:10px}
+  .paineis{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;padding:6px 12px}
+  .painel{flex:1 1 340px;max-width:560px;background:#1d2027;border:2px solid #3a3f4b;border-radius:12px;padding:10px 14px}
+  .painel h2{margin:2px 0 8px;font-size:24px;text-align:center}
+  .linha{display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid #2c3038;padding:6px 0}
+  .rotulo{font-size:15px;color:#b9bfc9;letter-spacing:1px}
+  .valor{font-size:34px;font-weight:bold;color:#7dff8a}
+  .valor.vis{font-size:52px}
+  .valor.nao{color:#ff7d7d}
+  .apagou{font-size:15px;color:#e8eaee;text-align:center;margin-top:2px}
+  .tira{width:100%;height:26px;background:#101216;border-radius:6px;margin-top:8px}
+  footer{padding:6px 14px 18px;text-align:center;font-size:13px;color:#8b919c;max-width:900px;margin:0 auto}
+</style>
+</head>
+<body>
+<header>
+  <h1>TESTE-ANIMACAO2</h1>
+  <p class="instrucao">Diz ao Muse: os números mexem? E o letreiro VISÍVEL fica sempre em SIM, ou apaga e acende?</p>
+</header>
+<div id="erro"></div>
+
+<div class="ecra" id="ecra"></div>
+
+<div class="paineis">
+  <section class="painel" id="painelOng">
+    <h2>ONG — a andar (vai e volta, 8 casas)</h2>
+    <div class="linha"><span class="rotulo">TEMPO DA ACÇÃO (s)</span><span class="valor" id="tempoOng">…</span></div>
+    <div class="linha"><span class="rotulo">ÂNGULO DA CANELA (graus)</span><span class="valor" id="canelaOng">…</span></div>
+    <div class="linha"><span class="rotulo">POSIÇÃO DA RAIZ (m)</span><span class="valor" id="raizOng">…</span></div>
+    <div class="linha"><span class="rotulo">VISÍVEL?</span><span class="valor vis" id="visOng">…</span></div>
+    <div class="apagou" id="apagouOng">a carregar…</div>
+    <canvas class="tira" id="tiraOng" width="520" height="26"></canvas>
+  </section>
+
+  <section class="painel" id="painelCapanga">
+    <h2>CAPANGA — parado, com o clipe dele</h2>
+    <div class="linha"><span class="rotulo">TEMPO DA ACÇÃO (s)</span><span class="valor" id="tempoCapanga">…</span></div>
+    <div class="linha"><span class="rotulo">ÂNGULO DA CANELA (graus)</span><span class="valor" id="canelaCapanga">…</span></div>
+    <div class="linha"><span class="rotulo">POSIÇÃO DA RAIZ (m)</span><span class="valor" id="raizCapanga">…</span></div>
+    <div class="linha"><span class="rotulo">VISÍVEL?</span><span class="valor vis" id="visCapanga">…</span></div>
+    <div class="apagou" id="apagouCapanga">a carregar…</div>
+    <canvas class="tira" id="tiraCapanga" width="520" height="26"></canvas>
+  </section>
+</div>
+
+<footer>Página de teste TESTE-ANIMACAO2 — não é o jogo. Replica o caminho do jogo (carregar → medir a frente → escala → mixer → passos por casa → sombras) com as mesmas peças servidas (three r128 + GLTFLoader do jogo). Adaptações declaradas: chão plano, câmera que segue simples, sem a passagem do céu. O letreiro VISÍVEL é o teste exacto que o desenhador do jogo faz em cada fotograma para decidir se desenha a figura (verde = desenharia · vermelho = não desenharia); a barra guarda o ritmo: verde visível, vermelho invisível. O VISÍVEL do Capanga pode dizer NÃO quando ele sai do enquadramento — isso é o teste a funcionar.</footer>
+
+<script src="vendor/three.min.js"></script>
+<script src="vendor/GLTFLoader.js"></script>
+<script>
+/* =====================================================================
+   TESTE-ANIMACAO2 — réplica do caminho do jogo (REF_132, cena.js servido)
+   Os blocos marcados COPIA correm tal e qual os do jogo; as adaptações
+   estão declaradas no rodapé e nos comentários ADAPTACAO.
+   ===================================================================== */
+var T = window.THREE;
+var CELL = 1.5;                       /* COPIA: cena.js:5 */
+var COLS = 16, ROWS = 5;              /* ADAPTACAO: arena pequena da réplica */
+function wx(x) { return (x - (COLS - 1) / 2) * CELL; }
+function wz(z) { return (z - (ROWS - 1) / 2) * CELL; }
+function worldHeight() { return 0; }  /* ADAPTACAO: chão plano (o jogo lê a altura do mundo) */
+
+var saida = { pronto: false, erros: [],
+  ong:     { frames: 0, invisiveis: 0, transicoes: 0, tempoAccao: null, canelaMin: null, canelaMax: null, raizMinX: null, raizMaxX: null },
+  capanga: { frames: 0, invisiveis: 0, transicoes: 0, tempoAccao: null, canelaMin: null, canelaMax: null, raizMinX: null, raizMaxX: null } };
+window.__teste2 = saida;
+window.addEventListener('error', function (e) {
+  saida.erros.push(String(e.message || e.error || e));
+  var el = document.getElementById('erro');
+  el.style.display = 'block'; el.textContent = 'ERRO: ' + (e.message || e.error || e);
+});
+
+/* --- renderer: COPIA dos parâmetros do jogo (cena.js:48-56), perfil Alta (dpr ≤ 2, sombras 512) --- */
+var ecra = document.getElementById('ecra');
+var renderer = new T.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+renderer.info.autoReset = false;
+renderer.outputEncoding = T.sRGBEncoding;
+renderer.toneMapping = T.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.92;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = T.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate = false;
+renderer.shadowMap.needsUpdate = true;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(Math.min(ecra.clientWidth || 900, 900), 500);
+ecra.appendChild(renderer.domElement);
+
+var scene = new T.Scene();
+scene.background = new T.Color(0x2a3140);
+var camera = new T.PerspectiveCamera(45, renderer.domElement.width / renderer.domElement.height, 0.1, 120);
+window.__camera = camera;   /* gancho de inspecção das sondas (só leitura) */
+scene.add(new T.HemisphereLight(0xffffff, 0x333344, 0.85));
+var sun = new T.DirectionalLight(0xffffff, 1.0);
+sun.position.set(6, 12, 5);
+sun.castShadow = true;
+sun.shadow.mapSize.set(512, 512);
+sun.shadow.camera.left = -12; sun.shadow.camera.right = 12;
+sun.shadow.camera.top = 12; sun.shadow.camera.bottom = -12;
+sun.shadow.camera.near = 1; sun.shadow.camera.far = 40;
+scene.add(sun); scene.add(sun.target);
+var chao = new T.Mesh(new T.PlaneGeometry(COLS * CELL + 6, ROWS * CELL + 6), new T.MeshStandardMaterial({ color: 0x3d4454 }));
+chao.rotation.x = -Math.PI / 2; chao.position.y = -0.01; chao.receiveShadow = true; scene.add(chao);
+var grelha = new T.GridHelper(COLS * CELL, COLS, 0x8899bb, 0x556077);
+grelha.scale.z = ROWS / COLS; grelha.position.y = 0.001; scene.add(grelha);
+
+var units = new Map();
+window.__unidades = units;   /* gancho de inspecção das sondas (só leitura) */
+
+/* pose(): versão mínima da pose() do jogo (cena.js:2355) — sem mortos nem
+   respiração F-20 (as duas figuras têm clipe de repouso próprio). */
+function pose(u) {
+  u.root.position.set(wx(u.x), worldHeight() + u.altitude, wz(u.z));
+  u.temIdleRepouso = !!(u.clips.idle && u.animations.some(a => a.name === u.clips.idle));
+  if (u.vivo) animation(u, false);
+}
+
+/* addUnit: COPIA do ramo GLB de addUnit do jogo (cena.js:2555-2620),
+   sem anel/contacto/fio/rótulo (adereços que não tocam na figura). */
+async function addUnitReplica(data) {
+  const model = data.modelo;
+  const root = new T.Group(), pivot = new T.Group();
+  root.add(pivot);
+  scene.add(root);
+  const u = { id: data.id, nome: data.nome, x: data.x, z: data.y, altitude: data.altitude ?? 0, vivo: data.vivo, root, pivot, size: data.alturaMetros, queue: [], step: null, clips: { idle: data.animacoes?.idle, andar: data.animacoes?.andar, ataque: data.animacoes?.ataque, reacao: data.animacoes?.reacao }, animations: [], removed: false, oculto: false, model };
+  units.set(u.id, u);
+  pose(u);
+  const gltf = await new T.GLTFLoader().loadAsync(model);
+  const frenteMedida = medirFrenteAnimada(gltf.scene, gltf.animations);
+  if (frenteMedida < 0 || (frenteMedida === 0 && MODELOS_FRENTE_INV.has(model)))
+    gltf.scene.rotation.y += Math.PI;
+  gltf.scene.updateMatrixWorld(true);
+  const b = new T.Box3().setFromObject(gltf.scene), s = b.getSize(new T.Vector3()), center = b.getCenter(new T.Vector3());
+  gltf.scene.scale.setScalar(data.alturaMetros / s.y);
+  gltf.scene.position.set(-center.x, -b.min.y, -center.z).multiplyScalar(data.alturaMetros / s.y);
+  pivot.add(gltf.scene);
+  u.animations = gltf.animations;
+  for (const n of Object.values(u.clips))
+    if (n && !gltf.animations.some(a => a.name === n)) throw new RangeError('Clipe declarado não existe: ' + n);
+  if (gltf.animations.length) {
+    u.mixer = new T.AnimationMixer(gltf.scene);
+    animation(u, false);
+  }
+  pivot.traverse(o => {
+    if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
+  });
+  /* recolha só de leitura para os contadores (não existe no jogo) */
+  u.meshes = []; u.bones = {};
+  pivot.traverse(o => { if (o.isSkinnedMesh) u.meshes.push(o); if (o.isBone) u.bones[o.name] = o; });
+  pose(u);
+  return u;
+}
+
+/* move(): núcleo da move() do jogo (cena.js:2668-2700) — fila de casas
+   com ms por casa; o caminho e o ritmo são dados por quem chama. */
+function moveReplica(u, path, ms) {
+  u.queue = [];
+  u.step = null;
+  u.queue = path.map(c => ({ ...c, ms }));
+  animation(u, true);
+}
+
+/* vai e volta da Ong: 8 casas para leste, 8 para oeste, sem parar */
+function vaiVolta(u) {
+  const destino = u.x <= 2 ? 10 : 2;
+  const dir = Math.sign(destino - u.x);
+  const path = [];
+  for (let x = u.x + dir; ; x += dir) { path.push({ x: x, z: u.z, altitude: 0 }); if (x === destino) break; }
+  moveReplica(u, path, 140);   /* 140 ms/casa = o ritmo típico do jogo (jogo.js:5529) */
+}
+<!-- blocos COPIA do cena.js servido (REF_132): animation/playClip, linhas 2260-2299 -->
+            function animation(u, walking) {
+                /* CORRECÇÃO t-andar-visibilidade (sobre a REF_118): o
+                   andar tem de se LER dentro da viagem. Medido: o clipe
+                   de andar corria à cadência natural (1,375 s/ciclo na
+                   Ong) com passagens de 0,15 s — num andar de 5 casas
+                   (0,72 s) avançava 46% de um ciclo; em 2 casas, 12%.
+                   Duas emendas, só de animação (o ritmo NÃO muda):
+                   (1) a cadência do andar casa com o chão — um ciclo
+                   completo por cada DUAS casas (um passo por casa), à
+                   duração do passo corrente; se o ritmo mudar um dia,
+                   a cadência segue-o sozinha. (2) a passagem andar↔
+                   repouso faz-se em 0,05 s em vez de 0,15 s. */
+                if (walking) {
+                    const ms = u.step?.ms ?? u.queue[0]?.ms;
+                    const clip = u.animations ? T.AnimationClip.findByName(u.animations, u.clips.andar) : null;
+                    const escala = (ms && clip) ? clip.duration / (2 * ms / 1000) : 1;
+                    if (u.actionName === u.clips.andar && u.action)
+                        u.action.setEffectiveTimeScale(escala);
+                    playClip(u, u.clips.andar, undefined, { fade: .05, escala });
+                }
+                else playClip(u, u.clips.idle, undefined, { fade: .05 });
+            }
+            function playClip(u, name, duration, opts = {}) {
+                if (!u.mixer || !u.vivo)
+                    return;
+                if (u.actionName === name)
+                    return;
+                const clip = T.AnimationClip.findByName(u.animations, name);
+                if (!clip)
+                    return;
+                const fade = opts.fade ?? .15;
+                const next = u.mixer.clipAction(clip);
+                next.reset().setLoop(duration ? T.LoopOnce : T.LoopRepeat, duration ? 1 : Infinity);
+                next.clampWhenFinished = !!duration;
+                next.setEffectiveTimeScale(duration ? clip.duration / duration : (opts.escala ?? 1)).fadeIn(fade).play();
+                if (u.action)
+                    u.action.fadeOut(fade);
+                u.action = next;
+                u.actionName = name;
+            }
+
+<!-- blocos COPIA do cena.js servido (REF_132): MODELOS_FRENTE_INV + medirFrenteModelo + medirFrenteAnimada, linhas 2441-2518 -->
+            const MODELOS_FRENTE_INV = new Set(['modelos/manequim-f-roxa.glb', 'modelos/manequim-m.glb']);
+            function medirFrenteModelo(raiz) {
+                const todos = [];
+                raiz.updateMatrixWorld(true);
+                raiz.traverse(o => todos.push(o));
+                const pos = o => o.getWorldPosition(new T.Vector3());
+                const votos = [];
+                const votar = v => {
+                    if (!v) return;
+                    if (Math.hypot(v.x, v.z) < 0.002 || Math.abs(v.z) < 1.5 * Math.abs(v.x)) return;
+                    votos.push(Math.sign(v.z));
+                };
+                // S1 — dedos dos pés: dedo − pé (o pai), todos os lados
+                {
+                    const v = new T.Vector3();
+                    let n = 0;
+                    for (const o of todos) {
+                        if (!/toe/i.test(o.name) || !o.parent) continue;
+                        v.add(pos(o).sub(pos(o.parent))); n++;
+                    }
+                    if (n) votar(v);
+                }
+                const BAN = /ik|mch|target|tweak|pole/i;
+                const acha = re => todos.filter(o => re.test(o.name) && !BAN.test(o.name));
+                const anca = acha(/hips|pelvis/i)[0];
+                // S2 — anca × coluna (bípedes)
+                {
+                    const pernas = acha(/upleg|thigh|leg/i);
+                    const e = pernas.find(o => /left|\.L$|_L\b/i.test(o.name));
+                    const d = pernas.find(o => /right|\.R$|_R\b/i.test(o.name));
+                    const colunas = acha(/spine/i).sort((a, b) => pos(a).y - pos(b).y);
+                    if (e && d && anca && colunas.length) {
+                        const A = pos(e).sub(pos(d));
+                        const U = pos(colunas[0]).sub(pos(anca));
+                        votar(new T.Vector3().crossVectors(A, U));
+                    }
+                }
+                // S3 — cabeça − anca
+                {
+                    const cabecas = acha(/head/i).sort((a, b) => pos(b).y - pos(a).y);
+                    if (cabecas.length && anca) votar(pos(cabecas[0]).sub(pos(anca)));
+                }
+                if (!votos.length) return 0;
+                const soma = votos.reduce((a, b) => a + b, 0);
+                return soma > 0 ? 1 : soma < 0 ? -1 : 0;
+            }
+            // Mede a frente na POSE ANIMADA: aplica o clipe de
+            // andar (ou o primeiro clipe) a meio do ciclo num
+            // misturador temporário, mede com os mesmos três
+            // sinais e repõe a pose original. É a pose animada
+            // que o olho vê a andar — a de repouso pode nascer
+            // virada contra o clipe em exportações FBX→glTF, e
+            // foi só nela que a primeira volta desta correcção
+            // mediu. Sem clipes (ou com qualquer erro), cai na
+            // pose de repouso, como antes.
+            function medirFrenteAnimada(raiz, clips) {
+                if (!Array.isArray(clips) || !clips.length) return medirFrenteModelo(raiz);
+                const clipe = clips.find(c => /andar|walk|run/i.test(c.name || '')) || clips[0];
+                if (!clipe || !(clipe.duration > 0)) return medirFrenteModelo(raiz);
+                const guardados = [];
+                raiz.traverse(o => guardados.push([o, o.position.clone(), o.quaternion.clone(), o.scale.clone()]));
+                try {
+                    const misturador = new T.AnimationMixer(raiz);
+                    misturador.clipAction(clipe).play();
+                    misturador.update(clipe.duration / 2);
+                    raiz.updateWorldMatrix(true, true);
+                    return medirFrenteModelo(raiz);
+                } catch (e) {
+                    return medirFrenteModelo(raiz);
+                } finally {
+                    for (const [o, p, q, s] of guardados) { o.position.copy(p); o.quaternion.copy(q); o.scale.copy(s); }
+                    raiz.updateWorldMatrix(true, true);
+                }
+            }
+            /* ANDAR DO CAPANGA — CLIPE DO MIXAMO (t-andar-de-re, volta
+               do Mixamo; palavra do Mestre, 2026-11-21: «pegue o
+               movimento no mixamo»). O andar dele já não é o clipe
+               antigo (andar_v3_m_fase2 partilhava a curva da anca
+
+/* --- animate(): estrutura COPIA do animate() do jogo (cena.js:3287-3370):
+   dt clampado · passo → lerp da raiz → mixer.update no mesmo forEach ·
+   portão da sombra (dirty e >100 ms) · render no fim.
+   ADAPTACAO: câmera que segue simples; sem céu em duas passagens;
+   a medição VISÍVEL corre entre a câmera e o render. --- */
+var last = 0, shadowAt = 0;
+var _frustum = new T.Frustum(), _proj = new T.Matrix4();
+var _vC = new T.Vector3(), _vP = new T.Vector3(), _baixo = new T.Vector3(0, -1, 0);
+
+function osso(u, nomes) {
+  if (!u.bones) return null;
+  for (const n of nomes) if (u.bones[n]) return u.bones[n];
+  /* o GLTFLoader limpa os nomes (tira '.' e ':'): compara sem pontuação */
+  const norm = s => s.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  for (const n of nomes) {
+    const alvo = norm(n);
+    for (const k in u.bones) if (norm(k) === alvo) return u.bones[k];
+  }
+  return null;
+}
+function anguloCanela(u, canelaNome, peNome) {
+  const c = osso(u, [canelaNome]), p = osso(u, [peNome]);
+  if (!c || !p) return null;
+  c.getWorldPosition(_vC); p.getWorldPosition(_vP);
+  return _vP.sub(_vC).angleTo(_baixo) * 180 / Math.PI;
+}
+
+var paines = {
+  ong:     { tempo: document.getElementById('tempoOng'), canela: document.getElementById('canelaOng'), raiz: document.getElementById('raizOng'), vis: document.getElementById('visOng'), apagou: document.getElementById('apagouOng'), tira: document.getElementById('tiraOng').getContext('2d'), visAnt: null },
+  capanga: { tempo: document.getElementById('tempoCapanga'), canela: document.getElementById('canelaCapanga'), raiz: document.getElementById('raizCapanga'), vis: document.getElementById('visCapanga'), apagou: document.getElementById('apagouCapanga'), tira: document.getElementById('tiraCapanga').getContext('2d'), visAnt: null }
+};
+
+function medirPainel(u, chave, canelaNome, peNome) {
+  const P = paines[chave], S = saida[chave];
+  if (!P || !u || !u.meshes) return;
+  /* VISÍVEL? — o teste exacto do renderizador r128: cadeia visible ligada
+     E a esfera da geometria de cada malha de pele dentro do frustum. */
+  let visivel = !!u.root.visible;
+  if (visivel) for (const m of u.meshes) { if (!_frustum.intersectsObject(m)) { visivel = false; break; } }
+  S.frames++;
+  if (!visivel) S.invisiveis++;
+  if (P.visAnt === true && !visivel) S.transicoes++;
+  P.visAnt = visivel;
+  P.vis.textContent = visivel ? 'SIM' : 'NÃO';
+  P.vis.classList.toggle('nao', !visivel);
+  const ctx = P.tira;
+  ctx.drawImage(ctx.canvas, -2, 0);
+  ctx.fillStyle = visivel ? '#3ddc5a' : '#e33';
+  ctx.fillRect(ctx.canvas.width - 2, 0, 2, ctx.canvas.height);
+  /* contadores */
+  const tempo = u.action ? u.action.time : null;
+  S.tempoAccao = tempo;
+  P.tempo.textContent = tempo === null ? '—' : tempo.toFixed(2);
+  const ang = anguloCanela(u, canelaNome, peNome);
+  if (ang !== null) {
+    if (S.canelaMin === null || ang < S.canelaMin) S.canelaMin = ang;
+    if (S.canelaMax === null || ang > S.canelaMax) S.canelaMax = ang;
+    P.canela.textContent = ang.toFixed(1) + '°';
+  }
+  const rx = u.root.position.x;
+  if (S.raizMinX === null || rx < S.raizMinX) S.raizMinX = rx;
+  if (S.raizMaxX === null || rx > S.raizMaxX) S.raizMaxX = rx;
+  P.raiz.textContent = rx.toFixed(2);
+  P.apagou.textContent = 'apagou ' + S.transicoes + ' vezes · invisível em ' + S.invisiveis + ' de ' + S.frames + ' fotogramas';
+}
+
+function animate(now) {
+  requestAnimationFrame(animate);
+  const dt = Math.min(.08, Math.max(0, (now - last) / 1000));
+  last = now;
+  if (document.hidden) return;
+  let dirty = false;
+  units.forEach(u => {
+    if (!u.step && u.queue.length) {
+      u.step = { ...u.queue.shift(), t: 0, from: u.root.position.clone() };
+      const dx = wx(u.step.x) - u.root.position.x, dz = wz(u.step.z) - u.root.position.z;
+      if (dx || dz)
+        u.pivot.rotation.y = Math.atan2(dx, dz);
+    }
+    if (u.step) {
+      dirty = true;
+      const s = u.step;
+      s.t = Math.min(1, s.t + dt * 1000 / s.ms);
+      u.root.position.lerpVectors(s.from, new T.Vector3(wx(s.x), worldHeight() + s.altitude, wz(s.z)), s.t);
+      if (s.t === 1) {
+        u.x = s.x;
+        u.z = s.z;
+        u.altitude = s.altitude;
+        u.step = null;
+        if (!u.queue.length) {
+          animation(u, false);
+          renderer.shadowMap.needsUpdate = true;
+          if (u.id === 'ong') vaiVolta(u);
+        }
+      }
+    }
+    if (u.mixer && u.vivo) {
+      u.mixer.update(dt);
+      dirty = true;
+    }
+  });
+  if (dirty && now - shadowAt > 100) {
+    renderer.shadowMap.needsUpdate = true;
+    shadowAt = now;
+  }
+  /* câmera que segue a Ong (ADAPTACAO declarada) */
+  const ong = units.get('ong');
+  if (ong) {
+    const p = ong.root.position;
+    camera.position.set(p.x, p.y + 6.5, p.z + 6.5);
+    camera.lookAt(p.x, p.y + 0.9, p.z);
+  }
+  camera.updateMatrixWorld();
+  scene.updateMatrixWorld(true);
+  _proj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  _frustum.setFromProjectionMatrix(_proj);
+  medirPainel(units.get('ong'), 'ong', 'shin.L', 'foot.L');
+  medirPainel(units.get('capanga'), 'capanga', 'mixamorig:LeftLeg', 'mixamorig:LeftFoot');
+  renderer.render(scene, camera);
+}
+
+/* arranque: os mesmos dados de figura que o jogo usa (jogo.js:151-152) */
+(async function () {
+  try {
+    const ong = await addUnitReplica({ id: 'ong', nome: 'Ong', modelo: 'modelos/manequim-f-roxa.glb', x: 2, y: 2, alturaMetros: 2.625, vivo: true, animacoes: { idle: 'parado_v3_fase2', andar: 'andar_v3_fase2', ataque: 'ataque_v3_f_fase2', reacao: 'reacao_v3_f_fase2' } });
+    await addUnitReplica({ id: 'capanga', nome: 'Capanga 1', modelo: 'modelos/manequim-m.glb', x: 6, y: 3, alturaMetros: 2.7, vivo: true, animacoes: { idle: 'parado_v3_m_fase2', andar: 'andar_v3_m_fase2', ataque: 'ataque_v3_m_fase2', reacao: 'Hit_Chest_Capanga' } });
+    saida.pronto = true;
+    vaiVolta(ong);
+    requestAnimationFrame(animate);
+  } catch (e) {
+    saida.erros.push(String(e && e.message || e));
+    var el = document.getElementById('erro');
+    el.style.display = 'block'; el.textContent = 'ERRO: ' + (e && e.message || e);
+  }
+})();
+</script>
+</body>
+</html>
