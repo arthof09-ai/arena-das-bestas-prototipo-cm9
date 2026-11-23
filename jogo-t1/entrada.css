@@ -18,6 +18,7 @@
    está pendente, o DOM do jogo nasce escondido. */
 
 html.entrada-pendente body > *:not(#entrada) { display: none !important; }
+#entrada [hidden] { display: none !important; }
 
 #entrada {
   position: fixed; inset: 0; z-index: 200; overflow: hidden;
@@ -68,7 +69,9 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
 }
 .ent-btn:active { filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .55)) brightness(1.28); }
 /* a letra pintada é condensada (tipo Trajano): condensa-se o rótulo */
-.ent-btn > span:not(.sub) { display: block; transform: scaleX(.75); }
+.ent-btn > span:not(.sub) { display: block; transform: scaleX(.64); }
+#ent-mestre > span:not(.sub) { transform: scaleX(.58); }
+#ent-config > span:not(.sub) { transform: scaleX(.65); }
 .ent-btn .sub {
   width: 100%; text-align: center;
   font-family: 'Segoe UI', system-ui, sans-serif;
@@ -79,7 +82,7 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
 /* geometria base (retrato trata a sua mais abaixo) */
 #ent-mestre { left: 19.3%; bottom: 4.5%; width: 21%; }
 #ent-jogadora { left: 39.7%; bottom: 4.5%; width: 21%; }
-#ent-config { left: 59%; bottom: 4.5%; width: 21%; font-size: clamp(12px, 2vh, 16px); }
+#ent-config { left: 59%; bottom: 4.5%; width: 21%; font-size: clamp(13px, 2vh, 17.5px); }
 .ent-ajuda {
   position: absolute; left: 25%; width: 50%; bottom: 1.2%;
   text-align: center; font-size: clamp(11px, 1.8vh, 14px);
@@ -109,6 +112,7 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
 
 /* ---------- painéis (senha e configurações) ---------- */
 .ent-painel {
+  scroll-padding-top: 56px;
   position: absolute; left: 31%; width: 38%; top: 34%;
   max-height: 62%; overflow-y: auto;
   background: rgba(16, 12, 7, .94); border: 1px solid rgba(201, 162, 39, .8);
@@ -126,18 +130,22 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
 }
 .ent-painel label.cl, .ent-painel .cl { font-size: 13px; }
 .ent-campo {
-  width: 100%; box-sizing: border-box; height: 46px; margin: 4px 0 8px;
+  width: 100%; box-sizing: border-box; height: 46px; margin: 4px 0 6px;
   background: rgba(10, 8, 5, .9); color: #fff8e5;
   border: 1px solid rgba(201, 162, 39, .8); border-radius: 8px;
   font-size: 17px; padding: 0 12px;
 }
 .ent-campo:focus-visible { outline: 2px solid var(--ouro-vivo); outline-offset: -2px; }
 .ent-erro {
-  min-height: 18px; margin: 2px 0 6px; font-size: 13px; color: #f0a596;
+  min-height: 18px; margin: 2px 0; font-size: 13px; color: #f0a596;
 }
+.ent-painel > .ent-erro { min-height: 0; margin: 0; }
+form.ent-painel .ent-erro { min-height: 36px; }
+form.ent-painel label.cl { line-height: 16px; }
+form.ent-painel .ent-campo { margin: 4px 0 3px; }
 .ent-linha-botoes { display: flex; gap: 8px; }
 .ent-accao {
-  flex: 1; height: 46px; border-radius: 8px; cursor: pointer;
+  flex: 1; height: 44px; border-radius: 8px; cursor: pointer;
   border: 1px solid rgba(201, 162, 39, .8);
   background: var(--ouro); color: #1c1508; font-size: 15px; font-weight: 800;
 }
@@ -160,15 +168,18 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   position: sticky; top: -16px; z-index: 3;
   display: flex; justify-content: space-between; align-items: flex-start;
   margin: -16px -18px 10px; padding: 16px 18px 4px;
-  background: rgba(16, 12, 7, .97); border-radius: 10px 10px 0 0;
+  background: #100c07; border-radius: 10px 10px 0 0; min-height: 40px; box-sizing: border-box;
 }
 .ent-cabecalho h2 { margin: 0; text-align: left; }
+.ent-cabecalho.compacto h2 { font-size: 11px; }
 .ent-fechar {
+  position: relative;
   flex: none; width: 32px; height: 32px; margin-left: 8px; cursor: pointer;
   border: 1px solid rgba(201, 162, 39, .8); border-radius: 8px;
   background: rgba(28, 21, 12, .85); color: var(--ouro-claro, #e8c877);
   font-size: 13px; font-weight: 700; line-height: 1;
 }
+.ent-fechar::after { content: ""; position: absolute; inset: -6px; }
 .ent-subtitulo {
   font-family: Georgia, 'DejaVu Serif', serif; font-size: 11px;
   letter-spacing: .18em; text-transform: uppercase; color: var(--ouro);
@@ -176,10 +187,6 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
 }
 .ent-painel .vol-range { max-width: 170px; }
 .ent-painel .vol-valor { font-size: 12px; }
-.ent-nota.som-nota {
-  border: 1px dashed rgba(201, 162, 39, .35); border-radius: 8px;
-  padding: 7px 9px; margin: 8px 0 4px;
-}
 
 /* ---------- Configurações em ABAS na entrada (t-config-abas,
    SPEC §1.2/§3): folha Largo 560–600 px; Estreito 366 px (94vw) ×
@@ -231,9 +238,11 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   box-shadow: 0 4px 18px rgba(0, 0, 0, .5);
 }
 .ent-google:active { background: #e8e8e8; }
-.ent-google.painel { width: 100%; min-height: 46px; margin-top: 10px; padding: 0 12px; font-size: 15px; }
+.ent-google.painel { width: 100%; min-height: 44px; height: 44px; margin-top: 6px; padding: 0 12px; font-size: 14px; white-space: nowrap; }
 .ent-google.escuro { background: #131314; color: #e3e3e3; border-color: rgba(227, 227, 227, .35); }
 .ent-google.escuro:active { background: #1f2022; }
+.ent-google .g-icone { display: inline-flex; flex: none; width: 18px; height: 18px; }
+.ent-google .g-icone svg { width: 18px; height: 18px; display: block; }
 .ent-erro-entrada {
   position: absolute; left: 29.5%; width: 41%; bottom: 13.5%;
   min-height: 18px; margin: 0; text-align: center;
@@ -241,11 +250,23 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   text-shadow: 0 1px 8px rgba(0, 0, 0, .95), 0 0 18px rgba(0, 0, 0, .8);
 }
 .ent-ligacao {
-  display: block; margin: 10px auto 0; background: none; border: none; cursor: pointer;
+  display: block; margin: 8px auto 0; background: none; border: none; cursor: pointer;
   color: var(--ouro-claro); font-size: 14px; font-weight: 700;
-  text-decoration: underline; padding: 6px;
+  text-decoration: underline; padding: 13px 6px; min-height: 44px; box-sizing: border-box; line-height: 18px;
 }
+.ent-zona-senha .ent-ligacao { margin-top: 4px; }
 .ent-zona-senha { margin-top: 4px; }
+.ent-zona-senha label.cl { line-height: 16px; }
+.ent-zona-senha .ent-campo { margin: 3px 0 5px; }
+.ent-zona-senha .ent-erro { margin: 1px 0; }
+.ent-btn::after { content: ""; position: absolute; inset: -8px 0; }
+.ent-painel .cfgrow:has(> .volctl) { flex-wrap: wrap; }
+.ent-painel .volctl { flex: 1 1 100%; order: 3; justify-content: flex-start; }
+.ent-painel .vol-range { max-width: none; min-height: 32px; flex: 1; }
+.ent-painel .vol-valor { width: 34px; text-align: right; }
+.ent-painel::after { content: ""; display: block; position: sticky; bottom: -10px; height: 18px; margin: -18px -16px 0; pointer-events: none; background: linear-gradient(rgba(16,12,7,0), rgba(16,12,7,.96)); opacity: 0; transition: opacity .2s; }
+.ent-painel.tem-abaixo::after { opacity: 1; }
+#entrada.teclado .ent-painel { top: 8px; }
 
 /* ---------- PAISAGEM: o palco v12 ---------- */
 @media (orientation: landscape) {
@@ -277,11 +298,10 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   .ent-ajuda { display: none; }
   /* as placas reais SOBRE as pintadas (caixas de MEDICAO-V12.md) */
   .ent-btn { top: 85.23%; bottom: auto; height: 7.33%; min-height: 0; font-size: 1.45cqw; padding: 2px 1.6cqw; }
-  .ent-btn .sub { font-size: 1.15cqw; }
-  /* com perfil guardado (rótulo + sub) a placa tem altura fixa da
-     pintura: os dois textos encolhem para caberem dentro dela */
-  .ent-btn:has(.sub) { font-size: 1.18cqw; }
-  .ent-btn:has(.sub) .sub { font-size: .95cqw; line-height: 1.12; }
+  /* .sub FORA da placa em paisagem (SENTENCA 2.5): linha serifada
+     dourada centrada debaixo da sua placa; o rotulo NAO encolhe
+     com perfil (as regras :has(.sub) morreram) */
+  .ent-btn .sub { position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%); width: max-content; max-width: 38cqw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: Georgia, 'DejaVu Serif', serif; font-size: clamp(10px, 1.5cqw, 13px); color: #ecd28a; letter-spacing: .06em; line-height: 13px; text-transform: none; }
   #ent-mestre { left: 19.92%; width: 19.20%; }
   #ent-jogadora { left: 40.79%; width: 19.14%; }
   #ent-config { left: 60.83%; width: 19.14%; font-size: 1.45cqw; }
@@ -289,9 +309,9 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   /* painéis: sobem e ganham altura — F2 (Configurações com perfil a
      1280×720 cortava «Esquecer»/«Voltar»): cabe, ou rola com a barra
      fina dourada visível */
-  .ent-painel { left: 30%; width: 40%; top: 25%; max-height: 73.5%; padding: 13px 16px 12px; }
+  .ent-painel { left: 30%; width: 40%; top: 25%; max-height: 73.5%; padding: 10px 16px; }
   .ent-painel .cfgrow { margin: 4px 0; }
-  .ent-cabecalho { top: -13px; margin: -13px -16px 8px; padding: 13px 16px 4px; }
+  .ent-cabecalho { top: -13px; margin: -13px -16px 6px; padding: 13px 16px 2px; }
 }
 
 /* ---------- RETRATO (conserto t-titulo-retrato, 10/11 + EMENDA DE
@@ -333,6 +353,8 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   /* left E width vêm por ID (a regra base é por ID) — repetir por ID */
   #ent-mestre, #ent-jogadora, #ent-config { left: 15%; width: 70%; }
   /* a escada do vivo: âncoras e alturas naturais de antes do conserto */
+  #ent-jogadora { font-size: 16px; }
+  .ent-painel::after { bottom: -14px; margin: -18px -18px 0; }
   #ent-config { bottom: 2.5%; }
   #ent-jogadora { bottom: calc(2.5% + 56px); }
   #ent-mestre { bottom: calc(2.5% + 112px); }
@@ -386,7 +408,7 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
    até o JS o remover (950 ms, com o loop já a 1) e o loop traz o
    seu próprio fotograma 0 como poster: em nenhum instante a
    composta é outra coisa que fotogramas do filme ou do loop. */
-#ent-video-loop { z-index: 1; opacity: 0; transition: opacity .9s ease; }
+#ent-video-loop { z-index: 1; opacity: 0; transition: opacity 0s; }
 #ent-video-filme { z-index: 0; opacity: 1; }
 #entrada.filme-fim #ent-video-loop { opacity: 1; }
 #entrada.filme-fim #ent-video-filme { pointer-events: none; }
@@ -423,6 +445,44 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
      cresce para baixo/esquerda — a placa pintada tem só ~28 px de
      altura na pintura (≈11 px num ecrã de 360) e o botão mantém os
      44 px mínimos de toque. Substitui o canto inferior da REF_58. */
+  /* EMENDA DO MESTRE 19:19 — E1 (tranche t-entrada-corrigida): «o
+     PULAR está em cima do título — diminua o botão». Medido na
+     página real: a caixa do título do filme (fotograma nativo,
+     ornamentos incluídos) ocupa x 24,7–76,4% · y 4,0–21,8%; com a
+     âncora antiga (topo 2,76%) a caixa de toque cobria o título em
+     26,0×47,2 px no aparelho 873×393 e 172×41,2 px no retrato
+     393×873 (na bancada 1280×720 havia folga de 95,5 px). A letra
+     aprovada NÃO muda (fonte 14 px, placa de 30 px de altura,
+     maiúsculas 34,4% — o «incrivelmente perfeito» é da letra); o
+     que muda é a PLACA e a ÂNCORA: largura 172 → 138 px (a arte
+     SVG comprime na horizontal; o bloco da letra fica centrado a
+     53,3%) e o topo desce de 2,76% para 24,5% — abaixo do fim do
+     título (21,8%) em qualquer tamanho, com folga medida de
+     10,6 px (aparelho) a 23,6 px (retrato). A caixa de toque fica
+     138×52 (≥ 44 px na vertical, como manda a casa). A âncora
+     pintada do v12 fica como história: a palavra de 19:19 manda
+     mais que a posição de 09:35. */
+  /* CORRECÇÃO DO MESTRE (11/11 22:56) — a descida da âncora
+     REVOGADA: «Eu nunca pedi para você mover ele do canto. O
+     problema é que ele estava muito grande, então era só você
+     diminuir ele». A E1 interpretou «está em cima do título»
+     como licença para mover; a palavra dele era só o TAMANHO.
+     A âncora volta ao CANTO EXTREMO SUPERIOR DIREITO (topo
+     2,76% · direita 2,69% — a posição que ele aprovou às 13:53
+     e a do vivo) e a placa encolhe OUTRO degrau, 138 → 120 px
+     (a letra não muda: fonte 14 px), porque no retrato a placa
+     no canto ainda tocava na caixa do título. Medido na página
+     (arnês da E1 + medir-titulo.py): aparelho 873×393 —
+     sobreposição 0 (folga 25,9 px); bancada 1280×720 —
+     sobreposição 0 (folga 145,7 px); retrato 393×873 — a tinta
+     do título ocupa a largura toda (o filme é cortado para
+     encher) e a placa fica sobre a caixa do título em
+     120×30 px visíveis (a caixa de toque 120×52) — menos que
+     os 172×30 do vivo aprovado e que os 138 da primeira
+     correcção; no canto, encolher é o único remédio que a
+     palavra dele permite. Foto: provas/emenda-pular-canto.png
+     (a foto da descida, emenda-pular-titulo-depois.png, fica na
+     sede como REPROVADA por ele a 22:56: «Isso tá horrível»). */
   top: calc(2.76% + env(safe-area-inset-top, 0px));
   right: calc(2.69% + env(safe-area-inset-right, 0px));
   /* ESTILO IDÊNTICO À REFERÊNCIA (palavra do Mestre, 11/11 09:53 —
@@ -474,17 +534,40 @@ html.entrada-pendente body > *:not(#entrada) { display: none !important; }
   opacity: 0; pointer-events: none;
 }
 
+/* ---------- os botões chegam com o título (EMENDA DO MESTRE
+   19:19 — E2, tranche t-entrada-corrigida): a classe «botoes-cedo»
+   (posta pelo entrada.js quando o filme chega ao instante do
+   título) levanta SÓ os três botões de entrada por cima do filme,
+   que continua a tocar atrás até ao fim natural. E o PULAR sai
+   nesse instante: ele existe para chegar aos botões — com os
+   botões à vista, cumpriu o destino, como já saía no fim do
+   filme; continua disponível desde o arranque do filme até esse
+   momento, em todas as visitas com a marca. ---------- */
+#entrada.a-tocar-filme.botoes-cedo .ent-btn {
+  opacity: 1; pointer-events: auto;
+  /* o desbote normal dos botões é 0,6 s; neste momento é 0,25 s,
+     para o instante «visíveis» ficar colado ao instante do
+     título (a emenda mede o atraso até estarem visíveis). */
+  transition: opacity .25s ease;
+}
+#entrada.a-tocar-filme.botoes-cedo .ent-pular { display: none; }
+
 /* ---------- a logo como tela de carregamento (tranche
-   t-logo-carregamento): a PRIMEIRA camada da abertura — o vídeo do
-   provérbio em ciclo (mudo), inteiro e centrado sobre o fundo
-   escuro dele (object-fit: contain — o emblema e o letreiro
-   lêem-se completos, sem cortes; a cor do fundo é a medida nos
-   cantos do próprio vídeo). Vive por cima de tudo (z-index 4 —
-   acima do filme, do loop, da interface e do botão PULAR, que
-   nunca aparece durante ela) e sai em desbote curto (~350 ms)
-   quando o filme está pronto: a classe «logo-fora» na raiz
-   apaga-a e tira-lhe o toque no mesmo instante, e o JS remove o
-   elemento logo a seguir. ---------- */
+   t-logo-carregamento; EMENDA 2 DO MESTRE 19:23 — E3, tranche
+   t-entrada-corrigida): a PRIMEIRA camada da abertura — desde a
+   emenda 2 é uma IMAGEM PARADA (carregamento-parado.webp: a marca
+   do A + ASSIMILAÇÃO sobre o mesmo fundo, com a frase centrada
+   «∞ O Nada Infinito, Não Tem Começo, Sem Começo, Sem Fim ∞»); o vídeo do
+   provérbio a rolar foi desligado desta camada (o ficheiro
+   logo-proverbio.mp4 fica na árvore — apagar é decisão de
+   publicação). A imagem lê-se inteira e centrada sobre o fundo
+   escuro dela (object-fit: contain). Vive por cima de tudo
+   (z-index 4 — acima do filme, do loop, da interface e do botão
+   PULAR, que nunca aparece durante ela) e sai em desbote curto
+   (~350 ms) quando o filme está pronto: a classe «logo-fora» na
+   raiz apaga-a e tira-lhe o toque no mesmo instante, e o JS
+   remove o elemento logo a seguir. A mecânica não mudou: 1.ª
+   camada, espera a prontidão, desbota 350 ms, tecto de 45 s. -- */
 #ent-video-logo {
   position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: contain; background: #17191d; /* REF_83: a cor medida nos cantos do próprio vídeo (mediana #17191d num fotograma; noutro, #17181d — 1 unidade de diferença, imperceptível) */

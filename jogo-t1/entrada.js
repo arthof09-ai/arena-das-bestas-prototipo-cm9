@@ -69,7 +69,7 @@
    * marca discreta do canto inferior esquerdo da entrada lê ESTA
    * constante — é o sítio ÚNICO dela: cada publicação actualiza
    * aqui o número da sua REF e a marca acompanha. */
-  var VERSAO_JOGO = 'REF_131';
+  var VERSAO_JOGO = 'REF_132';
 
   var SCRIPTS_JOGO = [
     'dados-apresentacao.js',
@@ -78,6 +78,17 @@
   ];
 
   /* ---------- utilidades ---------- */
+  var GOOGLE_G_SVG = '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 8 3l5.7-5.7C34.3 6.1 29.3 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.6-.4-3.9z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 8 3l5.7-5.7C34.3 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C36.9 39.2 44 34 44 24c0-1.3-.1-2.6-.4-3.9z"/></svg>';
+  function iconeGoogle() {
+    var sp = document.createElement('span');
+    sp.className = 'g-icone'; sp.innerHTML = GOOGLE_G_SVG;
+    return sp;
+  }
+  function nomeTruncado(p) {
+    var nome = p.nome || p.email || '';
+    if (nome.length > 16) nome = nome.slice(0, 16) + '\u2026';
+    return nome;
+  }
   function el(tag, classe, texto) {
     var e = document.createElement(tag);
     if (classe) e.className = classe;
@@ -314,16 +325,14 @@
    * partida, é definição DELE — vive só na vista do Mestre, no ⚙,
    * lida da mesma chave. A secção Som abre o painel: os volumes são
    * da pessoa e do aparelho, como as outras linhas. */
-  var NOTA_SOM = 'Música: a do título e a da batalha. Efeitos: hoje, a chuva e o trovão; os sons da batalha usarão este volume quando existirem.';
   var DEFINICOES = [
     { chave: 'hudt1-som-geral', rotulo: 'Volume geral', tipo: 'vol', padrao: '100', seccao: 'Som' },
-    { chave: 'hudt1-som-musica', rotulo: 'Música', tipo: 'vol', padrao: '100' },
+    { chave: 'hudt1-som-musica', rotulo: 'Música', tipo: 'vol', padrao: '100', sub: 'só a do título' },
     { chave: 'hudt1-som-efeitos', rotulo: 'Efeitos', tipo: 'vol', padrao: '100',
       sub: 'chuva e trovão — na batalha' },
     { chave: 'hudt1-som-mudo', rotulo: 'Mudo', tipo: 'tog',
       padrao: 'desligado', ligado: 'Ligado', desligado: 'Desligado',
       sub: 'Nenhum som, sem perder os volumes.' },
-    { tipo: 'nota', texto: NOTA_SOM },
     { chave: 'hudt1-qualidade', rotulo: 'Qualidade', tipo: 'seg', padrao: 'auto',
       opcoes: [['auto', 'Automática'], ['baixa', 'Leve'], ['media', 'Média'], ['alta', 'Alta']] },
     { chave: 'hudt1-numeros-dano', rotulo: 'Números de dano', tipo: 'tog',
@@ -398,7 +407,8 @@
   erroEntrada.setAttribute('role', 'alert');
   var btnMestre = el('button', 'ent-btn'); btnMestre.id = 'ent-mestre'; btnMestre.type = 'button';
   var btnJogadora = el('button', 'ent-btn'); btnJogadora.id = 'ent-jogadora'; btnJogadora.type = 'button';
-  var btnConfig = el('button', 'ent-btn', 'Configurações');
+  var btnConfig = el('button', 'ent-btn');
+  btnConfig.appendChild(el('span', null, 'Configurações'));
   btnConfig.id = 'ent-config'; btnConfig.type = 'button';
   /* A frase «Você entra com a sua conta Google. Ela fica guardada
    * neste celular.» SAIU (palavra do Mestre, 12/11/2026 09:01: a
@@ -417,7 +427,7 @@
     btnMestre.textContent = '';
     btnMestre.appendChild(el('span', null, 'Entrar como Mestre'));
     if (p && p.papel === 'mestre') {
-      btnMestre.appendChild(el('span', 'sub', 'você já entrou como ' + (p.nome || p.email) + ' — um toque e entra'));
+      btnMestre.appendChild(el('span', 'sub', 'você já entrou como ' + nomeTruncado(p) + ' — um toque e entra'));
     } else if (typeof aparelhoLembra === 'function' && aparelhoLembra()) {
       btnMestre.appendChild(el('span', 'sub', 'você já entrou neste aparelho — um toque e entra'));
     }
@@ -427,7 +437,7 @@
     btnJogadora.textContent = '';
     btnJogadora.appendChild(el('span', null, 'Entrar como Jogadora'));
     if (p && p.papel === 'jogadora') {
-      btnJogadora.appendChild(el('span', 'sub', 'você já entrou como ' + (p.nome || p.email) + ' — um toque e entra'));
+      btnJogadora.appendChild(el('span', 'sub', 'você já entrou como ' + nomeTruncado(p) + ' — um toque e entra'));
     }
   }
 
@@ -437,22 +447,25 @@
    * anfitrião abaixo). */
   var vistaMestre = el('div', 'ent-painel');
   vistaMestre.hidden = true;
-  vistaMestre.appendChild(el('h2', null, 'Entrar como Mestre'));
-  vistaMestre.appendChild(el('p', 'ent-nota', 'Entre com a conta Google do Mestre.'));
+  var cabecalhoMestre = el('div', 'ent-cabecalho compacto');
+  cabecalhoMestre.appendChild(el('h2', null, 'Entrar como Mestre'));
+  var btnFecharMestre = el('button', 'ent-fechar', '\u2715');
+  btnFecharMestre.id = 'ent-fechar-mestre'; btnFecharMestre.type = 'button';
+  btnFecharMestre.setAttribute('aria-label', 'Fechar');
+  btnFecharMestre.addEventListener('click', function () { mostrar('botoes'); });
+  cabecalhoMestre.appendChild(btnFecharMestre);
+  vistaMestre.appendChild(cabecalhoMestre);
   var erroMestre = el('p', 'ent-erro');
   erroMestre.setAttribute('role', 'alert');
   vistaMestre.appendChild(erroMestre);
-  var btnGoogleMestre = el('button', 'ent-google painel escuro', 'Entrar com a sua conta Google');
+  var btnGoogleMestre = el('button', 'ent-google painel escuro');
   btnGoogleMestre.id = 'ent-google-mestre'; btnGoogleMestre.type = 'button';
+  btnGoogleMestre.appendChild(iconeGoogle());
+  btnGoogleMestre.appendChild(document.createTextNode('Entrar com o Google'));
   vistaMestre.appendChild(btnGoogleMestre);
   var zonaSenhaHost = el('div');
   zonaSenhaHost.id = 'ent-zona-senha-host';
   vistaMestre.appendChild(zonaSenhaHost);
-  var btnVoltarMestre = el('button', 'ent-accao sec', 'Voltar');
-  btnVoltarMestre.type = 'button';
-  btnVoltarMestre.style.marginTop = '10px';
-  btnVoltarMestre.style.width = '100%';
-  vistaMestre.appendChild(btnVoltarMestre);
   raiz.appendChild(vistaMestre);
 
   /* Vista 5 — a PREPARAÇÃO DA BATALHA (t-escolha-mapa, palavra do
@@ -795,6 +808,7 @@
   vistaConfig.appendChild(cabecalhoConfig);
   var linhasDef = el('div');
   vistaConfig.appendChild(linhasDef);
+  raiz.appendChild(vistaConfig);
   var btnRestaurar = el('button', 'ent-esquecer', 'Restaurar o padrão');
   btnRestaurar.id = 'ent-restaurar'; btnRestaurar.type = 'button';
   vistaConfig.appendChild(btnRestaurar);
@@ -809,10 +823,8 @@
   var btnEsquecer = el('button', 'ent-esquecer', 'Esquecer este aparelho');
   btnEsquecer.type = 'button';
   vistaConfig.appendChild(btnEsquecer);
-  /* O «Voltar» no fundo SAIU (lei do Mestre, 11/11 10:36: «Não
-   * precisa ter essa opção Voltar»): sai-se apertando fora do painel
-   * (o ouvinte de captura junto a esta vista) ou no ✕ do cabeçalho. */
-  raiz.appendChild(vistaConfig);
+  /* O «Voltar» no fundo SAIU (lei do Mestre, 11/11 10:36): sai-se
+   * apertando fora do painel ou no \u2715 do cabe\u00e7alho. */
 
   /* ---------- Configurações em ABAS na entrada (t-config-abas,
    * SPEC §3): a vista ganha abas — Gráficos · Som · Controles · e,
@@ -1234,6 +1246,12 @@
   }
 
   /* ---------- navegação entre vistas ---------- */
+  function actualizarIndicadores() {
+    raiz.querySelectorAll('.ent-painel').forEach(function (pn) {
+      if (!pn.dataset.indicador) { pn.dataset.indicador = '1'; pn.addEventListener('scroll', actualizarIndicadores); }
+      pn.classList.toggle('tem-abaixo', pn.scrollHeight - pn.scrollTop - pn.clientHeight > 2);
+    });
+  }
   function mostrar(vista) {
     vistaBotoes.hidden = vista !== 'botoes';
     vistaMestre.hidden = vista !== 'mestre';
@@ -1248,6 +1266,11 @@
     }
     if (vista === 'config') pintarConfig();
     if (vista === 'botoes') { pintarBotaoMestre(); pintarBotaoJogadora(); }
+    if (raiz.classList.contains('teclado') && window.visualViewport) {
+      var vvh = window.visualViewport.height;
+      raiz.querySelectorAll('.ent-painel').forEach(function (pn) { if (!pn.hidden) pn.style.maxHeight = (vvh - 16) + 'px'; });
+    }
+    requestAnimationFrame(actualizarIndicadores);
   }
 
   /* ---------- o que acontece com a conta Google, por uso ---------- */
@@ -1311,7 +1334,6 @@
     pedirGoogle('mestre', function (msg) { erroMestre.textContent = msg; });
   });
   btnConfig.addEventListener('click', function () { mostrar('config'); });
-  btnVoltarMestre.addEventListener('click', function () { mostrar('botoes'); });
   btnOutraConta.addEventListener('click', function () {
     mostrar('botoes');
     erroEntrada.textContent = '';
@@ -1421,12 +1443,14 @@
 
   function fecharZonaSenha() {
     formSenha.hidden = true;
+    btnSenhaLigacao.hidden = false;
     erroSenha.textContent = '';
     campoSenha.value = '';
   }
   btnSenhaLigacao.addEventListener('click', function () {
     var abrir = formSenha.hidden;
     formSenha.hidden = !abrir;
+    btnSenhaLigacao.hidden = !formSenha.hidden;
     if (abrir) { erroSenha.textContent = ''; campoSenha.focus(); }
   });
   formSenha.addEventListener('submit', function (ev) {
@@ -1447,7 +1471,7 @@
       }
     }).catch(function () {
       btnEntrarSenha.disabled = false;
-      erroSenha.textContent = 'Este aparelho não conseguiu verificar a senha agora. Tente outra vez.';
+      erroSenha.textContent = 'Falhou a verificação. Tente outra vez.';
     });
   });
 
@@ -1455,15 +1479,24 @@
    * trocar para quem já entrou neste aparelho) --- */
   vistaNovaSenha = el('form', 'ent-painel');
   vistaNovaSenha.hidden = true;
+  var cabecalhoNova = el('div', 'ent-cabecalho');
   var tituloNovaSenha = el('h2', null, 'Definir a nova senha');
-  vistaNovaSenha.appendChild(tituloNovaSenha);
+  cabecalhoNova.appendChild(tituloNovaSenha);
+  var btnFecharNova = el('button', 'ent-fechar', '\u2715');
+  btnFecharNova.id = 'ent-fechar-nova'; btnFecharNova.type = 'button';
+  btnFecharNova.setAttribute('aria-label', 'Fechar');
+  btnFecharNova.addEventListener('click', function () { mostrar(modoNovaSenha === 'trocar' ? 'config' : 'mestre'); });
+  cabecalhoNova.appendChild(btnFecharNova);
+  vistaNovaSenha.appendChild(cabecalhoNova);
   var passoGoogle = el('div');
   passoGoogle.appendChild(el('p', 'ent-nota',
-    'Para ter a certeza de que é você, entre primeiro com a sua conta Google. Depois define a senha nova.'));
+    'Primeiro confirme que é você com a sua conta Google. Depois define a senha nova.'));
   var erroNovaGoogle = el('p', 'ent-erro');
   erroNovaGoogle.setAttribute('role', 'alert');
-  var btnGoogleNova = el('button', 'ent-google painel escuro', 'Entrar com a sua conta Google');
+  var btnGoogleNova = el('button', 'ent-google painel escuro');
   btnGoogleNova.id = 'ent-google-nova'; btnGoogleNova.type = 'button';
+  btnGoogleNova.appendChild(iconeGoogle());
+  btnGoogleNova.appendChild(document.createTextNode('Entrar com o Google'));
   passoGoogle.appendChild(erroNovaGoogle);
   passoGoogle.appendChild(btnGoogleNova);
   vistaNovaSenha.appendChild(passoGoogle);
@@ -1490,22 +1523,17 @@
   passoCampos.appendChild(campoNova2);
   passoCampos.appendChild(erroNova);
   passoCampos.appendChild(btnGuardarNova);
-  passoCampos.appendChild(el('p', 'ent-nota',
-    'A senha nova passa a valer neste aparelho. Nos outros aparelhos, vale a senha antiga até o jogo ser actualizado com a nova.'));
   vistaNovaSenha.appendChild(passoCampos);
   var passoFeito = el('div');
   passoFeito.hidden = true;
   passoFeito.appendChild(el('p', 'ent-nota', 'Senha nova guardada neste aparelho.'));
+  passoFeito.appendChild(el('p', 'ent-nota',
+    'A senha nova já vale neste aparelho. Nos outros, vale a antiga até o jogo ser actualizado.'));
   var btnEntrarFeito = el('button', 'ent-accao', 'Entrar como Mestre');
   btnEntrarFeito.id = 'ent-nova-entrar'; btnEntrarFeito.type = 'button';
   btnEntrarFeito.style.width = '100%';
   passoFeito.appendChild(btnEntrarFeito);
   vistaNovaSenha.appendChild(passoFeito);
-  var btnVoltarNova = el('button', 'ent-accao sec', 'Voltar');
-  btnVoltarNova.type = 'button';
-  btnVoltarNova.style.marginTop = '8px';
-  btnVoltarNova.style.width = '100%';
-  vistaNovaSenha.appendChild(btnVoltarNova);
   raiz.appendChild(vistaNovaSenha);
 
   var modoNovaSenha = 'recuperar'; /* 'recuperar' | 'trocar' */
@@ -1556,8 +1584,33 @@
     erroNovaGoogle.textContent = '';
     pedirGoogle('recuperar', function (msg) { erroNovaGoogle.textContent = msg; });
   });
-  btnVoltarNova.addEventListener('click', function () { mostrar(modoNovaSenha === 'trocar' ? 'config' : 'mestre'); });
   btnEntrarFeito.addEventListener('click', function () { arrancarJogo(true); });
+  /* Teclado (SENTENCA 2.6): visualViewport < 320 -> classe .teclado */
+  if (window.visualViewport) {
+    var aoRedimensionarVV = function () {
+      var vv = window.visualViewport;
+      if (vv.height < 320) {
+        raiz.classList.add('teclado');
+        raiz.querySelectorAll('.ent-painel').forEach(function (pn) {
+          if (!pn.hidden) pn.style.maxHeight = (vv.height - 16) + 'px';
+        });
+      } else {
+        raiz.classList.remove('teclado');
+        raiz.querySelectorAll('.ent-painel').forEach(function (pn) { pn.style.maxHeight = ''; });
+      }
+      var activo = document.activeElement;
+      if (activo && (activo === campoSenha || activo === campoNova || activo === campoNova2)) {
+        activo.scrollIntoView({ block: 'nearest' });
+      }
+    };
+    window.visualViewport.addEventListener('resize', aoRedimensionarVV);
+    aoRedimensionarVV();
+  }
+  [campoSenha, campoNova, campoNova2].forEach(function (campo) {
+    campo.addEventListener('focus', function () {
+      setTimeout(function () { campo.scrollIntoView({ block: 'nearest' }); }, 60);
+    });
+  });
   vistaNovaSenha.addEventListener('submit', function (ev) {
     ev.preventDefault();
     /* Emenda B da bancada (REF_33): guardar exige autorização NO
@@ -1574,7 +1627,7 @@
     }
     var nova = campoNova.value;
     if (!nova) { erroNova.textContent = 'Escreva a senha nova.'; return; }
-    if (nova !== campoNova2.value) { erroNova.textContent = 'As duas escritas da senha nova não são iguais. Tente outra vez.'; return; }
+    if (nova !== campoNova2.value) { erroNova.textContent = 'As senhas não são iguais. Tente outra vez.'; return; }
     erroNova.textContent = 'A guardar…';
     btnGuardarNova.disabled = true;
     derivarResumoHex(nova).then(function (resumo) {
@@ -1588,7 +1641,7 @@
       passoFeito.hidden = false;
     }).catch(function () {
       btnGuardarNova.disabled = false;
-      erroNova.textContent = 'Este aparelho não conseguiu guardar a senha nova agora. Tente outra vez.';
+      erroNova.textContent = 'Não foi possível guardar. Tente outra vez.';
     });
   });
   /* ============ SENHA — fim da secção ============ */
@@ -1721,13 +1774,16 @@
    * primeira parte, com tela de carregamento, enquanto o filme tá
    * carregando; esse vídeo não é obrigado a ser visto todo —
    * carregou, já pode ir para o filme») ----------
-   * A logo (logo-proverbio.mp4: o vídeo do provérbio, ciclo perfeito
-   * de 13,8 s, mudo) é a PRIMEIRA camada visível da abertura: toca em
-   * ciclo por cima de tudo (CSS: z-index 4, object-fit contain sobre
-   * o fundo escuro dela) enquanto o filme carrega. Quando o filme
-   * está pronto a tocar (readyState ≥ 3 — ver o bloco do arranque,
-   * abaixo), a logo desbota em ~350 ms e o filme arranca do
-   * fotograma 0, como hoje. A logo NÃO é o filme: não conta como
+   * A logo é a PRIMEIRA camada visível da abertura, por cima de
+   * tudo (CSS: z-index 4, object-fit contain sobre o fundo escuro
+   * dela) enquanto o filme carrega. ATÉ À REF_64 era o vídeo do
+   * provérbio em ciclo (logo-proverbio.mp4, 13,8 s, mudo); a
+   * EMENDA 2 DO MESTRE 19:23 (E3) suspendeu a animação: a camada é
+   * agora a imagem parada carregamento-parado.webp (ver a criação
+   * do elemento, abaixo). Quando o filme está pronto a tocar
+   * (readyState ≥ 3 — ver o bloco do arranque, abaixo), a logo
+   * desbota em ~350 ms e o filme arranca do fotograma 0, como
+   * hoje. A logo NÃO é o filme: não conta como
    * «filme visto», não grava marca nenhuma (a marca da tranche
    * t-pular-filme só nasce no «ended» do filme) e o botão PULAR
    * nunca aparece durante ela — fica-lhe por baixo, sem toque.
@@ -1735,20 +1791,26 @@
    * caminho de hoje: a entrada nunca fica refém da tela de
    * carregamento. */
   var TECTO_LOGO_MS = 45000; /* o tecto anti-armadilha: ver o bloco do arranque */
-  var videoLogo = el('video', 'ent-video-logo');
+  /* EMENDA 2 DO MESTRE 19:23 — E3 (t-entrada-corrigida): a camada
+   * deixa de ser o vídeo do provérbio a rolar e passa a IMAGEM
+   * PARADA (carregamento-parado.webp, composta sobre a base
+   * alinhada da logo: a marca do A e o ASSIMILAÇÃO como estão, o
+   * mesmo fundo, e a frase centrada «∞ O Nada Infinito, Não Tem
+   * Começo, Sem Fim ∞» na tipografia do letreiro aprovado).
+   * DESLIGADO aqui: o <video> da logo (logo-proverbio.mp4) e o seu
+   * poster (logo-quadro0.webp) — os ficheiros FICAM na árvore
+   * (apagar é decisão de publicação, não desta construção).
+   * A variável mantém o nome (videoLogo) por ser o nome que todo
+   * o resto do bloco usa; o elemento é um <img>. */
+  var videoLogo = el('img', 'ent-video-logo');
   videoLogo.id = 'ent-video-logo';
-  videoLogo.src = 'logo-proverbio.mp4';
-  videoLogo.poster = 'logo-quadro0.webp'; /* o fotograma 0 da própria logo: a espera da espera também é a imagem que começa a mexer */
-  videoLogo.muted = true; /* a logo não tem faixa de áudio: quem soa é a trilha */
-  videoLogo.loop = true;
-  videoLogo.setAttribute('playsinline', '');
-  videoLogo.preload = 'auto';
+  videoLogo.src = 'carregamento-parado.webp';
+  videoLogo.alt = '';
   raiz.appendChild(videoLogo);
-  var promLogo = videoLogo.play();
-  if (promLogo && promLogo.catch) promLogo.catch(function () {});
-  /* Se a logo falhar, o filme arranca já sem ela (a declaração de
-   * arrancarFilme está no bloco do arranque, abaixo — as declarações
-   * de função sobem no âmbito, e o erro nunca dispara em síncrono). */
+  /* Se a imagem falhar, o filme arranca já sem ela (a declaração
+   * de arrancarFilme está no bloco do arranque, abaixo — as
+   * declarações de função sobem no âmbito, e o erro nunca dispara
+   * em síncrono). */
   videoLogo.addEventListener('error', function () { arrancarFilme(); });
 
   var trilha = el('audio');
@@ -1851,6 +1913,45 @@
     gravarFilmeVisto();
     terminarFilme();
   });
+  /* ---------- os botões chegam com o título (EMENDA DO MESTRE
+   * 19:19 — E2, tranche t-entrada-corrigida) ----------
+   * Palavra dele: os três botões aparecem NO MÁXIMO 2 s depois de
+   * o título aparecer; hoje só surgiam no fim do filme (medido na
+   * página real: título aos 9,9 s do filme → botões aos 18,0 s =
+   * 8,1 s de atraso no tempo do filme; do título completo, ~13 s,
+   * são os ~5 s que ele sentiu). O título do filme v27 começa a
+   * desenhar-se aos 9,9 s (primeira letra — medido fotograma a
+   * fotograma); o gatilho é 10,15 s: os botões sobem ~0,25 s
+   * depois de o título começar a aparecer, enquanto ele acaba de
+   * se desenhar, e o desbote deles neste momento é de 0,25 s
+   * (regra própria no CSS) — visíveis por inteiro ~0,5 s depois
+   * do título, com margem larga para o tecto de 2 s mesmo em
+   * reprodução lenta. MECANISMO ESCOLHIDO: a classe «botoes-cedo» levanta
+   * só os três botões por cima do filme, e o filme CONTINUA a
+   * tocar atrás até ao fim natural — a marca continua a nascer
+   * só no «ended» (a regra do PULAR não é tocada: o botão existe
+   * e funciona desde o arranque até aos botões chegarem; aí sai,
+   * porque chegou ao destino — regra no CSS) e o corte seco do
+   * fantasma fica onde estava, na passagem filme→loop do fim.
+   * Alternativa rejeitada: cortar o filme para o estado final
+   * aos 10,4 s — encurtava o filme na 1.ª visita e matava o
+   * nascimento da marca (ninguém chegaria ao «ended»). */
+  var TITULO_AOS_S = 10.15;
+  var botoesCedoTimer = null;
+  function pararVigiaTitulo() { if (botoesCedoTimer) { clearInterval(botoesCedoTimer); botoesCedoTimer = null; } }
+  function vigiaTitulo() {
+    if (!document.contains(raiz)) { pararVigiaTitulo(); return; } /* a entrada já saiu (entrou no jogo pelos botões cedo) */
+    if (filmeTerminou) { pararVigiaTitulo(); return; }
+    if (videoFilme.currentTime >= TITULO_AOS_S) { raiz.classList.add('botoes-cedo'); pararVigiaTitulo(); }
+  }
+  /* Dois vigias ao mesmo instante: o «timeupdate» (o sinal natural
+   * do relógio do filme) e um intervalo de 250 ms — medido nesta
+   * VM, em reprodução com soluços de rede/descodificação o
+   * «timeupdate» pode saltar de <10,4 para >16 s entre eventos e
+   * os botões chegavam tarde; o intervalo apanha o relógio no
+   * primeiro tique depois de ele passar o instante. */
+  videoFilme.addEventListener('timeupdate', vigiaTitulo);
+  botoesCedoTimer = setInterval(vigiaTitulo, 250);
   videoFilme.addEventListener('error', function () {
     /* Sem filme, a entrada não fica muda nem presa: título directo. */
     try { videoFilme.style.display = 'none'; } catch (_) {}
@@ -1911,7 +2012,7 @@
     videoLogo = null;
     raiz.classList.add('logo-fora');
     setTimeout(function () {
-      try { lg.pause(); } catch (_) {}
+      try { if (lg.pause) lg.pause(); } catch (_) {} /* E3: a camada é um <img> — não há pause */
       try { lg.remove(); } catch (_) {}
     }, 600);
   }
